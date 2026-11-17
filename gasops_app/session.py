@@ -10,19 +10,22 @@ import sqlite3
 import streamlit as st
 
 from .agents import Assumptions, MarketContext
-from .data import Bundle, ROOT, ROME, synthetic
-from .eurostat import SourceUnavailable, load
+from .data import Bundle, ROOT, ROME, jrc_archive, synthetic
 from .forecast import MODELS
+from .italiano import MODALITA, MODELLI
 from .llm import CompatibleReasoner, configuration
+from .mensile import load_monthly
 from .models import Run, utc_now
+from .public_data import SourceUnavailable
 from .regulatory import Library, read_local_pdfs
 from .store import Store
 from .visuals import chip, kind_tag, local_time, steps
 from .workflow import DAILY_BRIEFING, run_workflow
 
 LOG = logging.getLogger(__name__)
-DEMO, PUBLIC = "Italy · offline demo", "Eurostat · Italy"
-SOURCE_CHOICES = (DEMO, PUBLIC)
+DEMO, PUBLIC, ARCHIVE = "Dati di esempio · giornalieri", "Eurostat + ARERA · mensili", "JRC · archivio giornaliero"
+SOURCE_CHOICES = (PUBLIC, ARCHIVE, DEMO)
+RUN_ANALYSIS = "Avvia analisi di mercato AI"
 
 
 @st.cache_resource(show_spinner=False)
@@ -39,6 +42,11 @@ def fixture() -> Bundle:
     return synthetic()
 
 
+@st.cache_data(show_spinner=False)
+def archive() -> Bundle:
+    return jrc_archive()
+
+
 @st.cache_resource(show_spinner=False, max_entries=5)
 def indexed_library(documents: tuple[tuple[str, bytes], ...]) -> Library:
     return Library(documents)
@@ -47,7 +55,7 @@ def indexed_library(documents: tuple[tuple[str, bytes], ...]) -> Library:
 def library() -> Library:
     path = Path(os.environ.get("GASOPS_PDF_DIR") or ROOT / "data" / "regulatory")
     uploads = st.session_state.get("pdf_uploads", ())
-    with st.spinner("Indexing regulatory evidence...", show_time=False):
+    with st.spinner("Indicizzazione dei documenti…", show_time=False):
         return indexed_library((*read_local_pdfs(path), *uploads))
 
 
@@ -67,13 +75,14 @@ def sidebar() -> None:
     except ValueError as error:
         st.caption(str(error))
     modes = ["Deterministic", config.model] if config else ["Deterministic"]
-    mode = st.selectbox("Execution mode", modes, key="execution_mode")
+    mode = st.selectbox("Modalità di analisi", modes, format_func=lambda value: MODALITA.get(value, value),
+                        key="execution_mode")
     if config and mode == config.model:
-        st.caption("Local model · tool calling" if config.local else
-                   "The configured endpoint receives questions, selected evidence and tool results.")
+        st.caption("Modello locale con accesso agli strumenti" if config.local else
+                   "L’endpoint configurato riceve le domande, le fonti selezionate e i risultati degli strumenti.")
     else:
-        st.caption("Offline analytical tools")
-    st.html('<div class="sidebar-caption">Europe/Rome · Independent proof of concept</div>')
+        st.caption("Calcoli locali senza modello")
+    st.html('<div class="sidebar-caption">Europe/Rome · Prototipo indipendente</div>')
 
 
 def reasoner() -> CompatibleReasoner | None:
@@ -96,47 +105,63 @@ class Selection:
     @property
     def meta(self) -> str:
         if not self.bundle:
-            return chip("SOURCE UNAVAILABLE", "failed") + f" <span>{escape(self.name)}</span>"
+            return chip("FONTE NON DISPONIBILE", "failed") + f" <span>{escape(self.name)}</span>"
         origin = self.bundle.origin
-        grain = "Italian gas days · GWh/day" if origin.grain == "daily" else "Italian inland consumption · GWh/month"
+        grain = "Italia · GWh/giorno gas" if origin.grain == "daily" else "Italia · GWh/mese"
+        if origin.archive:
+            grain += " · 2015–2021"
         return f"{kind_tag(origin.kind)} <span>{grain}</span>"
+
+
+def _choose_source(page: str, source: str) -> None:
+    st.session_state["selected_source"] = source
+    st.session_state[f"{page}_dataset"] = source
 
 
 def source_filters(page: str, *, lookback: bool = True) -> Selection:
     ctrl = st.columns([2.25, 1.4, 1.8, 1.3] if lookback else [2.25, 1.8, 1.3], vertical_alignment="bottom")
-    stored = st.session_state.get("selected_source", DEMO)
+    stored = st.session_state.get("selected_source", PUBLIC)
     with ctrl[0]:
-        name = st.selectbox("Dataset", SOURCE_CHOICES, index=SOURCE_CHOICES.index(stored), key=f"{page}_dataset")
+        name = st.selectbox("Fonte dati", SOURCE_CHOICES, index=SOURCE_CHOICES.index(stored) if stored in SOURCE_CHOICES else 0,
+                            key=f"{page}_dataset")
     st.session_state["selected_source"] = name
-    grain = "daily" if name == DEMO else "monthly"
+    grain = "monthly" if name == PUBLIC else "daily"
     periods = 90 if grain == "daily" else 24
     if lookback:
         with ctrl[1]:
-            windows = {"30D": 30, "90D": 90, "180D": 180, "1Y": 365} if grain == "daily" else {
-                "12M": 12, "24M": 24, "36M": 36, "60M": 60,
+            windows = {"30 giorni": 30, "90 giorni": 90, "180 giorni": 180, "1 anno": 365} if grain == "daily" else {
+                "12 mesi": 12, "24 mesi": 24, "36 mesi": 36, "60 mesi": 60,
             }
-            window = st.selectbox("Chart lookback", tuple(windows), index=1, key=f"{page}_window_{grain}")
+            window = st.selectbox("Periodo del grafico", tuple(windows), index=1, key=f"{page}_window_{grain}")
             periods = windows[window]
     with ctrl[-2]:
         previous = assumptions()
-        model = st.selectbox("Forecast model", MODELS, index=MODELS.index(previous.model), key=f"{page}_model")
+        model = st.selectbox("Modello previsionale", MODELS, index=MODELS.index(previous.model),
+                             format_func=MODELLI.__getitem__, key=f"{page}_model")
         save_assumptions(previous.model_copy(update={"model": model}))
     with ctrl[-1]:
         if name == PUBLIC:
-            refresh = st.button("Refresh source", icon=":material/refresh:", width="stretch", key=f"{page}_refresh")
+            refresh = st.button("Aggiorna fonti", icon=":material/refresh:", width="stretch", key=f"{page}_refresh")
         else:
             refresh = False
-            rows_label = "06:00 local gas-day boundary"
-            st.caption(rows_label)
+            st.caption("Giorno gas dalle 06:00 locali")
     if name == DEMO:
         bundle = fixture()
+    elif name == ARCHIVE:
+        bundle = archive()
     else:
         try:
-            with st.spinner("Loading Eurostat observations..."):
-                bundle = load(database(), refresh=refresh)
+            with st.spinner("Caricamento dei dati Eurostat e ARERA…"):
+                bundle, warning = load_monthly(database(), refresh=refresh)
+            if warning:
+                st.warning(warning)
         except SourceUnavailable as error:
             st.error(str(error))
+            left, right = st.columns(2)
+            left.button("Apri archivio pubblico JRC", on_click=_choose_source, args=(page, ARCHIVE), key=f"{page}_archive")
+            right.button("Usa dati di esempio", on_click=_choose_source, args=(page, DEMO), key=f"{page}_demo")
             bundle = None
+    st.session_state["active_bundle"] = bundle
     return Selection(name, model, periods, bundle)
 
 
@@ -167,7 +192,7 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
     if selection.bundle is None:
         return None
     context = MarketContext(selection.bundle, selection.model, utc_now())
-    status = st.status("Supervisor running", expanded=True)
+    status = st.status("Supervisore in esecuzione", expanded=True)
     stage = status.empty()
     stage.html(steps(None, grid=True))
     try:
@@ -178,7 +203,7 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
         )
     except ValueError as error:
         LOG.info("Invalid workflow request (%s)", type(error).__name__)
-        status.update(label="Check analysis inputs", state="error")
+        status.update(label="Verifica i dati di ingresso", state="error")
         status.write(str(error))
         return None
     st.session_state["last_run"] = report
@@ -186,7 +211,7 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
         database().save(report)
     except (OSError, RuntimeError, sqlite3.Error):
         LOG.exception("Could not persist GasOps run")
-        st.warning("The run is available in this session. Local history could not be saved.")
+        st.warning("Esecuzione disponibile in questa sessione. Salvataggio nello storico locale non riuscito.")
     state = "error" if any(step.status == "failed" for step in report.steps.values()) else "complete"
-    status.update(label=f"{report.mode} · {local_time(report.finished_at)}", state=state, expanded=False)
+    status.update(label=f"{MODALITA[report.mode]} · {local_time(report.finished_at)}", state=state, expanded=False)
     return report

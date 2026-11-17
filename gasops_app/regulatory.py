@@ -27,14 +27,14 @@ def cite(document: str, page: int, section: str, evidence: str) -> Citation:
 
 
 SETTLEMENT_NOTE = cite(
-    NETWORK, 394, "Ch. 9 §4.4.2",
-    "A negative user imbalance is valued using the buy price and a positive imbalance using the sell price. "
-    "The code defines separate prices in the preceding section.",
+    NETWORK, 394, "Cap. 9 §4.4.2",
+    "Per uno sbilanciamento negativo si applica il prezzo di acquisto. Per uno positivo si usa il "
+    "prezzo di vendita. Il paragrafo precedente definisce i due prezzi.",
 )
 BALANCING_NOTE = cite(
-    NETWORK, 358, "Ch. 9 §1",
-    "Commercial balancing covers how users match their network injections and withdrawals, plus the "
-    "accounting, allocation and economic incentives that support balancing.",
+    NETWORK, 358, "Cap. 9 §1",
+    "Il bilanciamento commerciale comprende le azioni degli utenti per allineare immissioni e "
+    "prelievi, la contabilizzazione e l’allocazione del gas e i corrispettivi che incentivano l’equilibrio.",
 )
 
 
@@ -47,85 +47,84 @@ class Case:
 
 REGISTER = (
     Case(Finding(
-        id="notice-7", title="Exactly seven days’ notice", severity="high",
-        detail="Both tables skip the equality case. The charge or compensation cannot be derived for "
-               "exactly seven days from these tables. Escalate the coefficient selection for review.",
-        category="Confirmed textual omission",
+        id="notice-7", title="Preavviso di esattamente sette giorni", severity="high",
+        detail="Le due tabelle passano da 8 giorni a meno di 7. Il coefficiente per sette giorni esatti "
+               "resta da verificare prima di calcolare il corrispettivo.",
+        category="Omissione testuale confermata",
         citations=[
-            cite(PIOMBINO, 103, "Ch. 10 §1.1.1", "User-side table lists 12, 11, 10, 9, 8 and <7 days."),
-            cite(PIOMBINO, 104, "Ch. 10 §1.1.2", "Operator-side table uses the same notice boundaries."),
+            cite(PIOMBINO, 103, "Cap. 10 §1.1.1", "La tabella lato utente elenca 12, 11, 10, 9, 8 e <7 giorni."),
+            cite(PIOMBINO, 104, "Cap. 10 §1.1.2", "La tabella lato operatore usa gli stessi intervalli di preavviso."),
         ],
-    ), "Tables verified · interpretation open", "cancellazione mancata discarica preavviso sette giorni coefficiente"),
+    ), "Tabelle verificate · interpretazione aperta", "cancellazione mancata discarica preavviso sette giorni coefficiente"),
     Case(Finding(
-        id="panigaglia", title="Panigaglia in the Piombino glossary", severity="medium",
-        detail="The entry for SRG mentions the network’s Panigaglia connection. A separate entry defines "
-               "the Piombino entry point. Check intended scope before mapping the glossary to terminal data.",
-        category="Unresolved ambiguity",
-        citations=[cite(PIOMBINO, 7, "Glossary (Glo-3)",
-                        "Panigaglia appears under Snam Rete Gas on the same page as the Piombino entry-point definition.")],
-    ), "Text verified · intended reference open", "panigaglia interconnessa terminale riferimento glossario"),
+        id="panigaglia", title="Panigaglia nel glossario di Piombino", severity="medium",
+        detail="La voce Snam Rete Gas cita il collegamento con Panigaglia. Un’altra voce definisce "
+               "il punto di entrata di Piombino. L’ambito del rinvio va chiarito prima di associarlo ai dati del terminale.",
+        category="Ambiguità aperta",
+        citations=[cite(PIOMBINO, 7, "Glossario (Glo-3)",
+                        "La definizione di Snam Rete Gas cita Panigaglia nella stessa pagina della voce sul punto di entrata di Piombino.")],
+    ), "Testo verificato · riferimento da chiarire", "panigaglia interconnessa terminale riferimento glossario"),
     Case(Finding(
-        id="density", title="Density symbol reused for two quantities", severity="medium",
-        detail="The same symbol labels dimensionless relative density and mass density in kg/Sm³. "
-               "A parser must keep those fields separate for the Wobbe calculation.",
-        category="Confirmed notation conflict",
+        id="density", title="Stesso simbolo per due misure di densità", severity="medium",
+        detail="Il simbolo dr indica sia la densità relativa adimensionale sia la massa volumica in kg/Sm³. "
+               "Per calcolare l’indice di Wobbe occorre tenere distinte le due grandezze.",
+        category="Conflitto di notazione confermato",
         citations=[
-            cite(PIOMBINO, 125, "Ch. 12 §2.1", "The page defines two different quantities as dr and uses dr under the square root in the Wobbe formula."),
-            cite(NETWORK, 644, "Glossary (Glo-4)", "The Wobbe definition refers to the square root of relative density."),
+            cite(PIOMBINO, 125, "Cap. 12 §2.1", "La pagina usa dr per due quantità distinte e lo inserisce sotto radice nella formula di Wobbe."),
+            cite(NETWORK, 644, "Glossario (Glo-4)", "La definizione di Wobbe rimanda alla radice quadrata della densità relativa."),
         ],
-    ), "Notation checked · mapping needs review", "densità relativa massa volumica formula wobbe notation"),
+    ), "Notazione verificata · associazione da rivedere", "densità relativa massa volumica formula wobbe notation"),
     Case(Finding(
-        id="references", title="Circular and mismatched paragraph references", severity="medium",
-        detail="A self-reference and a mismatched transport billing pointer can send a reader to the "
-               "wrong tariff. Confirm the intended targets before applying any provision.",
-        category="Confirmed textual error",
+        id="references", title="Riferimenti circolari e incoerenti tra paragrafi", severity="medium",
+        detail="Un rinvio circolare e un riferimento incoerente per i corrispettivi di trasporto possono portare "
+               "alla tariffa sbagliata. Occorre individuare i riferimenti corretti prima di applicare le disposizioni.",
+        category="Errore testuale confermato",
         citations=[
-            cite(PIOMBINO, 112, "Ch. 10 §4.1", "The clause refers back to the preceding §4.1 while itself numbered §4.1."),
-            cite(PIOMBINO, 148, "Ch. 18 §2(b)", "The transport capacity billing bullet points to Ch. 10 §4.2."),
-            cite(PIOMBINO, 109, "Ch. 10 §3.1", "The transport charges subsection is §3.1. §4.2 concerns LNG volume deviation on PDF p. 112."),
+            cite(PIOMBINO, 112, "Cap. 10 §4.1", "Il §4.1 rimanda a un precedente §4.1."),
+            cite(PIOMBINO, 148, "Cap. 18 §2(b)", "La fatturazione della capacità di trasporto rimanda al Cap. 10 §4.2."),
+            cite(PIOMBINO, 109, "Cap. 10 §3.1", "Il §3.1 tratta i corrispettivi di trasporto. Il §4.2 riguarda scostamenti dei volumi di GNL a p. 112 del PDF."),
         ],
-    ), "References checked · intended targets open", "riferimenti circolari precedente paragrafo fatturazione trasporto"),
+    ), "Rinvii verificati · riferimenti da chiarire", "riferimenti circolari precedente paragrafo fatturazione trasporto"),
     Case(Finding(
-        id="tariff-units", title="Capacity tariff unit needs reconciliation", severity="medium",
-        detail="The fee multiplies an assignment tariff by a daily capacity. Confirm the unit and time "
-               "basis of the tariff from the applicable assignment procedure before deriving an amount in euros.",
-        category="Unresolved ambiguity",
+        id="tariff-units", title="Unità della tariffa di capacità da verificare", severity="medium",
+        detail="La formula moltiplica una tariffa di assegnazione per una capacità giornaliera. "
+               "L’unità e la base temporale della tariffa vanno verificate nella procedura applicabile.",
+        category="Ambiguità aperta",
         citations=[
-            cite(PIOMBINO, 103, "Ch. 10 §§1.1.1–1.1.2",
-                 "The missed-unloading calculation uses T × α × C × Cd. This passage gives a daily basis for Cd and refers to Ch. 5 for C."),
-            cite(PIOMBINO, 108, "Ch. 10 §3", "The base charge text describes a separate application to contracted LNG quantities per slot."),
+            cite(PIOMBINO, 103, "Cap. 10 §§1.1.1–1.1.2",
+                 "Il mancato scarico usa T × α × C × Cd. La capacità Cd è giornaliera e per C si rimanda al Cap. 5."),
+            cite(PIOMBINO, 108, "Cap. 10 §3", "Il corrispettivo base si applica alle quantità di GNL contrattualizzate per slot."),
         ],
-    ), "Formula checked · unit basis open", "tariffa unità corrispettivo capacità dimensionale assignment tariff units"),
+    ), "Formula verificata · unità da chiarire", "tariffa unità corrispettivo capacità dimensionale assignment tariff units"),
     Case(Finding(
-        id="dst-gas-day", title="23, 24 and 25 elapsed hours", severity="medium",
-        detail="The glossary names both a 24-hour duration and consecutive 06:00 boundaries. In "
-               "Europe/Rome the boundaries are 23 and 25 elapsed hours across seasonal clock changes. "
-               "The dashboard derives elapsed time from the UTC boundaries.",
-        category="Potential implementation risk",
-        citations=[cite(NETWORK, 644, "Glossary (Glo-4)",
-                        "The definition specifies 24 consecutive hours and starts and ends at 06:00 local calendar time.")],
-    ), "Definition and calendar checked · accounting treatment open", "gas day giorno gas cambio ora ora legale daylight saving 23 25"),
+        id="dst-gas-day", title="Giorni gas di 23, 24 e 25 ore effettive", severity="medium",
+        detail="Il glossario indica 24 ore e due estremi consecutivi alle 06:00. Con il cambio d’ora in "
+               "Europe/Rome gli estremi distano 23 o 25 ore effettive. L’app calcola la durata sugli estremi UTC.",
+        category="Rischio di implementazione",
+        citations=[cite(NETWORK, 644, "Glossario (Glo-4)",
+                        "Il giorno gas è definito come un periodo di 24 ore consecutive tra le 06:00 di due giorni di calendario.")],
+    ), "Definizione e calendario verificati · modalità contabile da chiarire", "gas day giorno gas cambio ora ora legale daylight saving 23 25"),
     Case(Finding(
-        id="accounting-zero", title="Missing allocation data recorded as zero", severity="info",
-        detail="The accounting default applies to the specified transport balance. Preserve the absence "
-               "of source data as an independent flag so the allocated zero cannot be read as a measured zero.",
-        category="Regulatory accounting convention",
+        id="accounting-zero", title="Dati mancanti valorizzati a zero nell’allocazione", severity="info",
+        detail="Il valore contabile si applica al bilancio previsto dalla disposizione. "
+               "Conviene conservare un flag per i dati assenti che identifichi l’origine dello zero.",
+        category="Convenzione contabile",
         citations=[
-            cite(NETWORK, 391, "Ch. 9 §4.3.4.1",
-                 "Where the required SII user data are missing, provisional withdrawals at that point are allocated as zero."),
-            cite(NETWORK, 392, "Ch. 9 §4.3.4.2", "The definitive process sets zero in its specified missing-data case as well."),
+            cite(NETWORK, 391, "Cap. 9 §4.3.4.1",
+                 "Quando mancano le informazioni SII previste, al prelievo provvisorio per quel punto si attribuisce zero."),
+            cite(NETWORK, 392, "Cap. 9 §4.3.4.2", "Il bilancio definitivo prevede a sua volta uno zero nel caso specificato."),
         ],
-    ), "Documented choice · namespace accounting zero", "zero dati mancanti missing data allocazione bilancio provvisorio"),
+    ), "Convenzione documentata · zero contabile", "zero dati mancanti missing data allocazione bilancio provvisorio"),
     Case(Finding(
-        id="zero-denominator", title="Proportional allocation with zero total", severity="medium",
-        detail="A proportional calculation is undefined when its total denominator is zero. Neither "
-               "cited example supplies a zero-total result. Route the edge case for review before calculating.",
-        category="Potential implementation risk",
+        id="zero-denominator", title="Allocazione proporzionale con totale pari a zero", severity="medium",
+        detail="Il calcolo proporzionale è indefinito quando il denominatore vale zero. "
+               "I passaggi citati coprono il caso con un totale positivo. Il caso limite richiede una verifica.",
+        category="Rischio di implementazione",
         citations=[
-            cite(NETWORK, 417, "Annex 9/A §1.1", "The proportional allocation example assumes a positive sum of transport programmes."),
-            cite(PIOMBINO, 111, "Ch. 10 §3.1", "The transport capacity fee share divides by Qtot for the period."),
+            cite(NETWORK, 417, "Allegato 9/A §1.1", "L’esempio di ripartizione proporzionale ha una somma positiva dei programmi di trasporto."),
+            cite(PIOMBINO, 111, "Cap. 10 §3.1", "Il corrispettivo di capacità usa Qtot come divisore per il periodo."),
         ],
-    ), "Formula checked · zero-total handling open", "pro quota proportional zero denominator denominatore qt ot"),
+    ), "Formula verificata · gestione del totale nullo da chiarire", "pro quota proportional zero denominator denominatore qt ot"),
 )
 
 
@@ -195,11 +194,11 @@ class Library:
     @staticmethod
     def _extract(name: str, data: bytes) -> tuple[Pdf, list[Passage]]:
         if len(data) > MAX_PDF_BYTES or not data.startswith(b"%PDF-"):
-            raise ValueError("Expected a PDF up to 24 MB")
+            raise ValueError("Carica un PDF fino a 24 MB")
         passages: list[Passage] = []
         with pymupdf.open(stream=data, filetype="pdf") as document:
             if document.needs_pass or not 1 <= len(document) <= MAX_PAGES:
-                raise ValueError("Expected an unlocked PDF with 1–800 pages")
+                raise ValueError("Carica un PDF senza password da 1 a 800 pagine")
             pdf = Pdf(name, sha256(data).hexdigest(), data, len(document))
             for page in document:
                 text = " ".join(page.get_text(sort=True).split())
@@ -214,7 +213,7 @@ class Library:
                         is_pdf=True,
                     ))
         if not passages:
-            raise ValueError("No extractable text. Use a searchable PDF.")
+            raise ValueError("Testo non estraibile. Usa un PDF con testo ricercabile.")
         return pdf, passages
 
     def search(self, query: str, limit: int = 5, document: str | None = None) -> list[Passage]:

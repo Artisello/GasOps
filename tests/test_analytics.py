@@ -4,7 +4,7 @@ from decimal import Decimal
 import pandas as pd
 import pytest
 
-from gasops_app.data import synthetic, utc_starts
+from gasops_app.data import Bundle, synthetic, utc_starts
 from gasops_app.finance import ScenarioCase, ScenarioInput, SettlementInput, scenario, settle
 from gasops_app.forecast import forecast
 from gasops_app.models import Kind
@@ -25,6 +25,15 @@ def test_fixture_quarantines_bad_observations_without_imputation():
     assert pd.notna(analysis.usable.loc["2026-11-03", "demand_gwh"])
     assert analysis.usable.loc["2026-10-13"].isna().all()
     assert analysis.usable.loc["2026-11-16", "demand_gwh"] == 2348.4
+
+
+def test_quality_keeps_published_values_flagged_as_statistically_unusual():
+    fixture = synthetic()
+    published = Bundle(fixture.rows, fixture.origin.model_copy(update={"kind": Kind.HISTORICAL}), fixture.fingerprint)
+    analysis = inspect(published, NOW)
+    finding = next(item for item in analysis.findings if item.id == "outlier-supply_gwh")
+    assert finding.severity == "info"
+    assert pd.notna(analysis.usable.loc["2026-11-03", "supply_gwh"])
 
 
 @pytest.mark.parametrize(("start", "expected"), [("2026-03-28", 23), ("2026-10-24", 25), ("2026-11-16", 24)])
@@ -72,8 +81,14 @@ def test_scenario_storage_and_zero_demand():
     assert stress.imbalance_gwh == D(-35)
     assert stress.gap_value_eur == D("-1225000.00")
     assert scenario(case, ScenarioInput(demand_pct=-100)).coverage_pct is None
-    with pytest.raises(ValueError, match="Storage is a component"):
+    with pytest.raises(ValueError, match="stoccaggio"):
         scenario(case.model_copy(update={"storage_gwh": D(100)}), ScenarioInput())
+
+
+def test_settlement_accepts_italian_decimal_separator():
+    result = settle(SettlementInput(delivered="8.800,5", withdrawn="10.000,5", buy_eur_mwh="42,125"))
+    assert result.imbalance_mwh == D("-1200.0")
+    assert result.cash_flow_eur == D("-50550.00")
 
 
 @pytest.mark.parametrize("model", ["Seasonal regression", "Seasonal naive"])

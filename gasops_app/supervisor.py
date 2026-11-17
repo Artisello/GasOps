@@ -70,11 +70,11 @@ def _execute_batch(
                 LOGGER.exception("GasOps tool failed for %s", agent)
                 result = Result(
                     agent=agent, status="failed",
-                    summary="Execution failed. Check the local application log for details.",
+                    summary="Esecuzione non riuscita. I dettagli sono nel registro locale dell’app.",
                     findings=[Finding(
-                        id=f"execution-{agent}", title=f"{AGENT_LABELS[agent]} failed",
-                        severity="high", detail="The tool returned no validated output.",
-                        category="Execution",
+                        id=f"execution-{agent}", title=f"Errore nell’agente {AGENT_LABELS[agent]}",
+                        severity="high", detail="Lo strumento non ha restituito risultati validi.",
+                        category="Esecuzione",
                     )],
                 )
             run.results[agent] = result
@@ -86,7 +86,7 @@ def _execute_batch(
 def _fallback(run: Run, stage: str, error: Exception) -> None:
     LOGGER.warning("Model %s failed (%s)", stage, type(error).__name__)
     run.mode = "Deterministic fallback"
-    run.warnings.append(f"Model {stage} unavailable. The report uses validated tool results.")
+    run.warnings.append(f"Modello non disponibile nella fase di {stage}. Il rapporto usa i risultati validati.")
 
 
 def _gated_batch(run: Run, calls: dict[Agent, Call], tools: Mapping[Agent, Tool],
@@ -118,7 +118,7 @@ def execute(
                 raise ValueError("No analytical tool was selected")
             calls = {**proposed, **{key: call for key, call in calls.items() if key in required}}
         except Exception as error:
-            _fallback(run, "routing", error)
+            _fallback(run, "selezione degli strumenti", error)
 
     _gated_batch(run, calls, tools, notify)
 
@@ -130,7 +130,7 @@ def execute(
             }
             _gated_batch(run, followups, tools, notify)
         except Exception as error:
-            _fallback(run, "tool review", error)
+            _fallback(run, "verifica degli strumenti", error)
 
     findings = [finding for result in run.results.values() for finding in result.findings]
     findings.extend(validate(run))
@@ -139,14 +139,14 @@ def execute(
     summary = [run.results[agent].summary for agent in Agent if agent in run.results]
     review_count = sum(finding.severity in {"high", "medium"} for finding in run.findings)
     if review_count:
-        summary.append(f"Human review requested for {review_count} finding(s).")
+        summary.append(f"Revisione richiesta per {review_count} rilievi.")
     run.summary = " ".join(summary)
 
     if reasoner and run.mode == "LLM-assisted":
         try:
             run.interpretation, run.interpretation_sources = reasoner.summarize(run)
         except Exception as error:
-            _fallback(run, "summary", error)
+            _fallback(run, "sintesi", error)
 
     run.finished_at = utc_now()
     notify(run)

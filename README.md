@@ -1,10 +1,10 @@
 # GasOps AI
 
-Local decision support for Italian natural gas markets. GasOps AI is an independent, read-only proof of concept with five Streamlit views for market monitoring, forecasting, settlement, regulatory research and agent operations.
+Strumento indipendente in sola lettura per analizzare il mercato italiano del gas. La dashboard Streamlit include panoramica, previsioni, simulazioni di bilanciamento e regolazione, ricerca normativa e un centro operativo per sei agenti.
 
-## Start locally
+## Avvio locale
 
-Use Python 3.12 or newer from the repository directory.
+Da questa cartella usa Python 3.12 o successivo.
 
 ```sh
 python -m venv .venv
@@ -13,30 +13,32 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Open the URL printed by Streamlit and select **Run AI Market Analysis**. The offline dataset, forecasting, simulations and reviewed edition notes work without network access or a model. The [three-minute demo](DEMO.md) walks through the workflow. Unit tests and the dashboard smoke test run with `python -m pytest -q`.
+La panoramica parte dal bilancio mensile italiano. **Avvia analisi di mercato AI** esegue i controlli qualità, le previsioni, la ricerca documentale e le simulazioni con verifica dei risultati. L’analisi funziona anche senza un modello linguistico. La [guida di tre minuti](DEMO.md) mostra anche le opzioni offline. Esegui i test con `python -m pytest -q`.
 
-The original CLI remains available with `python gasops.py example.json` and `python -m unittest -v`.
+Il prototipo CLI originale è disponibile con `python gasops.py example.json` e `python -m unittest -v`.
 
-## Sources and scope
+## Fonti e unità
 
-- **Offline demo** covers 420 Italian gas days with annual and weekly seasonality and deliberate data defects. Storage and prices are simulated. The data quality gate quarantines invalid or conflicting records and marks missing periods without imputing zero.
-- **Eurostat** supplies monthly Italian observed inland natural gas consumption, including publication flags. GasOps converts gross-calorific-value TJ to GWh and retains the schema, source timestamps and original retrieval time in an eight-hour SQLite cache. A failed refresh shows a previously verified cache with an explicit status, or a source error. [Eurostat series](https://doi.org/10.2908/nrg_cb_gasm) · [Statistics API guide](https://ec.europa.eu/eurostat/web/user-guides/data-browser/api-data-access/api-getting-started/api)
-- **Source research** found daily operational reports in Snam Jarvis, market and balancing price publications at GME, a public ENTSOG network-flow API, and a registered AGSI storage API. Open-Meteo publishes weather reanalysis suitable for a future demand-covariate study. The verified integration in this release is Eurostat. [Snam commercial information](https://www.snam.it/it/i-nostri-business/trasporto/informazioni-commerciali.html) · [GME API guide](https://www.mercatoelettrico.org/Portals/0/Documents/en-US/20251015Manuale_tecnico_API_En.pdf) · [ENTSOG API manual](https://transparency.entsog.eu/api/archiveDirectories/8/api-manual/ENTSOG_TP_API_UserManual_v3.0.pdf) · [AGSI API guide](https://www.gie.eu/transparency-platform/GIE_API_documentation_v007.pdf) · [Open-Meteo archive](https://open-meteo.com/en/docs/historical-weather-api)
+| Vista | Misure | Frequenza |
+| --- | --- | --- |
+| **Eurostat + ARERA** | Consumo interno osservato, disponibilità contabile, produzione, importazioni, esportazioni, scorte e media del PSV day-ahead (CMEM,m) | Mensile · GWh e €/MWh |
+| **JRC** | Consumi italiani nazionali, industriali, per generazione elettrica e per il settore residenziale e commerciale. Archivio 2015–2021 disponibile offline | Giornaliera · GWh/giorno gas |
+| **Dati di esempio** | 420 giorni simulati con stagionalità e anomalie note. Include offerta, stoccaggio e prezzo di esempio | Giornaliera · GWh e €/MWh |
 
-Eurostat covers consumption only. Supply, storage, market prices and same-period aggregate balance are unavailable in that view. Participant settlement always uses explicitly supplied hypothetical volumes and buy/sell prices. Aggregate gap is supply minus demand and coverage is supply divided by demand. Both are screening indicators. The app uses 06:00 Europe/Rome gas-day starts and UTC timestamps, preserving elapsed daylight saving hours.
+Eurostat fornisce il consumo osservato (IC_OBS) e quello calcolato (IC_CAL_MG) secondo MOS GAS. La dashboard usa il secondo come disponibilità contabile, con un’unità comune di GWh (TJ a PCS ÷ 3,6). Le importazioni nette sottraggono le esportazioni. La variazione delle scorte è positiva in accumulo. Il prelievo netto nello scenario usa max(0, −variazione delle scorte). [Serie Eurostat](https://doi.org/10.2908/nrg_cb_gasm) · [Definizioni del bilancio mensile](https://eur-lex.europa.eu/eli/reg/2017/2010/oj/eng)
 
-The forecast compares a seasonal naive baseline and a seasonal ridge regression. Walk-forward estimates use only earlier observations. When a horizon has at least 20 out-of-sample errors, the band uses their 10th and 90th percentiles. The chart lookback changes the visible range.
+La componente CMEM,m di ARERA rappresenta il riferimento mensile del PSV day-ahead e viene associata ai volumi dello stesso mese civile. I prezzi di acquisto e vendita per la regolazione del singolo partecipante sono ipotesi modificabili. L’analisi dell’esposizione usa la precisione decimale. [Tabella ufficiale ARERA](https://www.arera.it/area-operatori/prezzi-e-tariffe/valore-cmemm-vulnerabili)
 
-## Regulatory evidence
+L’archivio locale `data/jrc/IT.v1.1.csv` è il file originale italiano del dataset ENaGaD v1.1. I dati sono attribuiti a Nicola Zaccarelli, Sergio Giaccaria, Maksims Feofilovs e Ricardo Bolado-Lavín, Joint Research Centre della Commissione europea, con osservazioni di fonte Snam. Il file conserva la sua intestazione, la licenza e i flag della fonte. [Dataset v1.1](https://doi.org/10.5281/zenodo.6364875) · [Metodologia JRC](https://doi.org/10.2760/497677) · [Licenza CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
 
-Upload searchable PDFs in **Regulatory Intelligence** or place local copies in `data/regulatory/`. `GASOPS_PDF_DIR` can point to another local directory. This checkout recognizes the reviewed copies by SHA-256. The register and cited edition notes ship with the app so the demo remains reproducible. Full text retrieval and page viewing use the local originals.
+La dashboard indica l’ultimo periodo di ogni fonte, i flag pubblicati e lo stato della cache. Se un aggiornamento fallisce, può usare l’ultima copia verificata con la data originale. I prezzi mancanti rimangono vuoti. Quando mancano volumi allineati per uno scenario, l’app indica una base interamente di esempio. Le simulazioni restano separate dalle osservazioni.
 
-The register covers the 2023-I Piombino regasification code and Network Code Rev. XCII. It identifies the exact-page evidence, classifications and interpretations that require review. Applicability and approved revisions require independent verification. The application keeps source PDFs out of Git.
+La previsione confronta un riferimento stagionale e una regressione stagionale. La valutazione cronologica usa solo osservazioni antecedenti alla stima. Le bande empiriche richiedono almeno 20 errori fuori campione per orizzonte. Il giorno gas inizia alle 06:00 Europe/Rome e le date di calcolo sono in UTC.
 
-## Optional model and local state
+## Fonti normative e modello opzionale
 
-Copy `.env.example` to `.env`, set `GASOPS_LLM_MODEL` and the compatible base URL, then choose that model from **Execution mode**. Ollama uses its local `/v1` endpoint and requires an installed model with tool-calling support. An HTTPS OpenAI-compatible endpoint may use `GASOPS_LLM_API_KEY`. Selecting an external model sends the analyst question and selected tool evidence to that configured endpoint.
+Carica PDF con testo ricercabile su **Analisi normativa** o colloca le copie in `data/regulatory/`. Puoi anche indicare `GASOPS_PDF_DIR`. Il registro include riferimenti alle edizioni di Piombino 2023-I e Codice di Rete XCII. L’applicabilità attuale richiede verifica. I PDF originali restano locali.
 
-The supervisor quality-gates data tools, runs independent calls in parallel and validates results before reporting. A configured model can choose bounded tool calls, request one follow-up round and interpret cited tool results. Calculations stay in Python. Provider failure falls back to the deterministic workflow or its validated results.
+Per abilitare un modello, copia `.env.example` in `.env`, imposta `GASOPS_LLM_MODEL` e l’URL compatibile, quindi seleziona il modello in **Modalità di analisi**. Ollama usa l’endpoint locale `/v1` e richiede un modello con chiamate a strumenti. Un endpoint HTTPS compatibile può usare `GASOPS_LLM_API_KEY`. La modalità esterna trasmette all’endpoint configurato domande, risultati ed estratti selezionati.
 
-The app binds to loopback. Cache, run history and review acknowledgements are stored in local SQLite under `.gasops/`, configurable via `GASOPS_STATE_DIR`. The Ops Centre exports JSON and Markdown with provenance, assumptions and findings.
+Gli agenti eseguono calcoli deterministici e salvano fonti, storico e revisioni in SQLite sotto `.gasops/`. `GASOPS_STATE_DIR` permette di cambiare la cartella. Il **Centro operativo AI** esporta JSON e Markdown.

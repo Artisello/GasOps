@@ -10,41 +10,41 @@ from .models import Agent, Finding, Run
 from .regulatory import Library
 from .supervisor import Arguments, Call, Reasoner, execute
 
-DAILY_BRIEFING = "Daily gas market operations briefing"
-OFFLINE_REGULATION_QUERY = "Exactly seven days’ cancellation notice coefficient T Piombino"
+DAILY_BRIEFING = "Bollettino sul mercato del gas"
+OFFLINE_REGULATION_QUERY = "Preavviso di esattamente sette giorni per mancata discarica · coefficiente T Piombino"
 
 INTENTS = {
-    Agent.QUALITY: r"anomal|quality|qualità|missing|duplicat|outlier|stale|freshness|timestamp",
-    Agent.MARKET: r"demand|demand drivers|domanda|consum|supply|offerta|mercat|market|price|prezz|week|settiman",
-    Agent.FORECAST: r"forecast|prevision|expected|squilibri|sbilanciamento|balancing|copertura|coverage",
-    Agent.SETTLEMENT: r"settlement|exposure|esposizione|cash.flow|fattura|buy.*sell",
+    Agent.QUALITY: r"anomal|quality|qualità|missing|mancant|duplicat|outlier|stale|freshness|timestamp",
+    Agent.MARKET: r"demand|domanda|consum|supply|offerta|mercat|market|price|prezz|week|settiman|importaz|psv",
+    Agent.FORECAST: r"forecast|prevision|expected|squilibri|balancing|bilanciamento|copertura|coverage",
+    Agent.SETTLEMENT: r"settlement|regolazione|exposure|esposizione|cash.flow|flusso di cassa|fattura|buy.*sell",
     Agent.REGULATORY: r"regolament|regulatory|network code|codice|piombino|panigaglia|discarica|coefficient"
-                      r"|cancellation|inconsisten|density|densità|denominat|normativ",
-    Agent.SCENARIO: r"what if|what happens|scenario|stress|se la domanda|aumento|aumenta|increases by|decreases by|\d ?%",
+                      r"|cancellation|inconsisten|incongruenz|density|densità|denominat|normativ",
+    Agent.SCENARIO: r"what if|what happens|scenario|stress|simula|se la domanda|aumento|aumenta|increases by|decreases by|\d ?%",
 }
 
 
 def _scenario_args(question: str) -> ScenarioArguments:
     changes = {}
-    for key, terms in {"demand_pct": "demand|domanda|consumo", "supply_pct": "supply|offerta",
+    for key, terms in {"demand_pct": "demand|domanda|consum[oi]", "supply_pct": "supply|offerta",
                        "storage_pct": "storage|stoccaggio"}.items():
         match = re.search(rf"\b(?:{terms})\b([^\d+-]{{0,33}})([+-]?\d+(?:[.,]\d+)?)\s*%", question, re.I)
         # Prevent an adjustment from being assigned to an earlier variable in a combined request.
         if match and not re.search(r"\b(demand|domanda|supply|offerta|storage|stoccaggio)\b", match[1], re.I):
             amount = Decimal(match[2].replace(",", "."))
-            reduced = re.search(r"decreas|reduc|fall|drop|declin|riduz|diminui|cal[oa]", match[1], re.I)
+            reduced = re.search(r"decreas|reduc|fall|drop|declin|ridu[cz]|diminui|cal[oa]", match[1], re.I)
             changes[key] = -amount if reduced and amount > 0 else amount
     return ScenarioArguments(**changes)
 
 
 def plan(question: str, full: bool) -> list[Call]:
-    briefing = full or bool(re.search(r"briefing|readout|daily gas market|report giornalier", question, re.I))
+    briefing = full or bool(re.search(r"briefing|readout|daily gas market|report giornalier|bollettino", question, re.I))
     targets = set(Agent) if briefing else {
         agent for agent, pattern in INTENTS.items() if re.search(pattern, question, re.I)
     }
     if not briefing and Agent.REGULATORY in targets and re.search(r"define|defini[sz]|meaning", question, re.I):
         targets.discard(Agent.FORECAST)
-    if Agent.SETTLEMENT in targets and not briefing and not re.search(r"\d+\s*%|demand|domanda|storage", question, re.I):
+    if Agent.SETTLEMENT in targets and not briefing and not re.search(r"\d+\s*%|demand|domanda|storage|stoccaggio", question, re.I):
         targets.discard(Agent.SCENARIO)
     if not targets:
         targets = {Agent.MARKET}
@@ -64,8 +64,8 @@ def validate(run: Run, context: MarketContext, assumptions: Assumptions) -> list
     findings: list[Finding] = []
 
     def conflict(key: str, detail: str) -> None:
-        findings.append(Finding(id=key, title="Conflicting calculation outputs", severity="high",
-                                detail=detail, category="Independent validation"))
+        findings.append(Finding(id=key, title="Conflitto tra i risultati", severity="high",
+                                detail=detail, category="Validazione indipendente"))
 
     result = run.results.get(Agent.SETTLEMENT)
     if result and result.status != "failed":
@@ -79,7 +79,7 @@ def validate(run: Run, context: MarketContext, assumptions: Assumptions) -> list
             net_found = result.values.get("imbalance_mwh")
             if (net_found is None or Decimal(str(net_found)) != net
                     or (None if cash is None else Decimal(str(cash))) != expected):
-                conflict("settlement-reconcile", "Settlement failed independent quantity and cash-flow reconciliation.")
+                conflict("settlement-reconcile", "Quantità o flusso di cassa della regolazione non quadrano.")
 
     forecasted = run.results.get(Agent.FORECAST)
     market = run.results.get(Agent.MARKET)
@@ -88,9 +88,9 @@ def validate(run: Run, context: MarketContext, assumptions: Assumptions) -> list
         last_calendar = context.inspection.usable.index[-1].date().isoformat()
         if (any(p["train_end"] >= p["period"] for p in outputs["backtest"])
                 or any(p["period"] <= last_calendar or p["estimate"] < 0 for p in outputs["points"])):
-            conflict("forecast-timing", "Forecast timestamps or estimates failed validation.")
+            conflict("forecast-timing", "Date o stime previsionali incoerenti.")
         if market and market.values.get("gap_gwh") != forecasted.values.get("gap_gwh"):
-            conflict("market-gap", "Market and forecasting agents disagreed on the same-period balance.")
+            conflict("market-gap", "Gli agenti di mercato e di previsione hanno calcolato saldi diversi per lo stesso periodo.")
 
     stress = run.results.get(Agent.SCENARIO)
     if stress and stress.status == "completed":
@@ -98,14 +98,14 @@ def validate(run: Run, context: MarketContext, assumptions: Assumptions) -> list
         shock = stress.values["stress"]
         if any(Decimal(row["supply_gwh"]) - Decimal(row["demand_gwh"]) != Decimal(row["imbalance_gwh"])
                for row in (base, shock)):
-            conflict("scenario-reconcile", "Scenario rows failed supply minus demand reconciliation.")
+            conflict("scenario-reconcile", "Il saldo dello scenario non coincide con la differenza tra offerta e domanda.")
         if market and market.values.get("gap_gwh") is not None and abs(
             float(base["imbalance_gwh"]) - market.values["gap_gwh"]
         ) > 0.000001:
-            conflict("scenario-market", "Scenario baseline did not match the market balance.")
+            conflict("scenario-market", "La base dello scenario non coincide con il saldo di mercato.")
     regulation = run.results.get(Agent.REGULATORY)
     if regulation and regulation.evidence and any(c.page is None or not c.evidence for c in regulation.evidence):
-        conflict("citation-page", "A regulatory citation was missing its source page or supporting text.")
+        conflict("citation-page", "Un riferimento normativo è privo di pagina o testo di supporto.")
     return findings
 
 

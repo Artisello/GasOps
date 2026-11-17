@@ -22,19 +22,25 @@ class Kind(StrEnum):
     PHYSICAL = "PHYSICAL MEASUREMENT"
 
 
-class Origin(BaseModel):
+class Provider(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     name: str
     kind: Kind
-    grain: Literal["daily", "monthly"]
     fields: tuple[str, ...]
     description: str
     url: str | None = None
     retrieved_at: AwareDatetime
     published_at: AwareDatetime | None = None
+    latest_period: str | None = None
     cached: bool = False
     refresh_failed: bool = False
+
+
+class Origin(Provider):
+    grain: Literal["daily", "monthly"]
+    archive: bool = False
+    companions: tuple[Provider, ...] = ()
 
 
 class Citation(BaseModel):
@@ -64,12 +70,12 @@ class Agent(StrEnum):
 
 
 AGENT_LABELS = {
-    Agent.QUALITY: "Data Quality & Risk",
-    Agent.MARKET: "Market Intelligence",
-    Agent.FORECAST: "Forecasting & Balancing",
-    Agent.SETTLEMENT: "Settlement",
-    Agent.REGULATORY: "Regulatory Intelligence",
-    Agent.SCENARIO: "Scenario Analysis",
+    Agent.QUALITY: "Qualità e rischi",
+    Agent.MARKET: "Analisi di mercato",
+    Agent.FORECAST: "Previsioni e bilanciamento",
+    Agent.SETTLEMENT: "Regolazione economica",
+    Agent.REGULATORY: "Analisi normativa",
+    Agent.SCENARIO: "Analisi di scenario",
 }
 
 Status = Literal["queued", "running", "completed", "review", "unavailable", "failed", "skipped"]

@@ -2,7 +2,8 @@
 
 import pandas as pd
 
-from .data import period_text
+from .data import FIELDS, period_text
+from .italiano import MESI
 
 
 def _change(current: float, previous: float) -> float | None:
@@ -23,16 +24,15 @@ def market_facts(data: pd.DataFrame, grain: str) -> dict:
     window = 7 if grain == "daily" else 1
     enough = 5 if window == 7 else 1
     through = data.loc[:latest]
-    comparison = "vs prior 7 days" if grain == "daily" else "vs prior month"
+    comparison = "sui 7 giorni precedenti" if grain == "daily" else "sul mese precedente"
     facts = {
         "period": latest.date().isoformat(), "label": period_text(latest, grain),
-        "demand_gwh": demand, "supply_gwh": supply, "storage_gwh": _last(row, "storage_gwh"),
-        "price_eur_mwh": _last(row, "price_eur_mwh"),
+        **{field: _last(row, field) for field in FIELDS},
         "gap_gwh": supply - demand if supply is not None else None,
         "coverage_pct": 100 * supply / demand if supply is not None and demand else None,
         "comparison": comparison,
     }
-    for field in ("demand_gwh", "supply_gwh", "price_eur_mwh"):
+    for field in FIELDS:
         deltas = None
         if len(through) >= 2 * window:
             current = through[field].iloc[-window:].to_numpy()
@@ -50,6 +50,6 @@ def market_facts(data: pd.DataFrame, grain: str) -> dict:
             facts["weekend_vs_weekday_pct"] = _change(float(weekend.mean()), float(weekday.mean()))
     season = through["demand_gwh"].dropna().groupby(lambda day: day.month).mean()
     if len(season) == 12:
-        facts["peak_month"] = pd.Timestamp(2020, int(season.idxmax()), 1).strftime("%B")
-        facts["low_month"] = pd.Timestamp(2020, int(season.idxmin()), 1).strftime("%B")
+        facts["peak_month"] = MESI[int(season.idxmax()) - 1]
+        facts["low_month"] = MESI[int(season.idxmin()) - 1]
     return facts
