@@ -1,0 +1,10 @@
+streamlit>=1.49,<2
+plotly>=6.1,<7
+pandas>=2.2,<3
+pydantic>=2.8,<3
+scikit-learn>=1.5,<2
+PyMuPDF>=1.24,<2
+python-dotenv>=1.0,<2
+requests>=2.32,<3
+tzdata>=2025.1
+pytest>=8,<10
