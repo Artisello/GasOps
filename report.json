@@ -1,0 +1,54 @@
+{
+  "status": "BLOCKED_REVIEW",
+  "gas_day": "2026-10-24",
+  "data_kind": "synthetic",
+  "input_sha256": "8a32734d01eac8208e97392b8067291936972bbff2d2117bacfe2b52f27db236",
+  "agents": [
+    {
+      "agent": "data_quality",
+      "hours": 25,
+      "alerts": [
+        {
+          "severity": "REVIEW",
+          "message": "Gas day lasts 25 elapsed hours; check hourly aggregation"
+        }
+      ]
+    },
+    {
+      "agent": "balance_screen",
+      "simplified_supply_minus_demand_mwh": "-10000",
+      "limitation": "Not official SAS; excludes explicit linepack/TSO terms unless already included. No operational thresholds applied."
+    },
+    {
+      "agent": "settlement_screen",
+      "direction": "charge",
+      "signed_user_cashflow_eur": "-50400.00",
+      "rule": "Codice di Rete XCII, cap. 9, §4.4.2; prices supplied externally; no taxes or adjustments."
+    },
+    {
+      "agent": "regulatory_screen",
+      "alerts": [
+        {
+          "severity": "BLOCK",
+          "message": "Exactly seven days not explicit in tables of uploaded 2023-I code. Refer to regulatory expert; no automatic charge."
+        }
+      ],
+      "rule": "Codice di Rigassificazione FSRU Piombino 2023-I, cap. 10, §§1.1.1-1.1.2; verify current approved revision before use."
+    }
+  ],
+  "alerts": [
+    {
+      "severity": "REVIEW",
+      "message": "Gas day lasts 25 elapsed hours; check hourly aggregation"
+    },
+    {
+      "severity": "BLOCK",
+      "message": "Exactly seven days not explicit in tables of uploaded 2023-I code. Refer to regulatory expert; no automatic charge."
+    }
+  ],
+  "approval": "No market, billing or infrastructure actions available",
+  "narrative": {
+    "mode": "template",
+    "text": "Simulation only. Review findings and any blocking data or regulatory alerts before further analysis."
+  }
+}

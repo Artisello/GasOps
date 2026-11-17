@@ -1,0 +1,10 @@
+{
+  "data_kind": "synthetic",
+  "gas_day": "2026-10-24",
+  "expected_supply_mwh": 90000,
+  "expected_demand_mwh": 100000,
+  "user_imbalance_mwh": -1200,
+  "buy_eur_mwh": 42,
+  "sell_eur_mwh": 38,
+  "cancellation_notice_days": 7
+}
