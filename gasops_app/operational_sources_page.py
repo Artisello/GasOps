@@ -48,7 +48,12 @@ def operational_context():
         from .mase_page import panel
         panel()
     else:
-        _jarvis_panel()
+        from .jarvis_archive_page import panel as archive_panel
+        mode=st.radio("Vista rete Snam",["Stime infragiornaliere","Archivio pubblicazioni"],horizontal=True,key="jarvis_view")
+        if mode=="Stime infragiornaliere":
+            _jarvis_panel()
+        else:
+            archive_panel()
 
 
 def _jarvis_panel(prefix="supply"):
