@@ -14,6 +14,7 @@ from .italiano import GRAVITA, MODALITA, MODELLI, data_it, numero
 from .models import AGENT_LABELS, Agent, Kind, Provider
 from .session import analysis_label, briefing_run, launch, preview_market, source_filters, market_scope, PUBLIC, DAILY
 from .reports import markdown
+from .executive_briefing import management_readout, outlook_delta
 from .visuals import AMBER, BLUE, ROSE, TEAL, breakdown_chart, chip, demand_chart, error_chart
 from .visuals import forecast_readout, heading, header, info, kind_tag, kpi_grid, local_time, mini_chart, plot, rows, steps
 
@@ -231,6 +232,9 @@ def _briefing_highlights(run):
     kpi_grid([("Consumi",facts.get("demand_gwh"),"GWh",change("demand_gwh_change_pct"),1,""),
               (price_label,facts.get("price_eur_mwh"),"€/MWh",change("price_eur_mwh_change_pct"),2,""),
               (estimate_label,point.get("estimate"),"GWh"," · ".join(x for x in [estimate_period,interval] if x),1,"blue")])
+    delta=outlook_delta(run)
+    if delta is not None:
+        st.caption("Prossima stima rispetto all’ultimo consumo osservato: "+numero(delta,1,signed=True)+"%.")
     if not facts and market:
         st.caption(market.summary)
     if not point and forecast:
@@ -250,6 +254,12 @@ def _briefing_operational_context(public):
         if not source:
             continue
         available=source.get("status")=="available"
+        # A count on a partial page is not a management indicator. Keep the
+        # source status in the audit trail, not an empty or misleading KPI.
+        if name=="IIP" and (not available or source.get("coverage")!="Completa"
+                            or not isinstance(source.get(field),int) or isinstance(source.get(field),bool)
+                            or source[field]<0):
+            continue
         values=source.get("values",{}) if available else {}
         value=(source.get(field) if name=="IIP" else values.get(field)) if available else None
         raw_day=source.get("gas_day")
@@ -276,9 +286,10 @@ def _briefing_operational_context(public):
                        " · "+numero(peak.get("temperature_c"))+" °C · previsione territoriale")
         else:
             st.caption("Meteo · previsione non disponibile o non recente.")
-    missing=[name for name,item in public.items() if item.get("status")!="available"]
+    missing=[name for name,item in public.items() if item.get("status")!="available"
+             or (name=="IIP" and item.get("coverage")!="Completa")]
     if missing:
-        st.caption("Copertura incompleta · "+", ".join(missing)+". Nessun valore sostitutivo.")
+        st.caption("Copertura incompleta · "+", ".join(missing)+". Dettagli nelle fonti consultate.")
 
 
 def _briefing_panel(selection) -> None:
@@ -318,6 +329,8 @@ def _briefing_panel(selection) -> None:
                 st.warning("Dati storici o aggiornamento da verificare. Non rappresentano il mercato attuale.")
             for warning in dict.fromkeys(run.warnings):
                 st.warning(warning)
+            if run.mode=="Deterministic" and run.assumptions.get("ai_mode_reason"):
+                st.caption(str(run.assumptions["ai_mode_reason"])+".")
             _briefing_highlights(run)
             public=run.assumptions.get("public_operational_context") or {}
             _briefing_operational_context(public)
@@ -327,17 +340,26 @@ def _briefing_panel(selection) -> None:
                     if paragraph.strip():
                         st.text(paragraph.strip())
                 info("Evidenze AI",", ".join(AGENT_LABELS[a] for a in run.interpretation_sources))
+            else:
+                overview,forecast,priorities=management_readout(run)
+                st.markdown("**Lettura operativa · regole locali**")
+                st.text(overview)
+                st.markdown("**Priorità di verifica**")
+                for i,priority in enumerate(priorities,1):
+                    st.text(f"{i}. {priority}")
             issues=[f for f in run.findings if f.severity in ("high","medium")]
             completed=sum(r.status in ("completed","review") for r in run.results.values())
             st.caption(f"Analisi eseguite: {completed}/{len(run.steps)} · Da verificare: {len(issues)}")
             for finding in issues:
-                if finding.severity=="high":
+                if finding.severity=="high" and finding.id!="notice-7":
                     st.warning(finding.title+" — "+finding.detail)
-            other_issues=[finding for finding in issues if finding.severity!="high"]
+            other_issues=[finding for finding in issues if finding.severity!="high" or finding.id=="notice-7"]
             if other_issues:
-                with st.expander(f"Rilievi da verificare · {len(other_issues)}",expanded=True):
+                with st.expander(f"Rilievi da verificare · {len(other_issues)}",expanded=any(f.id!="notice-7" for f in other_issues)):
                     for finding in other_issues:
                         st.markdown("**"+finding.title+"**")
+                        if finding.id=="notice-7":
+                            st.caption("Registro storico · applicabilità da verificare")
                         st.text(finding.detail)
             elif not issues:
                 st.caption("Nessun rilievo nei controlli eseguiti.")
@@ -356,7 +378,7 @@ def _briefing_panel(selection) -> None:
                         st.text(f"{source.get('source',name)} · {status} · {source.get('gas_day') or source.get('acquired') or 'data non indicata'}")
                         if source.get("reason"):
                             st.text(source["reason"])
-                    st.json(public,expanded=False)
+                    st.caption("Dati completi e metadati nel file JSON del bollettino.")
             with st.expander("Dettaglio degli agenti"):
                 for agent,item in sorted(run.results.items(),key=lambda pair:list(Agent).index(pair[0])):
                     if agent in (Agent.SETTLEMENT,Agent.SCENARIO):

@@ -130,3 +130,29 @@ def test_fresh_iip_uses_completion_clock_and_stale_cache_has_reason(monkeypatch)
     assert "non riuscito" in stale["reason"]
     aged=iip_context(result,acquired+timedelta(hours=3))
     assert aged["status"]=="stale" and "oltre 2 ore" in aged["reason"]
+
+
+def test_iip_failed_refresh_retains_controlled_diagnostic():
+    result={"acquired":NOW,"failed":True,"messages":[{}],"reported_total":1,
+            "pages":1,"partial":False,"pagination_verified":True,"refresh_error":"HTTP 429"}
+    item=iip_context(result,NOW)
+    assert item["received_records"] is None and item["status"]=="stale"
+    assert "HTTP 429" in item["reason"]
+
+
+def test_executive_readout_keeps_observed_and_forecast_separate():
+    from gasops_app.executive_briefing import outlook_delta, management_readout
+    from gasops_app.models import Run,Result
+    data=synthetic()
+    run=Run(question="briefing",source=data.origin.model_copy(update={"grain":"monthly"}),
+            input_sha256=data.fingerprint,assumptions={"public_operational_context":{"IIP":{"status":"stale"}}})
+    run.results[Agent.MARKET]=Result(agent=Agent.MARKET,summary="fixture",
+        values={"period":"2026-10-01","demand_gwh":100,"demand_gwh_change_pct":5})
+    run.results[Agent.FORECAST]=Result(agent=Agent.FORECAST,summary="fixture",
+        values={"forecast":{"points":[{"period":"2026-11-01","estimate":125}]}})
+    assert outlook_delta(run)==25
+    overview,forecast,priorities=management_readout(run)
+    assert "dimostrativi" in overview and "+25,0%" in forecast
+    assert "indisponibilità" in priorities[0]
+    run.results[Agent.FORECAST].values["forecast"]["points"][0]["period"]="2027-01-01"
+    assert outlook_delta(run) is None
