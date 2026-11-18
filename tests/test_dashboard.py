@@ -111,3 +111,31 @@ def test_overview_quick_links_and_advanced_model(monkeypatch,tmp_path):
     assert any("/security-of-supply" in el.value for el in app.markdown)
     assert app.selectbox(key="overview_model").value==AUTOMATIC
     assert app.selectbox(key="overview_dataset").value==DEMO
+
+
+
+def test_iip_market_desk_filters_and_detail_without_more_network(monkeypatch,tmp_path):
+    from gasops_app import operational_sources_page as op
+    from gasops_app.models import utc_now
+    from gasops_app.operational_sources import parse_iip
+    import json
+    monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
+    monkeypatch.setattr(op,"configured_key",lambda:"fixture-key")
+    calls=[]
+    def fake(store,key,**kwargs):
+        calls.append(key)
+        payload={"data":[{"messageId":"a","assetName":"Example A","countryCode":"IT","eventStatus":"Active"},
+                         {"messageId":"b","assetName":"Example B","countryCode":"DE","eventStatus":"Active"}],
+                 "meta":{"current_page":1,"last_page":1,"per_page":50,"total":2}}
+        return {**parse_iip(json.dumps(payload),utc_now()),"request_from":"2026-11-18","request_to":"2026-11-25"}
+    monkeypatch.setattr(op,"load_iip",fake)
+    app=AppTest.from_string("from gasops_app.operational_sources_page import operational_context\noperational_context()",default_timeout=30)
+    app.session_state["operational_platform"]="IIP"
+    app.run()
+    assert not app.exception
+    assert len(app.dataframe)==1 and len(app.dataframe[0].value)==2
+    assert any("2 / 2" in m.value for m in app.markdown)
+    app.text_input(key="iip_search").set_value("Example B").run()
+    assert not app.exception and len(app.dataframe[0].value)==1
+    assert app.dataframe[0].value.iloc[0]["Asset"]=="Example B"
+    assert len(calls)==1
