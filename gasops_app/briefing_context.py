@@ -21,15 +21,27 @@ def inventory_context(result, now, platform):
         raise ValueError("Invalid inventory snapshot")
     row=valid.iloc[-1]
     day=row["gas_day"]
-    age=(now.astimezone(ROME).date()-day).days
+    # Published gas-day labels are not civil-day observations. The local
+    # 06:00 boundary, not midnight, advances the briefing freshness window.
+    reference_day=(now.astimezone(ROME)-timedelta(hours=6)).date()
+    age=(reference_day-day).days
     out={**attribution(platform),"scope":result["scope"],"gas_day":day.isoformat(),
          "acquired":result["acquired"].isoformat(),"source_status":row["status"],
          "status":"stale" if result["failed"] or age>2 or age<0 or result["acquired"]>now else "available"}
+    out["limitation"]=("Giacenza fisica, riempimento e flussi giornalieri di stoccaggio; non capacità libera o deficit."
+                       if platform=="AGSI+" else "Inventario GNL e send-out giornaliero; non prezzo o capacità disponibile.")
     if out["status"]=="available":
         out["values"]={key:round(float(row[key]),3) for key in fields
                        if row[key] is not None and math.isfinite(float(row[key]))}
         if platform=="AGSI+":
             out["quality_review"]=bool(row.get("review",False))
+    else:
+        out["reason"]=("Aggiornamento non riuscito" if result["failed"] else
+                       "Data non coerente con l’acquisizione" if age<0 or result["acquired"]>now else
+                       "Ultimo giorno gas oltre la finestra di 2 giorni")
+        if age>=0 and result["acquired"]<=now:
+            out["last_observed_values"]={key:round(float(row[key]),3) for key in fields
+                       if row[key] is not None and math.isfinite(float(row[key]))}
     return out
 
 
@@ -48,7 +60,7 @@ def iip_context(result,now):
             "received_records":None if stale else len(result["messages"]),
             "declared_total":None if stale else result.get("reported_total"),
             "coverage":coverage(result),
-            "limitation":"Record UMM, non eventi distinti né capacità persa."}
+            "limitation":"Conteggio dei record UMM attivi nella finestra richiesta, non eventi distinti, capacità persa o conteggio specifico dell’Italia. Finestre diverse non sono direttamente confrontabili."}
 
 
 def weather_context(result,now):

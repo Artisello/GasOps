@@ -17,6 +17,7 @@ from .acer_market import load_lng, TERMINAL
 from .terna_power import load_power, latest_day, PORTAL
 from .terna_forward import acquire as load_forward, outlook as power_outlook, STATE as FORWARD
 from .advanced_kpis import benchmark_scores
+from .public_data import SourceUnavailable, SourceSchemaError
 
 CACHE="briefing_terna_api_v1"
 
@@ -69,7 +70,7 @@ def market_context(bundle,now):
          "status":"stale" if stale else "available","values":values,"changes_pct":changes,
          "comparison":"medie di finestre da 7 giorni, minimo 5 coppie" if daily else "mese precedente",
          "quality_review":any(f.severity in ("high","medium") for f in checked.findings),
-         "kind":"observed","limitation":"Prelievi settoriali, non totale nazionale né saldo fisico." if daily else "Bilancio nazionale mensile, disponibilità contabile, non saldo fisico."}
+         "kind":"observed","limitation":"Somma dei prelievi dei tre aggregati SRG, non domanda netta, totale nazionale o saldo fisico. Variazione: medie su finestre di sette giorni con almeno cinque coppie." if daily else "Bilancio nazionale mensile; IC_CAL_MG è consumo interno calcolato, non disponibilità fisica. Variazione delle scorte: positiva in accumulo."}
     if daily and "source_flag" in bundle.rows:
         flags=bundle.rows.loc[bundle.rows.period.astype(str).str[:10]==facts["period"],"source_flag"]
         out["quality_review"]=out["quality_review"] or bool(flags.astype(str).str.contains("discordante|conflitto").any())
@@ -89,18 +90,20 @@ def market_context(bundle,now):
 def acer_context(result,now):
     today=now.astimezone(ROME).date()
     values={}
+    definitions={"eu":"Valutazione prezzo GNL UE","nwe":"Valutazione prezzo GNL Europa nord-occidentale",
+                 "south":"Valutazione prezzo GNL Europa meridionale","benchmark":"Benchmark GNL ACER: differenziale GNL–TTF"}
     for key in ("eu","nwe","south","benchmark"):
         valid=[(r["date"],_num(r.get(key))) for r in result.rows if _finite(r.get(key)) and date.fromisoformat(r["date"])<=today]
         if valid:
             day,value=max(valid,key=lambda x:x[0])
-            values[key]={"period":day,"value":value,"status":"available" if not result.failed and result.acquired<=now and (today-date.fromisoformat(day)).days<=7 else "stale"}
+            values[key]={"period":day,"value":value,"definition":definitions[key],"status":"available" if not result.failed and result.acquired<=now and (today-date.fromisoformat(day)).days<=7 else "stale"}
     if not values:
         raise ValueError("Nessuna quotazione")
     return {"source":"ACER TERMINAL","source_url":TERMINAL,"scope":"UE / regioni ACER",
             "acquired":result.acquired.isoformat(),"period":max(v["period"] for v in values.values()),
             "status":"available" if any(v["status"]=="available" for v in values.values()) else "stale",
             "unit":"€/MWh","kind":"observed","values":values,
-            "limitation":"Valutazioni GNL e benchmark GNL–TTF, non PSV; date per singola serie."}
+            "limitation":"Valutazioni di prezzo GNL e differenziale GNL–TTF, in €/MWh; non riserve, scorte, capacità o PSV. Date per singola serie; nessuna variazione storica implicita."}
 
 
 def power_context(result,now):
@@ -167,7 +170,7 @@ def collect_market_sources(store,selected,now,state,*,terna=(),clock=utc_now):
         if p is None:
             if not can_call:raise ValueError("Terna non configurata")
             end=latest_day(now)
-            p=load_power(*terna,end-timedelta(days=1),end,now=now)
+            p=load_power(*terna,end-timedelta(days=2),end,now=now)
         return power_context(p,clock()),p
     def terna_forecast():
         b=prior.get("forward")
@@ -203,6 +206,9 @@ def collect_market_sources(store,selected,now,state,*,terna=(),clock=utc_now):
                     value,snapshot=value
                     cache["power" if name=="Terna · elettricità" else "forward"]=snapshot
                 out[name]=value
+            except (SourceUnavailable,SourceSchemaError) as error:
+                # These adapters emit controlled static diagnostics, not raw responses.
+                out[name]=_missing(name,str(error))
             except Exception:
                 out[name]=_missing(name,"Fonte non disponibile o non validabile; nessuna stima sostitutiva.")
     state[CACHE]=cache

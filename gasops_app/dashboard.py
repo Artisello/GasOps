@@ -251,7 +251,7 @@ def _briefing_highlights(run):
         return (numero(value,signed=True)+"% "+comparison).strip() if value is not None else scope
     interval=(numero(point["lower_80"],0)+"–"+numero(point["upper_80"],0)+" GWh · fascia 80%"
               if point.get("lower_80") is not None and point.get("upper_80") is not None else "")
-    price_label="Prezzo di esempio" if run.source.kind==Kind.SYNTHETIC else "Prezzo PSV (ARERA)"
+    price_label="Prezzo di esempio" if run.source.kind==Kind.SYNTHETIC else "CMEM,m (ARERA)"
     kpi_grid([("Consumi",facts.get("demand_gwh"),"GWh",change("demand_gwh_change_pct"),1,""),
               (price_label,facts.get("price_eur_mwh"),"€/MWh",change("price_eur_mwh_change_pct"),2,""),
               (estimate_label,point.get("estimate"),"GWh"," · ".join(x for x in [estimate_period,interval] if x),1,"blue")])
@@ -262,6 +262,30 @@ def _briefing_highlights(run):
         st.caption(market.summary)
     if not point and forecast:
         st.caption(forecast.summary)
+
+
+def _briefing_market_context(public):
+    """Expose validated observations separately from generative interpretation."""
+    daily=public.get("ENTSOG · SRG",{})
+    acer=public.get("ACER · GNL",{})
+    if daily.get("status")=="available":
+        value=daily.get("values",{}).get("demand_gwh")
+        if value is not None:
+            text=f"ENTSOG · {daily.get('period','data non indicata')} · Prelievi dei tre aggregati SRG: {numero(value)} GWh"
+            change=daily.get("changes_pct",{}).get("demand_gwh")
+            if change is not None:
+                text+=" · "+numero(change,1,signed=True)+"% (medie delle due finestre da 7 giorni)"
+            st.caption(text+".")
+    if acer.get("status")=="available":
+        values=acer.get("values",{})
+        eu=values.get("eu",{})
+        spread=values.get("benchmark",{})
+        parts=[]
+        if eu.get("status")=="available" and eu.get("value") is not None:
+            parts.append("Prezzo GNL UE "+numero(eu["value"],2)+" €/MWh ("+eu["period"]+")")
+        if spread.get("status")=="available" and spread.get("value") is not None:
+            parts.append("Differenziale GNL–TTF "+numero(spread["value"],2,signed=True)+" €/MWh ("+spread["period"]+")")
+        if parts:st.caption("ACER · "+" · ".join(parts)+".")
 
 
 def _briefing_operational_context(public):
@@ -284,18 +308,27 @@ def _briefing_operational_context(public):
                             or source[field]<0):
             continue
         values=source.get("values",{}) if available else {}
+        historical=source.get("last_observed_values",{}) if name!="IIP" and source.get("status")=="stale" else {}
         value=(source.get(field) if name=="IIP" else values.get(field)) if available else None
         raw_day=source.get("gas_day")
         detail=raw_day or ("Finestra IIP" if name=="IIP" else "")
         if not available:
-            detail=source.get("reason") or "Dato non recente"
+            if historical.get(field) is not None:
+                value=historical[field]
+                detail=f"{raw_day} · ultimo dato non recente"
+                if name=="AGSI+" and historical.get("stock_twh") is not None:
+                    detail+=" · "+numero(historical["stock_twh"])+" TWh"
+            else:
+                detail=" · ".join(x for x in (raw_day,source.get("reason") or "Dato non recente") if x)
         elif name=="AGSI+":
             if values.get("stock_twh") is not None:
                 detail+=" · "+numero(values["stock_twh"])+" TWh"
             if source.get("quality_review"):
                 detail+=" · dato da verificare"
         elif name=="IIP":
-            detail=f"{source.get('coverage','Copertura non indicata')} · record, non eventi"
+            start,end=source.get("request_from"),source.get("request_to")
+            window=f"{start}–{end} · " if start and end else ""
+            detail=window+f"{source.get('coverage','Copertura non indicata')} · record, non eventi"
         cards.append((label,value,unit,detail,0 if name=="IIP" else 1,""))
     if cards:
         kpi_grid(cards)
@@ -356,6 +389,7 @@ def _briefing_panel(selection) -> None:
                 st.caption(str(run.assumptions["ai_mode_reason"])+".")
             _briefing_highlights(run)
             public=run.assumptions.get("public_operational_context") or {}
+            _briefing_market_context(public)
             _briefing_operational_context(public)
             if actual_ai:
                 st.markdown("**Sintesi AI**")
@@ -383,7 +417,7 @@ def _briefing_panel(selection) -> None:
             elif not issues:
                 st.caption("Nessun rilievo nei controlli eseguiti.")
             with st.expander("Esposizione e stress test · simulazioni"):
-                st.caption("Non sono posizioni, fatture o esposizioni reali dei partecipanti.")
+                st.caption("Scenario condizionale sulle ipotesi selezionate, non previsione del deficit di mercato. Monte Carlo e CVaR sono grandezze teoriche dello scenario, non costi di emergenza o settlement effettivo.")
                 for agent in (Agent.SETTLEMENT,Agent.SCENARIO):
                     item=run.results.get(agent)
                     if item:
