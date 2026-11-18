@@ -21,14 +21,15 @@ def fixture(text=QUOTE):
 
 def test_literal_binding_and_review():
     docs=fixture()
-    refs,added=add_reference([],CASE,docs,"fixture.pdf",1,QUOTE,"Cap. esempio",NOW)
-    assert added and refs[0]["sha256"]==sha256(docs.documents["fixture.pdf"].data).hexdigest()
-    same,added=add_reference(refs,CASE,docs,"fixture.pdf",1,QUOTE,"Cap. esempio",NOW)
+    document=next(iter(docs.documents))
+    refs,added=add_reference([],CASE,docs,document,1,QUOTE,"Cap. esempio",NOW)
+    assert added and refs[0]["sha256"]==sha256(docs.documents[document].data).hexdigest()
+    same,added=add_reference(refs,CASE,docs,document,1,QUOTE,"Cap. esempio",NOW)
     assert not added and same==refs
     with pytest.raises(ValueError):
-        add_reference(refs,CASE,docs,"fixture.pdf",1,"Il termine di esempio vale cinque giorni.","",NOW)
+        add_reference(refs,CASE,docs,document,1,"Il termine di esempio vale cinque giorni.","",NOW)
     with pytest.raises(ValueError):
-        add_reference(refs,CASE,docs,"fixture.pdf",2,QUOTE,"",NOW)
+        add_reference(refs,CASE,docs,document,2,QUOTE,"",NOW)
     with pytest.raises(ValueError):
         assess(refs[0],"Pertinente per la revisione","",docs,NOW)
     assessed=assess(refs[0],"Pertinente per la revisione","Confronto manuale",docs,NOW)
@@ -38,7 +39,8 @@ def test_literal_binding_and_review():
 
 def test_changed_edition_preserved_but_not_assessable():
     docs=fixture()
-    refs,_=add_reference([],CASE,docs,"fixture.pdf",1,QUOTE,"",NOW)
+    document=next(iter(docs.documents))
+    refs,_=add_reference([],CASE,docs,document,1,QUOTE,"",NOW)
     newer=fixture("Un altro testo di esempio per la revisione.")
     assert case_links(refs,CASE["id"],newer)[0]["edition_status"]=="Edizione assente o cambiata"
     with pytest.raises(ValueError):
