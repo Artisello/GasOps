@@ -40,7 +40,7 @@ def test_walk_forward_common_samples(h):
     assert r["n"]==90
     assert r["scores"]["official"]["mae"]==pytest.approx(20)
     assert r["scores"]["igor"]["mae"]<0.001
-    assert all(pd.Timestamp(row["train_target_end"])+pd.Timedelta(days=1)<=pd.Timestamp(row["origin"]) for row in r["records"])
+    assert all(pd.Timestamp(row["train_target_end"])+pd.Timedelta(1, unit="D")<=pd.Timestamp(row["origin"]) for row in r["records"])
 
 
 def test_conflicting_latest_not_arbitrarily_selected():

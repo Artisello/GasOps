@@ -25,9 +25,9 @@ def test_common_dates_and_no_future_labels(h):
     r=evaluate(frame,[c],h)
     assert r["test_n"]==28
     assert r["forecast"] is not None
-    assert all(pd.Timestamp(p["train_target_end"])<=pd.Timestamp(p["origin"])-pd.Timedelta(days=2) for p in r["records"])
+    assert all(pd.Timestamp(p["train_target_end"])<=pd.Timestamp(p["origin"])-pd.Timedelta(2, unit="D") for p in r["records"])
     assert all(p["train_n"]>=45 for p in r["records"])
-    assert pd.Timestamp(r["forecast"]["target"])-pd.Timestamp(r["forecast"]["origin"])==pd.Timedelta(days=h)
+    assert pd.Timestamp(r["forecast"]["target"])-pd.Timestamp(r["forecast"]["origin"])==pd.Timedelta(h, unit="D")
     assert all(np.isfinite(s["mae"]) for s in r["scores"].values())
 
 
@@ -73,7 +73,7 @@ def test_backtest_outcomes_available_at_reference():
     f=fixture()
     ref=f.index[-3]
     r=evaluate(f,[],7,ref)
-    assert all(pd.Timestamp(p["target"])<=ref-pd.Timedelta(days=2) for p in r["records"])
+    assert all(pd.Timestamp(p["target"])<=ref-pd.Timedelta(2, unit="D") for p in r["records"])
 
 
 def test_predictive_page_real_archive_no_api():

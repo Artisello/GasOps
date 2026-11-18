@@ -353,7 +353,7 @@ def test_balancing_missing_storage_shock_does_not_crash(monkeypatch,tmp_path):
     app.session_state["active_bundle"]=data
     app.session_state["scenario_case_"+data.fingerprint]={"demand_gwh":"100","supply_gwh":"120","storage_gwh":None,"price_eur_mwh":"42"}
     ass=Assumptions()
-    app.session_state["assumptions"]=ass.model_copy(update={"stress":ass.stress.model_copy(update={"storage_pct":10})}).model_dump(mode="json")
+    app.session_state["assumptions"]=ass.model_copy(update={"stress":type(ass.stress).model_validate({**ass.stress.model_dump(), "storage_pct":10})}).model_dump(mode="json")
     app.run()
     assert not app.exception
     assert any("variazione stoccaggio è sospesa" in e.value for e in app.warning)
