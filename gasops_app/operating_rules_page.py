@@ -42,10 +42,10 @@ def network_panel():
         st.download_button("Modello CSV vuoto",template(),"igor-bilancio-rete.csv","text/csv",key="network_balance_template")
         with st.form("network_balance_import"):
             f=st.file_uploader("Componenti del bilancio",type=["csv"],key="network_balance_file")
-            ok=st.checkbox("Confermo dati pubblici autorizzati, perimetro e unità.")
+            st.caption("Dati pubblici · verifica perimetro e unità.")
             submitted=st.form_submit_button("Verifica bilancio")
         if submitted:
-            if f is None or not ok:st.caption("Seleziona il CSV e conferma la provenienza.")
+            if f is None:st.caption("Seleziona un CSV.")
             else:
                 try:
                     raw=f.getvalue()

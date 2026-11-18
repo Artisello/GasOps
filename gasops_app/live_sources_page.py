@@ -12,7 +12,7 @@ def controls(prefix):
     state=st.session_state
     now=utc_now()
     with st.expander("Aggiorna fonti reali",expanded=not bool(state.get(STATUS)) and not bool(state.get("live_public_bundles_v1"))):
-        st.caption("Seleziona le fonti autorizzate. I risultati alimentano anche l’Analista dati nella stessa sessione.")
+        st.caption("Dati pubblici · condivisi con l’Analista dati nella sessione.")
         try:
             gie=configured_key()
         except (ValueError,KeyError,FileNotFoundError):
@@ -25,8 +25,9 @@ def controls(prefix):
         if gie:options+=["agsi","alsi"]
         if client and secret:options+=["terna","terna_forward","terna_capacity","terna_industry"]
         selected=st.multiselect("Fonti",options,default=["monthly"]+(["terna","terna_forward","terna_capacity","terna_industry"] if "terna" in options else [])+(["weather"] if "weather" in options else []),format_func=LABELS.__getitem__,key=prefix+"_live_sources")
-        consent=st.checkbox("Confermo uso autorizzato e termini delle fonti selezionate; per Terna accetto l’assunzione sperimentale di inizio intervallo 06–06.",key=prefix+"_live_consent")
-        if st.button("Aggiorna selezione",type="primary",key=prefix+"_live_refresh",disabled=not selected or not consent):
+        if any(k.startswith("terna") for k in selected):
+            st.caption("Terna · aggregazione sperimentale 06–06, timestamp come inizio intervallo.")
+        if st.button("Aggiorna selezione",type="primary",key=prefix+"_live_refresh",disabled=not selected):
             with st.spinner("Aggiornamento delle fonti selezionate…"):
                 ok=refresh(state,database(),now,selected,gie=gie,terna=(client,secret) if client and secret else None)
             if not ok:st.caption("Aggiornamento già richiesto nell’ultimo minuto.")

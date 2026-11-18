@@ -39,7 +39,7 @@ with st.sidebar:
         </div>
     """)
     sidebar_navigation(pages, current)
-    st.html('<div class="gas-nav-group gas-nav-settings">Impostazioni AI</div>')
+    st.html('<div class="gas-nav-group gas-nav-settings">Analisi</div>')
     session.sidebar()
     st.html('<div class="gas-byline"><strong>Prototipo per Snam · creato da Igor</strong><small>Progetto indipendente, non ufficiale.</small></div>')
 current.run()

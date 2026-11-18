@@ -115,3 +115,23 @@ def test_bso_overview_default_and_no_demo_fallback():
     assert not app.exception
     assert {m.label:m.value for m in app.metric}==metrics
     assert next(t.value for t in app.dataframe if set(t.value.columns)=={"Area","KPI","Valore","Unità","Periodo","Copertura","Stato"})["Valore"].isna().all()
+
+
+def test_session_task_import_direct_and_invalid_keeps_previous(monkeypatch):
+    from types import SimpleNamespace
+    from streamlit.testing.v1 import AppTest
+    from gasops_app import bso_kpi_page as page
+    raw=task_template().encode()
+    upload=SimpleNamespace(size=len(raw),getvalue=lambda:raw)
+    monkeypatch.setattr(page.st,"file_uploader",lambda *a,**kw:upload)
+    app=AppTest.from_string("from gasops_app.bso_kpi_page import _import_tasks\n_import_tasks()").run()
+    assert not app.exception and not app.checkbox
+    assert page.STATE not in app.session_state
+    next(b for b in app.button if b.label=="Importa").click().run()
+    assert not app.exception
+    assert app.session_state[page.STATE]["tasks"]==task_demo()
+    old=app.session_state[page.STATE]["sha256"]
+    raw=b"invalid CSV"
+    next(b for b in app.button if b.label=="Importa").click().run()
+    assert not app.exception and app.error
+    assert app.session_state[page.STATE]["sha256"]==old

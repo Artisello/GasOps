@@ -7,7 +7,7 @@ import streamlit as st
 from .italiano import ESITI, GRAVITA, TIPI
 from .models import Agent, AGENT_LABELS, Run, utc_now
 from .reports import markdown
-from .session import analysis_label, launch, market_scope, reasoner, source_filters, ai_activation_panel
+from .session import analysis_label, launch, market_scope, reasoner, source_filters, ai_activation_panel, ai_configured
 from .visuals import evidence, info, local_time, steps
 from .workflow import DAILY_BRIEFING
 
@@ -155,7 +155,9 @@ def _history():
 
 def assistant_page():
     st.title("Assistente AI")
-    view=st.radio("Modalità assistente",["Assistente operativo","Analista dati","Report locali"],horizontal=True,key="assistant_view")
+    modes=["Assistente operativo","Analista dati","Report locali"]
+    default=0 if reasoner() or ai_configured() else 2
+    view=st.radio("Modalità assistente",modes,index=default,horizontal=True,key="assistant_view",label_visibility="collapsed")
     if view=="Analista dati":
         from .data_analyst_page import panel
         panel()
@@ -163,18 +165,17 @@ def assistant_page():
     local=view=="Report locali"
     model=None if local else reasoner()
     if not local and model is None:
-        st.caption("AI non attiva · nessuna domanda sarà elaborata")
         ai_activation_panel(prefix="assistant")
         st.chat_input("Attiva l’AI per scrivere una domanda",key="assistant_question",max_chars=600,disabled=True)
-        st.caption("Per i calcoli senza AI seleziona Report locali oppure Analista dati.")
+        st.caption("Report locali e Analista dati restano disponibili.")
         return
     selection=source_filters("ops",lookback=False)
     area,scope=market_scope(selection.name)
-    st.caption(area+" · "+scope)
-    st.caption("Calcoli locali · nessuna chiamata AI" if local else "AI attiva · "+model.config.model)
+    mode_label="Calcoli locali" if local else "AI · "+model.config.model
+    st.caption(area+" · "+scope+" · "+mode_label)
     if model and not model.config.local:
-        st.caption("Solo dati pubblici · domande inviate al provider AI.")
-    st.markdown("[Interroga i PDF](/regulatory)")
+        st.caption("Provider esterno · solo dati pubblici.")
+    st.markdown("[Cerca nei PDF](/regulatory)")
     if local:
         info("Come funziona","Report deterministici con parametri e controlli predefiniti. Nessuna chat o interpretazione AI.")
     else:

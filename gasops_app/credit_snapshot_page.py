@@ -15,16 +15,15 @@ def panel():
     st.subheader("Ricostruzione analitica EPSu / MEPSu")
     st.caption("Codice di Rete XCII · modello di studio su snapshot omogeneo")
     now=utc_now().astimezone(ROME).date()
-    with st.expander("Importa snapshot analitico"):
+    with st.expander("Importa snapshot",expanded=STATE not in st.session_state):
         st.caption("Solo dati sintetici o aggregati autorizzati, senza identificativi reali. JSON normalizzato I.G.O.R., non estratto nativo Snam.")
         st.download_button("Esempio JSON sintetico",m.export(m.example()),"igor-credit-esempio.json","application/json",key="credit_snapshot_template")
         with st.form("credit_snapshot_form"):
             f=st.file_uploader("Snapshot JSON",type="json",key="credit_snapshot_upload")
-            consent=st.checkbox("Confermo origine autorizzata, assenza di dati riservati e copertura dichiarata.")
             submit=st.form_submit_button("Valida e ricostruisci")
         if submit:
-            if f is None or not consent:
-                st.warning("Seleziona il file e conferma l’autorizzazione.")
+            if f is None:
+                st.warning("Seleziona un JSON.")
             else:
                 try:
                     st.session_state[STATE]=m.load(f.getvalue(),now)
