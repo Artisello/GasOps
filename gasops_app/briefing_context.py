@@ -33,10 +33,15 @@ def inventory_context(result, now, platform):
 
 
 def iip_context(result,now):
-    stale=result["failed"] or not timedelta(0)<=now-result["acquired"]<=timedelta(hours=2)
+    age=now-result["acquired"]
+    reason=("Aggiornamento IIP non riuscito; ultimo dato valido conservato." if result["failed"] else
+            "Data di acquisizione futura: verifica orologio e cache." if age<timedelta(0) else
+            "Ultima acquisizione oltre 2 ore." if age>timedelta(hours=2) else None)
+    stale=reason is not None
     return {**attribution("IIP"),"request_from":result.get("request_from"),
             "request_to":result.get("request_to"),"acquired":result["acquired"].isoformat(),
             "status":"stale" if stale else "available",
+            **({"reason":reason} if reason else {}),
             "received_records":None if stale else len(result["messages"]),
             "declared_total":None if stale else result.get("reported_total"),
             "coverage":coverage(result),
@@ -56,14 +61,17 @@ def weather_context(result,now):
             "limitation":"Scenario condizionale settoriale, non previsione principale; tre città a pesi uguali."}
 
 
-def collect(store, context, now, *, key="", include_gie=False, include_weather=False, weather_snapshots=None):
+def collect(store, context, now, *, key="", include_gie=False, include_weather=False, weather_snapshots=None, clock=None):
     """Only called on explicit report launch, never during widget reruns."""
     tasks={}
     out={}
+    # Request windows use the start time; freshness uses the time after retrieval.
+    # Explicit clock injection keeps historical/offline tests deterministic.
+    checked_at=clock or (lambda:now)
     if include_gie and key:
-        tasks["AGSI+"]=lambda: inventory_context(load_agsi(store,key,"IT",now=now),now,"AGSI+")
-        tasks["ALSI"]=lambda: inventory_context(load_alsi(store,key,"IT",now=now),now,"ALSI")
-        tasks["IIP"]=lambda: iip_context(load_iip(store,key,now=now),now)
+        tasks["AGSI+"]=lambda: inventory_context(load_agsi(store,key,"IT",now=now),checked_at(),"AGSI+")
+        tasks["ALSI"]=lambda: inventory_context(load_alsi(store,key,"IT",now=now),checked_at(),"ALSI")
+        tasks["IIP"]=lambda: iip_context(load_iip(store,key,now=now),checked_at())
     elif include_gie:
         out.update({name:{**attribution(name),"status":"unavailable","reason":"Chiave GIE non configurata."}
                     for name in ("AGSI+","ALSI","IIP")})
@@ -74,12 +82,12 @@ def collect(store, context, now, *, key="", include_gie=False, include_weather=F
                 from .weather_source import refresh,outlook,STATE
                 state={STATE:weather_snapshots} if weather_snapshots is not None else {}
                 if weather_snapshots is None:refresh(state,store,now)
-                estimate=outlook(state,now)
+                estimate=outlook(state,checked_at())
                 result={**estimate,"source_url":estimate["url"],"status":"available"} if estimate else None
                 if origin.grain=="daily" and origin.name.startswith("ENTSOG"):
                     try:
                         scenario=weather_context(analyse_gas_day(store,context.inspection.usable,now,
-                            snapshots=state.get(STATE,{})),now)
+                            snapshots=state.get(STATE,{})),checked_at())
                         if scenario["status"]=="available":return scenario
                     except Exception:
                         pass

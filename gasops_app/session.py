@@ -174,7 +174,8 @@ def sidebar() -> None:
     except ValueError:
         pass
     modes=["Deterministic",config.model] if config else ["Deterministic"]
-    st.selectbox("Modalità di analisi",modes,index=0,
+    # A configured model is the initial mode; an operator can still switch to local calculations.
+    st.selectbox("Modalità di analisi",modes,index=1 if config else 0,
                  format_func=lambda value:"Calcoli senza AI" if value=="Deterministic" else value,key="execution_mode")
     ai_controls()
     with st.expander("Fonti bollettino",expanded=False):
@@ -201,7 +202,7 @@ def reasoner() -> CompatibleReasoner | None:
         config = _configuration()
     except ValueError:
         return None
-    if config and st.session_state.get("execution_mode")==config.model:
+    if config and st.session_state.get("execution_mode",config.model)==config.model:
         return CompatibleReasoner(config,reserve=None if config.local else _reserve_remote_request)
     return None
 
@@ -217,7 +218,7 @@ def activate_ai(model_name: str) -> None:
 
 
 def ai_activation_panel(*, prefix: str) -> None:
-    """Never select a provider automatically or send a connection request."""
+    """Allow reactivation after switching to local calculations; no network request here."""
     try:
         config = _configuration()
     except ValueError:
@@ -421,7 +422,8 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
             with st.spinner("Consultazione delle fonti pubbliche selezionate…"):
                 if include_weather:refresh_weather(st.session_state,database(),utc_now())
                 public_context=collect(database(),context,utc_now(),key=key,include_gie=include_gie,include_weather=include_weather,
-                    weather_snapshots=st.session_state.get(WEATHER_STATE,{}) if include_weather else None)
+                    weather_snapshots=st.session_state.get(WEATHER_STATE,{}) if include_weather else None,
+                    clock=utc_now)
         report = run_workflow(
             context, docs, assumptions(), question, full=full, reasoner=model,public_context=public_context,planned_only=planned_only,
             notify=lambda run: stage.html(steps(run, grid=True)),
