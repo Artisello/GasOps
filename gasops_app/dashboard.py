@@ -196,11 +196,9 @@ def _briefing_panel(selection) -> None:
         lead,action=st.columns([2.2,1],vertical_alignment="center")
         with lead:
             st.subheader("Bollettino di mercato")
-            st.caption("Cosa sta succedendo e cosa controllare.")
+            info("Bollettino","Esegue sei strumenti di analisi e controlli locali. Il modello AI, se selezionato, interpreta i risultati condivisibili. Scenari e settlement possono essere dimostrativi; nessuna modifica operativa.")
         with action:
             clicked=st.button(analysis_label(),type="primary",icon=":material/auto_awesome:",width="stretch",key="analysis_launch",disabled=selection.bundle is None)
-        with st.container():
-            info("Info bollettino","Il pulsante esegue i sei agenti e i controlli locali. Il modello AI, se selezionato, interpreta i risultati condivisibili.","Non modifica le fonti, i calcoli o le posizioni operative. Scenari e settlement possono essere dimostrativi.")
         extras=[]
         if st.session_state.get("briefing_gie"):
             extras.append("GIE (AGSI+, ALSI e IIP)")
@@ -214,7 +212,7 @@ def _briefing_panel(selection) -> None:
                 st.error("Il nuovo bollettino non è stato generato. L’eventuale risultato precedente resta qui sotto.")
         run=briefing_run()
         if run is None:
-            st.caption("Nessun bollettino generato. Premi il pulsante in alto: il risultato apparirà qui.")
+            st.caption("Nessun bollettino generato.")
         else:
             matches=bool(selection.bundle and run.input_sha256==selection.bundle.fingerprint
                          and run.assumptions.get("model")==selection.model)
@@ -238,7 +236,7 @@ def _briefing_panel(selection) -> None:
             c1.metric("Controlli completati",f"{completed}/{len(run.steps)}")
             c2.metric("Rilievi da verificare",issues)
             c3.metric("Modalità effettiva","AI" if actual_ai else "Deterministica")
-            if run.summary:
+            if run.summary and not actual_ai:
                 st.text(run.summary)
             public=run.assumptions.get("public_operational_context") or {}
             if public:
@@ -249,8 +247,10 @@ def _briefing_panel(selection) -> None:
                         if source.get("reason"):
                             st.text(source["reason"])
                     st.json(public,expanded=False)
-            with st.expander("Dettaglio completo · scenari, normativa e settlement"):
-                st.caption("Scenari e regolazione economica possono utilizzare ipotesi dimostrative, non posizioni reali.")
+            with st.expander("Dettaglio degli agenti"):
+                st.caption("Scenari e settlement: calcoli dimostrativi.")
+                if actual_ai and run.summary:
+                    st.text(run.summary)
                 for agent,item in run.results.items():
                     st.markdown("**"+AGENT_LABELS[agent]+"**")
                     st.text(item.summary)
@@ -287,14 +287,14 @@ def _overview_mix(context):
         rows([(label,numero(facts.get(field),1)) for label,field in (
             ("Importazioni nette","net_imports_gwh"),("Produzione interna","production_gwh"),
             ("Variazione delle scorte","stock_change_gwh"),("Disponibilità contabile","supply_gwh"))])
-        st.caption("Disponibilità statistica, non misura della capacità di rete.")
+        info("Bilancio","Disponibilità statistica, non misura della capacità di rete.")
     else:
         st.subheader("Scenario di esempio")
         rows([(label,numero(facts.get(field),1)+unit if facts.get(field) is not None else "—") for label,field,unit in (
             ("Offerta","supply_gwh"," GWh/giorno"),("Saldo","gap_gwh"," GWh/giorno"),
             ("Copertura","coverage_pct","%"),("Prezzo ipotetico","price_eur_mwh"," €/MWh"))])
         st.caption("Valori sintetici, non mercato reale.")
-    st.markdown("[Approfondisci mercato e previsioni](/market)")
+
 
 
 def overview() -> None:
@@ -308,7 +308,6 @@ def overview() -> None:
     context=None
     if selection.bundle:
         context=preview_market(selection)
-        st.subheader("Il mercato in breve")
         st.caption("Fonte: "+context.bundle.origin.name)
         _market_headlines(context)
         findings=[f for f in context.inspection.findings if f.severity!="info"]
@@ -337,7 +336,7 @@ def overview() -> None:
         from .overview_indicators import panel
         panel(context)
     _briefing_panel(selection)
-    st.markdown("[Mercato e previsioni](/market) · [Stoccaggi e forniture](/security-of-supply) · [Bilanciamento](/balancing) · [Fatture e garanzie](/ledger)")
+
 
 
 def _model_comparison(context: MarketContext) -> None:
@@ -396,11 +395,11 @@ def _market_headlines(context: MarketContext):
         (next_label,point.estimate if point else None,unit,
          period_text(pd.Timestamp(point.period),origin.grain) if point else "Previsione non disponibile",1,"blue")
     ])
-    st.write(_plain_market(context))
+    info("Lettura dei dati",_plain_market(context))
     if point and facts.get("period"):
         lead=(pd.Timestamp(point.period)-pd.Timestamp(facts["period"])).days
         if origin.grain=="daily":
-            st.caption(f"Stima a {lead} giorni dall’ultima osservazione ({facts['label']}); non è un nuovo dato pubblicato.")
+            st.caption(f"Orizzonte: {lead} giorni dall’ultima osservazione ({facts['label']}).")
 
 
 def _market_quality_notice(context):
@@ -414,8 +413,7 @@ def _market_quality_notice(context):
             st.warning(f"{len(findings)} rilievi sui dati. "+titles+". Consulta Modelli e dati.")
         elif len(findings)>len(urgent):
             st.warning(f"{len(findings)} rilievi sui dati. Consulta Modelli e dati.")
-    else:
-        st.caption("Controlli dati: nessun rilievo da rivedere.")
+
 
 
 def _market_data(context, visible):
@@ -476,7 +474,6 @@ def market() -> None:
                                ": "+numero(p.lower_80)+" – "+numero(p.upper_80)+" GWh.")
             info("Come leggere il grafico","Linea continua: consumi osservati. Tratteggio: stima del modello; la fascia rappresenta l’incertezza.",
                  "La previsione parte dall’ultimo periodo utilizzabile, non necessariamente da oggi. GWh misura energia.")
-        st.markdown("[Stoccaggi e forniture (Security of supply)](/security-of-supply)")
     with details:
         st.caption(area+" · "+perimeter)
         _metrics(context)

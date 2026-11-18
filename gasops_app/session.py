@@ -115,9 +115,6 @@ def ai_controls(*, prefix="sidebar") -> None:
         st.warning(problem)
     if not config:
         st.caption("AI non configurata · report deterministico disponibile")
-    elif prefix=="sidebar":
-        st.caption(("Groq Cloud" if config.groq else "Ollama locale" if config.local else "Provider remoto")+
-                   " · "+config.model)
     usage = None
     budget_ready = True
     if config and not config.local:
@@ -140,7 +137,7 @@ def ai_controls(*, prefix="sidebar") -> None:
             st.code('GROQ_API_KEY = "LA_TUA_CHIAVE"',language="toml")
             st.caption("Groq Cloud non è Grok di xAI. Non inserire la chiave qui o in GitHub.")
             return
-        st.caption("Configurata · verifica con il test.")
+        st.caption(("Groq Cloud" if config.groq else "Ollama locale" if config.local else "Provider remoto")+" · "+config.model)
         if not config.local:
             if budget_ready:
                 st.caption(f"Richieste interne ultime 24 h: {usage}/30 · max 4/min. "
@@ -230,7 +227,7 @@ def market_scope(name: str) -> tuple[str,str]:
 
 
 def source_filters(page: str, *, lookback: bool = True) -> Selection:
-    ctrl = st.columns([3, 1.35, 1.3] if lookback else [3, 1.3], vertical_alignment="bottom")
+    ctrl = st.columns([3, 1.35, 1.3, 1.15] if lookback else [3, 1.3, 1.15], vertical_alignment="bottom")
     stored = st.session_state.get("selected_source", PUBLIC)
     with ctrl[0]:
         name = st.selectbox("Fonte dati", SOURCE_CHOICES, index=SOURCE_CHOICES.index(stored) if stored in SOURCE_CHOICES else 0,
@@ -246,32 +243,28 @@ def source_filters(page: str, *, lookback: bool = True) -> Selection:
             }
             window = st.selectbox("Periodo", tuple(windows), index=1, key=f"{page}_window_{grain}")
             periods = windows[window]
-    with ctrl[-1]:
+    with ctrl[-2]:
         if name in (PUBLIC, DAILY):
             refresh = st.button("Aggiorna dati", icon=":material/refresh:", width="stretch", key=f"{page}_refresh")
         else:
             refresh = False
             pass
-    with st.expander("Impostazioni avanzate · modello previsionale"):
-        previous = assumptions()
-        model = st.selectbox("Modello previsionale", MODEL_CHOICES, index=MODEL_CHOICES.index(previous.model),
-                             format_func=MODELLI.__getitem__, key=f"{page}_model",
-                             help="Automatico usa il modello con l’errore medio più basso sugli stessi periodi storici.")
-        save_assumptions(previous.model_copy(update={"model": model}))
-    if page=="market":
-        pass  # Geographic scope is already shown directly under the page title.
-    elif name in (ARCHIVE,DEMO):
+    with ctrl[-1]:
+        with st.popover("Modello e fonte",icon=":material/info:",width="stretch"):
+            previous = assumptions()
+            model = st.selectbox("Modello previsionale", MODEL_CHOICES, index=MODEL_CHOICES.index(previous.model),
+                                 format_func=MODELLI.__getitem__, key=f"{page}_model",
+                                 help="Automatico usa il modello con l’errore medio più basso sugli stessi periodi storici.")
+            save_assumptions(previous.model_copy(update={"model": model}))
+            st.write({
+                PUBLIC:"Bilancio nazionale mensile e prezzo medio PSV. La disponibilità è contabile, non fisica.",
+                DAILY:"Somma dei prelievi SRG di distribuzione, industria e termoelettrico. Non è il totale nazionale; non include offerta o prezzi.",
+                ARCHIVE:"Serie pubblica storica 2015–2021. Le proiezioni non descrivono il mercato di oggi.",
+                DEMO:"Dati sintetici, utilizzabili solo per provare i calcoli."
+            }[name])
+            st.caption("Il giorno gas inizia alle 06:00 locali.")
+    if page!="market" and name in (ARCHIVE,DEMO):
         st.caption("Archivio storico · non mercato attuale" if name==ARCHIVE else "Dati sintetici · simulazione")
-    elif name==DAILY:
-        st.caption("Prelievi SRG · perimetro parziale")
-    else:
-        st.caption("Bilancio nazionale · disponibilità contabile")
-    info("Info fonte",{
-        PUBLIC:"Bilancio nazionale mensile e prezzo medio PSV. La disponibilità è contabile, non fisica.",
-        DAILY:"Somma dei prelievi SRG di distribuzione, industria e termoelettrico. Non è il totale nazionale; non include offerta o prezzi.",
-        ARCHIVE:"Serie pubblica storica 2015–2021. Le proiezioni non descrivono il mercato di oggi.",
-        DEMO:"Dati interamente sintetici, utilizzabili solo per provare i calcoli."
-    }[name],"Il giorno gas inizia alle 06:00 locali.")
     st.session_state[f"{page}_source_note"] = ""
     if name == DEMO:
         bundle = fixture()

@@ -295,3 +295,22 @@ div[data-testid="stVerticalBlockBorderWrapper"] { border-color: var(--gas-border
 .st-key-panel_overview_mix .gas-row {min-height:1.8rem;padding:.34rem 0;}
 .st-key-panel_overview_indicators .gas-kpi {min-height:6rem;}
 .st-key-panel_overview_indicators a {font-size:.78rem;}
+
+/* Minimal operational desk: compact controls and readable, sparse hierarchy.
+   Never hide text, provenance, status or warning elements with CSS. */
+.stApp [data-testid="stMainBlockContainer"] {max-width:1240px;padding-top:2.8rem;}
+.stApp h1 {font-size:clamp(1.72rem,2.5vw,2.15rem);letter-spacing:-.045em;}
+.stApp h2 {font-size:1.22rem;}
+.stApp h3 {font-size:1.04rem;}
+.gas-kpi-grid {gap:.6rem;}
+.gas-kpi {min-height:6.05rem;padding:.8rem .85rem;border-radius:.55rem;}
+.gas-kpi .detail {font-size:.76rem;}
+.stApp [data-testid="stPopoverButton"] {min-height:2rem;padding:.28rem .55rem;font-size:.78rem;border-radius:.5rem; background:transparent;}
+.stApp [data-testid="stPopoverButton"] p {font-size:.78rem;}
+.stApp [data-testid="stPopoverButton"]:hover {border-color:var(--gas-teal);}
+.stApp [data-testid="stCaptionContainer"] p {font-size:.8rem;}
+.gas-header-meta {margin-top:.1rem;}
+@media(max-width:620px) {
+  .stApp [data-testid="stMainBlockContainer"] {padding-top:2.3rem;}
+  .gas-kpi {min-height:0;padding:.7rem;}
+}

@@ -119,7 +119,7 @@ def panel(context=None):
         left,right=st.columns([2,1],vertical_alignment="center")
         with left:
             st.subheader("Prezzo e forniture")
-            st.caption("Italia · indicatori indipendenti, con il proprio periodo di riferimento")
+            st.caption("Italia · periodi distinti")
         key=configured_key()
         now=utc_now()
         previous=st.session_state.get(STATE,{})
@@ -142,4 +142,5 @@ def panel(context=None):
             links.append("["+source["source"]+"]("+source["source_url"]+")")
         links.append("[Condizioni GIE]("+GIE_TERMS+")")
         st.markdown(" · ".join(links))
-        st.caption("PSV: media mensile pubblicata, non quotazione spot. Gli stoccaggi non misurano la disponibilità commerciale.")
+        with st.popover("Indicatori",icon=":material/info:"):
+            st.write("PSV: media mensile pubblicata, non quotazione spot. Gli stoccaggi non misurano la disponibilità commerciale.")

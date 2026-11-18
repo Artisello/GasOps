@@ -107,14 +107,14 @@ def test_entsog_notice_does_not_hide_other_warnings():
     assert source_notices(stale)==(stale,"")
 
 
-def test_overview_quick_links_and_advanced_model(monkeypatch,tmp_path):
+def test_overview_compact_model_controls(monkeypatch,tmp_path):
     monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
     app=AppTest.from_file(Path(__file__).resolve().parents[1]/"app.py",default_timeout=30)
     app.session_state["selected_source"]=DEMO
     app.run()
     assert not app.exception
-    assert any("modello previsionale" in e.label for e in app.expander)
-    assert any("/security-of-supply" in el.value for el in app.markdown)
+    assert not any("modello previsionale" in e.label for e in app.expander)
+    assert not any("[Mercato e previsioni](/market) ·" in el.value for el in app.markdown)
     assert app.selectbox(key="overview_model").value==AUTOMATIC
     assert app.selectbox(key="overview_dataset").value==DEMO
 
@@ -205,7 +205,7 @@ def test_lean_interface_preserves_diagnostics_and_author_credit(monkeypatch,tmp_
     app.session_state["selected_source"]=DEMO
     app.run()
     assert not app.exception
-    assert any("Prototipo per SNAM creato da Igor" in e.proto.body for e in app.get("html"))
+    assert any("Prototipo per Snam · creato da Igor" in e.proto.body for e in app.get("html"))
     assert any(e.label=="Connessione e limiti AI" for e in app.expander)
     assert any("Dati sintetici" in e.value for e in app.caption)
     assert app.button(key="analysis_launch").label=="Genera bollettino di mercato"
@@ -244,7 +244,7 @@ def test_overview_has_plain_language_and_responsive_cards(monkeypatch,tmp_path):
     app.session_state["selected_source"]=DEMO
     app.run()
     assert not app.exception
-    assert any(e.value=="Il mercato in breve" for e in app.subheader)
+    assert not any(e.value=="Il mercato in breve" for e in app.subheader)
     assert any("Nella simulazione, i consumi" in e.value or "Dati insufficienti" in e.value for e in app.markdown)
     assert any('gas-kpi-grid' in e.proto.body for e in app.get("html"))
     assert app.button(key="analysis_launch").label=="Genera bollettino di mercato"

@@ -88,9 +88,10 @@ def _report(report:Run,selection):
         if not report.results:
             st.text(report.summary or "Nessun risultato disponibile.")
     if Agent.REGULATORY in report.results:
-        st.caption("I riscontri normativi del supervisore usano materiali di studio predisposti, non i PDF del tuo archivio. Per questi ultimi usa Norme e documenti.")
+        st.caption("Normativa: materiali di studio, non PDF caricati.")
+        info("Fonti normative","I riscontri normativi del supervisore usano materiali predisposti. Interroga i PDF del tuo archivio in Norme e documenti.")
     if Agent.SETTLEMENT in report.results:
-        st.caption("La regolazione economica è una simulazione sulle ipotesi del calcolatore semplice, non una fattura.")
+        st.caption("Settlement simulato · calcolatore semplice")
     # Deterministic evidence comes first for fallback. Avoid repeating run.summary.
     priority=(Agent.SCENARIO,Agent.FORECAST,Agent.MARKET,Agent.SETTLEMENT,Agent.REGULATORY,Agent.QUALITY)
     available=[a for a in priority if a in report.results]
@@ -152,15 +153,14 @@ def _history():
 
 def assistant_page():
     st.title("Assistente AI")
-    st.caption("Analizza i consumi, le previsioni e gli scenari del gas.")
     selection=source_filters("ops",lookback=False)
     area,scope=market_scope(selection.name)
     st.caption(area+" · "+scope)
     model=reasoner()
-    st.caption("Modello selezionato: "+model.config.model if model else "Modalità senza AI · calcoli disponibili")
+    st.caption(model.config.model if model else "Calcoli locali")
     if model and not model.config.local:
-        st.caption("Solo dati pubblici o sintetici. Le domande possono essere inviate al provider AI.")
-    st.markdown("[Interroga i PDF caricati in Norme e documenti](/regulatory)")
+        st.caption("Solo dati pubblici · domande inviate al provider AI.")
+    st.markdown("[Interroga i PDF](/regulatory)")
     info("Come funziona","Scegli una fonte e fai una domanda autonoma. Non è una ricerca web e non ha memoria conversazionale. Ogni nuova domanda esegue un’analisi indipendente.",
          "Le scorciatoie usano gli strumenti locali e, se attivo, un solo tentativo AI di sintesi. Le domande libere possono usare fino a tre chiamate. Le fonti supplementari si configurano nella barra laterale. Lo storico dell’assistente rimane nella sessione.")
     disabled=selection.bundle is None
