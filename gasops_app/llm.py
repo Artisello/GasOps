@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 
 import requests
 
-from .models import Agent, Result, Run
+from .models import Agent, Result, Run, Citation
 from .supervisor import Call, Tool, ModelUnavailable
 
 SYSTEM = """You are the GasOps AI supervisor for read-only analytical screening. Write explanations in Italian. Select only tools
@@ -183,9 +183,10 @@ class CompatibleReasoner:
         self.pending = []
 
     def probe(self):
-        response=self._chat([{"role":"user","content":"Rispondi soltanto OK."}])
-        if not isinstance(response.get("content"),str) or not response["content"].strip():
-            raise ModelUnavailable("Il modello non ha restituito testo.")
+        # Validate the same structured response and citation path as a real briefing.
+        simulated=Result(agent=Agent.MARKET,summary="Esempio sintetico: consumo 100 GWh.",
+                         evidence=[Citation(document="Test sintetico GasOps",evidence="100 GWh, dato fittizio.")])
+        self.interpret("Test connessione: riferisci il consumo sintetico.",{Agent.MARKET:simulated})
         return True
 
     def route(self, run: Run, tools: Mapping[Agent, Tool]) -> list[Call]:

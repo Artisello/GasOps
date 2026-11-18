@@ -121,13 +121,15 @@ def run_workflow(
     full: bool = False,
     notify: Callable[[Run], None] | None = None,
     reasoner: Reasoner | None = None,
+    public_context: dict | None = None,
 ) -> Run:
     question = question.strip()[:600] or DAILY_BRIEFING
     defaults = plan(question, full)
     editions = {title: pdf.digest for title, pdf in library.documents.items()}
     run = Run(
         question=question, source=context.bundle.origin, input_sha256=context.bundle.fingerprint,
-        assumptions={**assumptions.model_dump(mode="json"), "pdf_sha256": editions},
+        assumptions={**assumptions.model_dump(mode="json"), "pdf_sha256": editions,
+                     "public_operational_context":public_context or {}},
     )
     required = set(Agent) if full else {call.agent for call in defaults} if len(defaults) == len(Agent) else set()
     report = execute(

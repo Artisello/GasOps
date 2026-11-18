@@ -146,6 +146,12 @@ def sidebar() -> None:
     st.selectbox("Modalità di analisi",modes,index=1 if config and config.groq else 0,
                  format_func=lambda value:MODALITA.get(value,value),key="execution_mode")
     ai_controls()
+    with st.expander("Fonti del briefing AI",expanded=False):
+        st.checkbox("Aggiungi riepiloghi pubblici GIE",key="briefing_gie",
+                    help="Consulta AGSI+ e ALSI Italia e IIP al lancio del report. Se usi un modello remoto, invia solo indicatori pubblici con attribuzione, non record UMM originali.")
+        st.checkbox("Aggiungi analisi meteo (demo non commerciale)",key="briefing_weather",
+                    help="Consulta Open-Meteo solo con ENTSOG recente; i riepiloghi possono essere condivisi con il modello selezionato.")
+        st.caption("Le fonti sono consultate al lancio, con cache. Attiva solo se autorizzato all’uso e condivisione dei dati.")
     if config and not config.local:
         st.caption("Condividi solo domande e dati non riservati; estratti normativi e settlement esclusi.")
     st.html('<div class="sidebar-caption">Europe/Rome · Prototipo indipendente</div>')
@@ -289,8 +295,20 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
     stage.html(steps(None, grid=True))
     try:
         docs = library()
+        from .briefing_context import collect
+        from .operational_sources import gie_key
+        include_gie=bool(st.session_state.get("briefing_gie"))
+        include_weather=bool(st.session_state.get("briefing_weather") or st.session_state.get("weather_demo_consent"))
+        public_context={}
+        if include_gie or include_weather:
+            try:
+                key=gie_key(st.secrets) if include_gie else ""
+            except (FileNotFoundError,KeyError):
+                key=gie_key() if include_gie else ""
+            with st.spinner("Consultazione delle fonti pubbliche selezionate…"):
+                public_context=collect(database(),context,utc_now(),key=key,include_gie=include_gie,include_weather=include_weather)
         report = run_workflow(
-            context, docs, assumptions(), question, full=full, reasoner=reasoner(),
+            context, docs, assumptions(), question, full=full, reasoner=reasoner(),public_context=public_context,
             notify=lambda run: stage.html(steps(run, grid=True)),
         )
     except ValueError as error:

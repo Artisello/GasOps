@@ -213,6 +213,9 @@ def overview() -> None:
                 st.caption("Modello selezionato: "+run.model)
             for warning in run.warnings:
                 st.warning(warning)
+            if run.assumptions.get("public_operational_context"):
+                with st.expander("Fonti operative del briefing"):
+                    st.json(run.assumptions["public_operational_context"],expanded=False)
             for result in run.results.values():
                 st.text(result.summary)
             if run.interpretation:
