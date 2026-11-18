@@ -424,6 +424,16 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
                 public_context=collect(database(),context,utc_now(),key=key,include_gie=include_gie,include_weather=include_weather,
                     weather_snapshots=st.session_state.get(WEATHER_STATE,{}) if include_weather else None,
                     clock=utc_now)
+        if current_context and (full or model is not None):
+            from .briefing_market_sources import collect_market_sources
+            from .terna_power import credentials
+            try:
+                terna=credentials(st.secrets)
+            except (FileNotFoundError,KeyError):
+                terna=credentials()
+            with st.spinner("Lettura delle fonti di mercato e degli indicatori pubblici…"):
+                public_context.update(collect_market_sources(database(),selection.bundle,utc_now(),
+                    st.session_state,terna=terna,clock=utc_now))
         report = run_workflow(
             context, docs, assumptions(), question, full=full, reasoner=model,public_context=public_context,planned_only=planned_only,
             notify=lambda run: stage.html(steps(run, grid=True)),

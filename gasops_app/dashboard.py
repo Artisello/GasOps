@@ -375,7 +375,7 @@ def _briefing_panel(selection) -> None:
                 with st.expander("Fonti operative consultate"):
                     for name,source in public.items():
                         status={"available":"Disponibile","stale":"Non recente","unavailable":"Non disponibile"}.get(source.get("status"),"Stato non indicato")
-                        st.text(f"{source.get('source',name)} · {status} · {source.get('gas_day') or source.get('acquired') or 'data non indicata'}")
+                        st.text(f"{source.get('source',name)} · {status} · {source.get('gas_day') or source.get('period') or source.get('acquired') or 'data non indicata'}")
                         if source.get("reason"):
                             st.text(source["reason"])
                     st.caption("Dati completi e metadati nel file JSON del bollettino.")

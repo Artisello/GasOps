@@ -233,7 +233,7 @@ def query_params(first: date, last: date):
             "timeZone":"CET","limit":500}
 
 
-def load(store: Store, *, refresh=False, now: datetime|None=None) -> tuple[Bundle,str|None]:
+def load(store: Store, *, refresh=False, now: datetime|None=None, months=MAX_MONTHS) -> tuple[Bundle,str|None]:
     """Fetch bounded monthly windows sequentially; cache completed older months.
 
     Refresh current and preceding month only. Stop after an unavailable older
@@ -243,7 +243,7 @@ def load(store: Store, *, refresh=False, now: datetime|None=None) -> tuple[Bundl
     loaded=[]
     warnings=[]
     earliest=last.replace(day=1)
-    for i,(first,end) in enumerate(month_windows(last)):
+    for i,(first,end) in enumerate(month_windows(last,months)):
         def parse(text,when,**kwargs):
             return parse_month(json.loads(text),first,end,when,allow_partial=i==0,**kwargs)
         try:
@@ -264,7 +264,7 @@ def load(store: Store, *, refresh=False, now: datetime|None=None) -> tuple[Bundl
     if not loaded:
         raise SourceUnavailable("ENTSOG non disponibile. " + " ".join(warnings))
     bundle=combine(loaded,earliest,last)
-    if len(loaded)<MAX_MONTHS:
+    if len(loaded)<months:
         warnings.append("Storico parziale: nessuna sostituzione con dati di esempio.")
     if any(m.metadata_warning for m in loaded):
         warnings.append("ENTSOG: totale dichiarato discordante; verificati i singoli valori ricevuti. Completezza delle eventuali revisioni non certificata.")

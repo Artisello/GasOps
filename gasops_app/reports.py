@@ -39,7 +39,7 @@ def markdown(run: Run, reviewed: dict[str, str]) -> str:
         lines.extend(["", "## Contesto operativo pubblico", ""])
         for name,item in public.items():
             status={"available":"Disponibile","stale":"Non recente","unavailable":"Non disponibile"}.get(item.get("status"),"Stato non indicato")
-            lines.append(f"- **{_plain(str(item.get('source',name)))}** · {status} · {_plain(str(item.get('gas_day') or item.get('acquired') or 'data non indicata'))}")
+            lines.append(f"- **{_plain(str(item.get('source',name)))}** · {status} · {_plain(str(item.get('gas_day') or item.get('period') or item.get('acquired') or 'data non indicata'))}")
             if item.get("limitation") or item.get("reason"):
                 lines.append(f"  - {_plain(str(item.get('limitation') or item.get('reason')))}")
         lines.append("Indicatori e metadati completi nelle ipotesi dell’analisi. Nessun record UMM originale.")
