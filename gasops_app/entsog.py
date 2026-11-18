@@ -38,6 +38,9 @@ class Month:
     retrieved_at: datetime
     cached: bool
     failed: bool
+    valid_slots: int = 0
+    expected_slots: int = 0
+    metadata_warning: bool = False
 
 
 def _start(day):
@@ -66,7 +69,7 @@ def gas_timestamp(value):
 
 
 def parse_month(payload: dict, first: date, last: date, retrieved_at: datetime,
-                *, cached=False, failed=False) -> Month:
+                *, cached=False, failed=False, allow_partial=False) -> Month:
     if not isinstance(payload,dict):
         raise SourceSchemaError("Risposta ENTSOG non valida.")
     items = payload.get("operationalData",payload.get("operationaldatas"))
@@ -93,7 +96,8 @@ def parse_month(payload: dict, first: date, last: date, retrieved_at: datetime,
         # for seven gas days and three points. The total is not sufficient
         # to establish whether this particular requested grid is incomplete.
         # Do not accept a saturated page, a smaller total or a mismatched
-        # page count; only a fully validated grid may override the total.
+        # page count. Historical windows require a fully validated grid;
+        # the most recent window may explicitly retain validated partial data.
         try:
             limit=int(meta["limit"]) if meta.get("limit") is not None else 500
         except (ValueError,TypeError,OverflowError) as exc:
@@ -149,20 +153,23 @@ def parse_month(payload: dict, first: date, last: date, retrieved_at: datetime,
         else:
             values[key]=None
             notes[key[0]].add("versioni_in_conflitto")
-    if metadata_warning:
-        # Require a real, non-conflicting observation for every requested
-        # day and sector. Counts alone cannot detect a missing point/day
-        # hidden by duplicate records. No partial window is treated as full.
-        expected={(first+timedelta(days=i),field)
-                  for i in range((last-first).days+1) for field in FIELDS}
-        complete=sum(values.get(key) is not None for key in expected)
-        if complete!=len(expected):
-            raise SourceSchemaError(f"Copertura ENTSOG incompleta: {complete}/{len(expected)} valori giorno-settore validi; "
-                                    f"ricevuti {len(items)}, totale dichiarato {total}")
+    expected={(first+timedelta(days=i),field)
+              for i in range((last-first).days+1) for field in FIELDS}
+    complete=sum(values.get(key) is not None for key in expected)
+    if metadata_warning and complete!=len(expected) and not allow_partial:
+        raise SourceSchemaError(f"Copertura ENTSOG incompleta: {complete}/{len(expected)} valori giorno-settore validi; "
+                                f"ricevuti {len(items)}, totale dichiarato {total}")
+    if complete!=len(expected):
+        # For the most recent window, preserve individually validated records.
+        # This is not a complete response: missing and conflicting slots
+        # remain missing; never assume their values or revision status.
+        for day,field in expected:
+            if values.get((day,field)) is None:
+                notes.setdefault(day,set()).add("copertura_parziale")
     if not any(all(values.get((day,field)) is not None for field in FIELDS)
                for day in notes):
         raise SourceSchemaError("Nessun giorno con i tre aggregati ENTSOG completi.")
-    return Month(values,notes,retrieved_at,cached,failed)
+    return Month(values,notes,retrieved_at,cached,failed,complete,len(expected),metadata_warning)
 
 
 def _last_completed(now: datetime) -> date:
@@ -238,7 +245,7 @@ def load(store: Store, *, refresh=False, now: datetime|None=None) -> tuple[Bundl
     earliest=last.replace(day=1)
     for i,(first,end) in enumerate(month_windows(last)):
         def parse(text,when,**kwargs):
-            return parse_month(json.loads(text),first,end,when,**kwargs)
+            return parse_month(json.loads(text),first,end,when,allow_partial=i==0,**kwargs)
         try:
             month=retrieve(store,key=f"entsog-srg-three-v4-{first:%Y-%m}",name="ENTSOG",
                 url=URL,parse=parse,ttl=timedelta(hours=12 if i<2 else 24*30),
@@ -252,13 +259,15 @@ def load(store: Store, *, refresh=False, now: datetime|None=None) -> tuple[Bundl
             break
         loaded.append(month)
         earliest=first
+        if month.expected_slots and month.valid_slots<month.expected_slots:
+            warnings.append(f"{first:%m/%Y}: copertura parziale ENTSOG {month.valid_slots}/{month.expected_slots} valori giorno-settore; soltanto i giorni completi contribuiscono al totale.")
     if not loaded:
         raise SourceUnavailable("ENTSOG non disponibile. " + " ".join(warnings))
     bundle=combine(loaded,earliest,last)
     if len(loaded)<MAX_MONTHS:
         warnings.append("Storico parziale: nessuna sostituzione con dati di esempio.")
-    if any("metadati_totale_discordante" in str(flag) for flag in bundle.rows["source_flag"]):
-        warnings.append("ENTSOG: totale dichiarato discordante; griglia giorno-settore richiesta verificata integralmente. Completezza delle eventuali revisioni non certificata.")
+    if any(m.metadata_warning for m in loaded):
+        warnings.append("ENTSOG: totale dichiarato discordante; verificati i singoli valori ricevuti. Completezza delle eventuali revisioni non certificata.")
     if bundle.origin.refresh_failed:
         warnings.append("Una o più finestre usano l’ultima cache valida.")
     if (last-date.fromisoformat(bundle.origin.latest_period)).days>2:
