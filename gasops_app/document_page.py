@@ -1,29 +1,107 @@
-"""Session-only, PDF-grounded document workspace."""
+"""Shared, persistent public PDF archive; personal research state stays session-only."""
 import json
 import os
+from threading import Lock
 from pathlib import Path
 
 import streamlit as st
 
 from .data import ROOT
-from .document_desk import build, identity, search, searchable_pages, bookmark, page_text, extend_uploads, MAX_RESULTS, MAX_TOTAL_BYTES
+from .document_desk import build, identity, search, searchable_pages, bookmark, page_text, MAX_RESULTS, MAX_TOTAL_BYTES
 from .regulatory import read_local_pdfs, MAX_DOCUMENTS, MAX_PDF_BYTES
 from .visuals import info
 from .session import reasoner
 from .document_rag import answer, MAX_PASSAGES
 from .supervisor import ModelUnavailable
+from .document_archive import Archive, ArchiveConfig, ArchiveError, display_name
 
 STATE="document_desk_v1"
-UPLOADS="document_archive_uploads_v2"
-UPLOAD_EPOCH="document_archive_uploader_epoch"
-UPLOAD_NOTICE="document_archive_notice"
+ADMIN="gasops_document_admin"
+NOTICE="gasops_document_notice"
+WRITE_LOCK=Lock()
 
 
-def _remove_upload(digest):
-    st.session_state[UPLOADS]=tuple((name,data) for name,data in st.session_state.get(UPLOADS,())
-                                    if identity(((name,data),))[0][1]!=digest)
-    st.session_state[UPLOAD_EPOCH]=st.session_state.get(UPLOAD_EPOCH,0)+1
-    st.session_state[UPLOAD_NOTICE]=("Documento rimosso dall’archivio.",[],[])
+def _archive_config():
+    def value(name):
+        try:
+            return str(st.secrets.get(name) or os.environ.get(name,"")).strip()
+        except (FileNotFoundError,KeyError):
+            return os.environ.get(name,"").strip()
+    url,key,admin=(value(k) for k in ("GASOPS_DOCUMENTS_URL","GASOPS_DOCUMENTS_KEY","GASOPS_DOCUMENTS_ADMIN_ID"))
+    if not any((url,key,admin)):
+        return None
+    return ArchiveConfig(url.rstrip("/"),key,admin)
+
+
+@st.cache_data(ttl=30,max_entries=3,show_spinner=False)
+def _read_remote(config):
+    # Only public archives are cached across visitors; never credentials or chat.
+    return Archive(config).read()
+
+
+def _admin_panel(config,archive,local,remote):
+    if not config.admin_id:
+        return
+    with st.expander("Gestisci archivio"):
+        saved=st.session_state.get(ADMIN)
+        session=saved[1] if saved and saved[0]==config and saved[1].valid(config) else None
+        if not session:
+            st.session_state.pop(ADMIN,None)
+            with st.form("document_admin_login",clear_on_submit=True):
+                email=st.text_input("Email amministratore",max_chars=254)
+                password=st.text_input("Password",type="password",max_chars=256)
+                login=st.form_submit_button("Accedi")
+            if login:
+                try:
+                    st.session_state[ADMIN]=(config,archive.login(email,password))
+                except ArchiveError as exc:
+                    st.error(str(exc))
+                else:
+                    st.rerun()
+            return
+        if st.button("Esci dalla gestione",key="document_admin_logout"):
+            st.session_state.pop(ADMIN,None)
+            st.rerun()
+        st.warning("I PDF pubblicati saranno accessibili a chiunque, anche tramite il loro URL. Solo documenti pubblici o con autorizzazione alla diffusione.")
+        with st.form("document_publish",clear_on_submit=True):
+            uploaded=st.file_uploader("Aggiungi PDF all’archivio pubblico",type=["pdf"],accept_multiple_files=True,
+                                      help="Massimo 24 MB per file; 8 documenti, 64 MB e 2.000 pagine complessive.")
+            authorized=st.checkbox("Confermo che tutti i PDF possono essere resi pubblici.")
+            publish=st.form_submit_button("Pubblica documenti",type="primary")
+        if publish:
+            if not authorized or not uploaded:
+                st.warning("Seleziona i PDF e conferma la pubblicazione.")
+            elif len(uploaded)>MAX_DOCUMENTS or any(f.size>MAX_PDF_BYTES for f in uploaded) or sum(f.size for f in uploaded)>MAX_TOTAL_BYTES:
+                st.warning("Limiti di caricamento superati.")
+            else:
+                try:
+                    with WRITE_LOCK,st.spinner("Pubblicazione nell’archivio condiviso…"):
+                        count,notes=archive.publish(session,tuple((f.name,f.getvalue()) for f in uploaded),local)
+                    st.session_state[NOTICE]=(f"{count} PDF pubblicati.",notes)
+                except (ArchiveError,ValueError,RuntimeError):
+                    st.session_state[NOTICE]=("",["Pubblicazione non completata; verifica i PDF già salvati prima di riprovare."])
+                finally:
+                    _read_remote.clear()
+                st.rerun()
+        if remote:
+            labels={k:display_name(k) for k,_ in remote}
+            with st.form("document_remove",clear_on_submit=True):
+                key=st.selectbox("Documento da rimuovere",list(labels),format_func=labels.__getitem__)
+                confirmation=st.checkbox("Confermo la rimozione dall’archivio pubblico.")
+                remove=st.form_submit_button("Rimuovi documento")
+            if remove:
+                if not confirmation:
+                    st.warning("Conferma la rimozione.")
+                else:
+                    try:
+                        with WRITE_LOCK:
+                            archive.remove(session,key)
+                        st.session_state[NOTICE]=("Documento rimosso.",[])
+                    except ArchiveError as exc:
+                        st.session_state[NOTICE]=("",[str(exc)])
+                    finally:
+                        _read_remote.clear()
+                    st.rerun()
 
 
 def _update_index(inputs,docs=None):
@@ -51,62 +129,43 @@ def _archive():
     except OSError:
         local=()
         st.warning("Archivio predisposto sul server non leggibile.")
-    if UPLOADS not in st.session_state:
-        # Recover still-available PDFs from the earlier session index, if any.
-        # The uploader is not the source of truth and is never rehydrated.
-        previous=st.session_state.get(STATE,{})
-        docs=previous.get("docs")
-        local_hashes={digest for _,digest in identity(local)}
-        st.session_state[UPLOADS]=tuple((pdf.name,pdf.data) for pdf in docs.documents.values()
-                                       if pdf.digest not in local_hashes) if docs else ()
-    existing=st.session_state[UPLOADS]
-    st.subheader("I tuoi documenti")
-    st.caption("I PDF caricati restano disponibili mentre navighi nell’app. La raccolta è privata alla sessione, non un archivio permanente.")
-    epoch=st.session_state.get(UPLOAD_EPOCH,0)
-    uploaded=st.file_uploader("Aggiungi PDF",type=["pdf"],accept_multiple_files=True,key=f"desk_pdf_upload_{epoch}",
-                              help="PDF con testo selezionabile, fino a 24 MB per file. Solo documenti pubblici o autorizzati.")
-    if uploaded:
-        additions=[]
-        rejected=[]
-        size=0
-        for item in uploaded:
-            if item.size>MAX_PDF_BYTES or size+item.size>MAX_TOTAL_BYTES or len(additions)>=MAX_DOCUMENTS:
-                rejected.append(f"{item.name} · limite di caricamento superato.")
-                continue
-            additions.append((item.name,item.getvalue()))
-            size+=item.size
+    st.subheader("Archivio documentale pubblico")
+    st.caption("Documenti consultabili da tutti. Le ricerche e i riferimenti salvati restano nella singola sessione.")
+    config=None
+    try:
+        config=_archive_config()
+    except ValueError:
+        st.warning("Configurazione archivio persistente non valida.")
+    remote=()
+    if config:
+        archive=Archive(config)
         try:
-            with st.spinner("Aggiunta dei documenti all’archivio…"):
-                retained,docs,notices=extend_uploads(existing,tuple(additions),local)
-            cached=_update_index((*retained,*local),docs)
-            st.session_state[UPLOADS]=retained
-            count=len(retained)-len(existing)
-            st.session_state[UPLOAD_NOTICE]=(f"{count} PDF aggiunti all’archivio." if count else "",
-                                             rejected+notices,docs.errors if cached["docs"] is not docs else [])
-        except (ValueError,RuntimeError):
-            st.session_state[UPLOAD_NOTICE]=("",rejected+["Caricamento non completato. I PDF precedenti sono conservati."],[])
-        # A fresh uploader accepts incremental additions and cannot re-add a
-        # removed file. Only the independent archive survives navigation.
-        st.session_state[UPLOAD_EPOCH]=epoch+1
-        st.rerun()
-    cached=_update_index((*st.session_state[UPLOADS],*local))
-    docs=cached["docs"]
-    message,notices,errors=st.session_state.pop(UPLOAD_NOTICE,("",[],[]))
+            with st.spinner("Aggiornamento archivio…"):
+                remote=_read_remote(config)
+        except ArchiveError as exc:
+            st.warning(str(exc)+" Sono mostrati soltanto eventuali PDF predisposti sul server.")
+        else:
+            _admin_panel(config,archive,local,remote)
+    else:
+        st.caption("Archivio remoto non configurato · consultazione dei soli PDF predisposti nel progetto.")
+    message,notices=st.session_state.pop(NOTICE,("",[]))
     if message:
         st.success(message)
-    for warning in dict.fromkeys([*notices,*errors,*docs.errors]):
+    for notice in notices:
+        st.warning(notice)
+    cached=_update_index(tuple((display_name(k),v) for k,v in remote)+local)
+    docs=cached["docs"]
+    for warning in docs.errors:
         st.warning(warning)
     if docs.documents:
         coverage=searchable_pages(docs)
-        own={digest for _,digest in identity(st.session_state[UPLOADS])}
         st.caption(f"{len(docs.documents)} PDF · {sum(coverage.values())} / {sum(p.pages for p in docs.documents.values())} pagine con testo")
         with st.container(border=True,key="panel_document_archive"):
             for name,pdf in docs.documents.items():
                 label,actions=st.columns([3,1.45],vertical_alignment="center")
                 with label:
                     st.text(pdf.name)
-                    st.caption(f"{pdf.pages} pagine · {len(pdf.data)/1024/1024:.2f} MB · "+
-                               ("Caricato nella sessione" if pdf.digest in own else "Predisposto sul server"))
+                    st.caption(f"{pdf.pages} pagine · {len(pdf.data)/1024/1024:.2f} MB")
                     if coverage[name]<pdf.pages:
                         st.caption(f"Testo estraibile in {coverage[name]} pagine.")
                 with actions:
@@ -115,11 +174,6 @@ def _archive():
                                            icon=":material/download:",on_click="ignore")
                         st.caption("SHA-256")
                         st.text(pdf.digest)
-                        if pdf.digest in own:
-                            st.button("Rimuovi PDF",key="desk_remove_"+pdf.digest,
-                                      icon=":material/delete:",on_click=_remove_upload,args=(pdf.digest,))
-                        else:
-                            st.caption("Documento predisposto sul server.")
     return cached
 
 
@@ -325,12 +379,12 @@ def _references(cached):
 
 def document_page():
     st.title("Norme e documenti")
-    st.caption("Cerca, interroga e confronta i tuoi PDF.")
+    st.caption("Cerca, interroga e confronta i documenti dell’archivio.")
     info("Info archivio","La ricerca mostra testo estratto dalle pagine dei PDF presenti, non note precompilate. Le corrispondenze per parole chiave non sono un parere legale.",
-         "Usa solo copie pubbliche o autorizzate. I PDF restano disponibili durante la navigazione nella stessa sessione; una nuova sessione o un riavvio possono azzerare la raccolta. Scarica gli originali per conservarli. I PDF non entrano nel bollettino; la ricerca è sul server. Con Chiedi all’AI, soltanto la domanda e gli estratti sono inviati al modello selezionato, previo consenso per provider remoti. Non caricare documenti riservati su un deployment pubblico. Nessun OCR. La vigenza delle edizioni non è verificata.")
+         "Usa solo copie pubbliche o autorizzate. I PDF pubblicati nell’archivio remoto sono condivisi tra tutti i visitatori e conservati indipendentemente dalla sessione Streamlit. Solo l’amministratore può pubblicare e rimuovere documenti. Non caricare dati riservati. I PDF non entrano nel bollettino; la ricerca è sul server. Con Chiedi all’AI, soltanto la domanda e gli estratti sono inviati al modello selezionato, previo consenso per provider remoti. Non caricare documenti riservati su un deployment pubblico. Nessun OCR. La vigenza delle edizioni non è verificata.")
     cached=_archive()
     if not cached["docs"].documents:
-        st.info("Aggiungi almeno un PDF per iniziare. Non vengono mostrati rilievi o citazioni in assenza di documenti.")
+        st.info("Aggiungi almeno un PDF tramite la gestione amministratore per iniziare. Non vengono mostrati rilievi o citazioni in assenza di documenti.")
         return
     action=st.radio("Strumento",["Cerca","Chiedi all’AI","Leggi PDF","Confronta","Riferimenti salvati"],
                     horizontal=True,label_visibility="collapsed",key="desk_mode")

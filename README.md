@@ -186,3 +186,49 @@ I PDF caricati sono conservati in un manifest di sessione indipendente dal file_
 ### ENTSOG: copertura recente parziale
 
 La finestra mensile più recente può conservare valori giorno-settore ricevuti e validati anche con totale API discordante e pagina non satura. Le finestre storiche mantengono la validazione precedente. I tre aggregati sono richiesti per il totale giornaliero: dati assenti, nulli e conflittuali non vengono trasformati in zero. Copertura esplicita e avvertenza sulle revisioni, nessuna fonte sintetica sostitutiva. La previsione espone la distanza dall’ultima osservazione valida; un dato vecchio non è etichettato come previsione aggiornata. Il confronto settimanale termina alla data osservata. Test 48/51 con 16 giorni completi e uno mancante, più conflitti e conteggi incoerenti. Il caso reale richiede verifica dopo refresh sul deployment.
+
+
+### Archivio pubblico persistente (Supabase Storage)
+
+Questa configurazione sostituisce il precedente archivio di sessione. I documenti
+pubblicati restano in Storage anche dopo la chiusura del browser, una nuova
+sessione o il redeploy Streamlit. Non si usa il disco effimero dell'app.
+Il bucket è pubblico: ogni PDF è accessibile anche fuori da GasOps tramite URL.
+Solo pubblicazione autorizzata, nessun documento aziendale riservato.
+
+1. Scegli un progetto Supabase (preferibilmente dedicato a GasOps; verifica
+   costi e quote). Storage > New bucket: gasops-documents, Public bucket,
+   file size limit 24 MB, allowed MIME type application/pdf.
+2. In Authentication > Users aggiungi un utente amministratore con email e
+   password forte, conferma email, copia il suo UUID. Non abilitare signup
+   pubblico solo per questo archivio. Non riutilizzare credenziali personali.
+3. Nel SQL Editor esegui docs/gasops_document_storage_policies.sql dopo aver
+   sostituito entrambi gli UUID di esempio con quello dell'amministratore.
+   Verifica che non esistano policy generiche di scrittura applicabili al bucket.
+   Non usare service_role; i visitatori leggono con la publishable key e le
+   scritture richiedono il JWT dell'utente autorizzato dalla RLS.
+4. In Streamlit Cloud > Manage app > Settings > Secrets aggiungi:
+
+       GASOPS_DOCUMENTS_URL = "https://PROJECT_REF.supabase.co"
+       GASOPS_DOCUMENTS_KEY = "sb_publishable_..."
+       GASOPS_DOCUMENTS_ADMIN_ID = "UUID-amministratore"
+
+   Conserva tutti i Secret già presenti. Non inserire chiavi private nel repo.
+5. Norme e documenti > Gestisci archivio > Accedi, seleziona PDF, conferma
+   pubblicazione. Apri la pagina in incognito e verifica anche dopo un reboot.
+   Per rimuovere usa la gestione amministratore. Eventuali cache del provider
+   possono conservare copie pubblicate per un periodo limitato.
+
+8 documenti, 24 MiB per file, 64 MiB e 2.000 pagine complessive per l'indice.
+I limiti aggregati sono controlli applicativi, non quote atomiche del bucket;
+usa la gestione GasOps da un amministratore alla volta. I file nel bucket
+devono essere PDF nella radice. Le aggiunte sono validate e deduplicate per
+SHA-256, senza sovrascrivere versioni. Pubblicazione multipla non atomica:
+in caso d'errore controllare i documenti già salvati. Cache pubblica di lettura
+30 secondi e aggiornamento immediato dopo modifiche nello stesso processo.
+Le sessioni admin scadono e richiedono nuovo accesso. Domande e segnalibri
+rimangono privati alla sessione. Senza configurazione, solo PDF predisposti nel
+repository/server; non si accettano nuovi upload temporanei. Gli upload
+effimeri di versioni precedenti non sono recuperabili dopo la scadenza della
+sessione: ricaricare i PDF originali. Nessun progetto/bucket configurato
+automaticamente dall'app. Verificare RLS e persistenza sul deployment.
