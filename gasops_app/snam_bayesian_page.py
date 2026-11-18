@@ -34,6 +34,8 @@ def panel(annual,horizon):
             col.metric(LABELS[k]+" · MAE",f'{r["scores"][k]["mae"]/1000:.2f}')
         chosen="bayesian_multi" if keys else "bayesian_base"
         s=r["scores"][chosen]
+        baseline=r["scores"]["bayesian_base"]["mae"]
+        if keys and baseline>0:st.caption(f"Variazione MAE rispetto a Bayes Jarvis: {100*(s['mae']/baseline-1):+.1f}% sullo stesso campione.")
         st.caption(f'Intervallo nominale 80% · copertura osservata {s["coverage_80"]:.1f}% · MAE in migliaia di unità.')
         frame=pd.DataFrame(r["records"])
         chart=frame.rename(columns=LABELS|{"actual":"Consuntivo G−1"})

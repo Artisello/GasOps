@@ -101,6 +101,10 @@ def panel():
     for col,m in zip(cols,MODELS,strict=True):
         col.metric(LABELS[m],f'{r["scores"][m]["mae"]:.1f}')
     base=r["scores"]["autoregressive"]["mae"]
+    bayes_base=r["scores"]["bayesian_base"]["mae"]
+    if bayes_base>0:
+        delta=(r["scores"]["bayesian_multi"]["mae"]/bayes_base-1)*100
+        st.caption(f"Variazione MAE Bayes multivariato vs Bayes autoregressivo: {delta:+.1f}% sulle stesse date.")
     if base>0:
         change=(r["scores"]["multivariate"]["mae"]/base-1)*100
         st.caption(f"Variazione MAE multivariato rispetto al Ridge autoregressivo: {change:+.1f}%. Campione comune; nessuna garanzia futura.")
