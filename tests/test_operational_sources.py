@@ -58,3 +58,48 @@ def test_jarvis_missing_and_conflicting():
         parse_jarvis(j("2026-11-17,2026-11-18T07:00:00+01:00,2200,-1,"),now=NOW)
     with pytest.raises(ValueError,match="offset"):
         parse_jarvis(j("2026-11-17,2026-11-17T07:00:00,2200,-1,"),now=NOW)
+
+
+def test_gie_attribution_and_alsi_units():
+    from gasops_app.operational_sources import parse_alsi,attributed_csv,attribution
+    row={"code":"IT","gasDayStart":"2026-11-17","inventory":{"lng":"20","gwh":"130"},
+         "dtmi":"50","sendOut":"40","dtrs":"100","status":"C"}
+    r=parse_alsi(json.dumps({"last_page":1,"data":[row]}),NOW,scope="IT")
+    assert r["frame"].iloc[0]["inventory_1000m3_lng"]==20
+    assert r["frame"].iloc[0]["inventory_gwh"]==130
+    assert r["frame"].iloc[0]["sendout_reference_pct"]==40
+    assert attribution("ALSI")["source"] in attributed_csv(r)
+    assert "https://alsi.gie.eu/" in attributed_csv(r)
+    row["inventory"]="20"
+    row["dtrs"]="0"
+    r=parse_alsi(json.dumps({"last_page":1,"data":[row]}),NOW,scope="IT")
+    assert r["frame"]["inventory_gwh"].isna().all()
+    assert r["frame"]["sendout_reference_pct"].isna().all()
+
+
+def test_agsi_export_has_credit():
+    from gasops_app.operational_sources import attributed_csv,attribution
+    r=parse_agsi(json.dumps({"last_page":1,"data":[arow()]}),NOW,scope="IT")
+    assert attribution("AGSI+")["source"] in attributed_csv(r)
+    assert "https://agsi.gie.eu/" in attributed_csv(r)
+
+
+def test_iip_partial_and_attributed_json():
+    from gasops_app.operational_sources import parse_iip,attributed_iip_json
+    raw={"last_page":2,"data":[{"messageId":"test","message":"Example only"}]}
+    result=parse_iip(json.dumps(raw),NOW)
+    assert result["partial"] is True
+    export=json.loads(attributed_iip_json(result))
+    assert "GIE" in export["source"] and export["source_url"]=="https://iip.gie.eu/"
+    assert export["messages"]==raw["data"]
+    with pytest.raises(ValueError):
+        parse_iip(json.dumps({"last_page":0,"error":"access denied","data":[]}),NOW)
+
+
+def test_shared_gie_key(monkeypatch):
+    from gasops_app.operational_sources import gie_key
+    monkeypatch.delenv("GASOPS_GIE_API_KEY",raising=False)
+    monkeypatch.setenv("GASOPS_AGSI_API_KEY","old")
+    assert gie_key()=="old"
+    monkeypatch.setenv("GASOPS_GIE_API_KEY","new")
+    assert gie_key()=="new"
