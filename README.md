@@ -285,3 +285,7 @@ KPI operativi → Centro operativo: controlli deterministici, coda di revisione 
 ## Compliance operativa
 
 Norme e documenti → Compliance: collegamenti a evidenze letterali dei PDF pubblici, versione SHA-256, pagina, valutazione di pertinenza e tracciabilità dei rilievi BSO. [Perimetro e limiti](docs/REGULATORY_COMPLIANCE.md).
+
+## Analista dati integrato
+
+Assistente AI → Analista dati: confronta serie pubbliche caricate, statistiche, correlazioni, benchmark e backtest con risposta AI opzionale. [Metodo e limiti](docs/DATA_ANALYST.md).

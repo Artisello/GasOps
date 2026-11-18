@@ -153,6 +153,11 @@ def _history():
 
 def assistant_page():
     st.title("Assistente AI")
+    view=st.radio("Modalità assistente",["Assistente operativo","Analista dati"],horizontal=True,key="assistant_view")
+    if view=="Analista dati":
+        from .data_analyst_page import panel
+        panel()
+        return
     selection=source_filters("ops",lookback=False)
     area,scope=market_scope(selection.name)
     st.caption(area+" · "+scope)
