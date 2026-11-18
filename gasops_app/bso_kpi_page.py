@@ -12,7 +12,7 @@ from .operations_ledger import sample_rows
 from .settlement_desk_page import STATE as SETTLEMENT_STATE
 from .visuals import info, kpi_grid
 from .bso_kpis import (PUBLIC_MILESTONES,NEWS,CODE,JARVIS,MAX_BYTES,AREAS,
-                       task_demo,task_template,task_csv,parse_tasks,operations_metrics,
+                       task_demo,balancing_demo,task_template,task_csv,parse_tasks,operations_metrics,
                        balancing_metrics,settlement_metrics,closed_gas_day,is_timed,local_day)
 
 STATE="bso_tasks_v1"
@@ -117,9 +117,7 @@ def _balancing(demo,now):
     st.subheader("Balancing")
     if demo:
         # Explicit synthetic snapshots, not the published Jarvis feed.
-        days=[date(2026,11,d) for d in range(1,18) if d!=7]
-        frame=pd.DataFrame([{"gas_day":d,"published_at":datetime(d.year,d.month,d.day,18,tzinfo=ROME),
-                             "sas_gwh":float((d.day*13)%71-35)} for d in days])
+        frame=balancing_demo()
         st.caption("SAS sintetico · novembre 2026")
     else:
         imported=st.session_state.get("jarvis_public_snapshot_v1")
@@ -176,7 +174,11 @@ def _settlement(demo,now):
 def page():
     st.title("KPI operativi")
     st.caption("Balancing · Settlement · Operations")
-    view=st.radio("Vista KPI",["Panoramica","Registro operativo","Monitoraggio fonti"],horizontal=True,label_visibility="collapsed",key="bso_view")
+    view=st.radio("Vista KPI",["Panoramica","Registro operativo","Monitoraggio fonti","Executive demo"],horizontal=True,label_visibility="collapsed",key="bso_view")
+    if view=="Executive demo":
+        from .executive_demo import panel
+        panel()
+        return
     if view=="Monitoraggio fonti":
         from .monitoring_page import panel
         panel()
