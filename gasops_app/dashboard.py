@@ -447,7 +447,12 @@ def _market_data(context, visible):
 
 
 def market() -> None:
-    view=st.radio("Vista mercato",["Domanda e previsioni","Mercato europeo ACER","Sistema elettrico Terna"],horizontal=True,label_visibility="collapsed",key="market_view")
+    view=st.radio("Vista mercato",["Domanda e previsioni","Mercato europeo ACER","Sistema elettrico Terna","Laboratorio previsionale"],horizontal=True,label_visibility="collapsed",key="market_view")
+    if view=="Laboratorio previsionale":
+        from .predictive_page import panel
+        st.title("Mercato e previsioni")
+        panel()
+        return
     if view=="Sistema elettrico Terna":
         from .terna_power_page import panel
         st.title("Mercato e previsioni")
