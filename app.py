@@ -21,7 +21,7 @@ from gasops_app import dashboard, session, workbench, operations_page, risk_page
 pages = [
     st.Page(dashboard.overview, title="Panoramica", icon=":material/grid_view:", default=True),
     st.Page(dashboard.market, title="Mercato e previsioni", icon=":material/monitoring:", url_path="market"),
-    st.Page(operational_sources_page.operational_context, title="Security of supply", icon=":material/shield:", url_path="security-of-supply"),
+    st.Page(operational_sources_page.operational_context, title="Stoccaggi e forniture", icon=":material/shield:", url_path="security-of-supply"),
     st.Page(workbench.balancing, title="Bilanciamento", icon=":material/balance:", url_path="balancing"),
     st.Page(operations_page.operations_ledger, title="Registro operativo", icon=":material/receipt_long:", url_path="ledger"),
     st.Page(risk_page.risk_page, title="Rischio probabilistico", icon=":material/query_stats:", url_path="risk"),
@@ -36,7 +36,9 @@ with st.sidebar:
           <div><strong>GasOps <em>AI</em></strong><small>Mercato del gas</small></div>
         </div>
     """)
-    for page in pages:
-        st.page_link(page)
+    for label,indices in (("Mercato",(0,1,2)),("Operazioni",(3,4,5)),("Analisi",(6,7))):
+        st.html(f'<div class="gas-nav-group">{label}</div>')
+        for index in indices:
+            st.page_link(pages[index])
     session.sidebar()
 current.run()

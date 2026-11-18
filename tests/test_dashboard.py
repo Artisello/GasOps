@@ -90,3 +90,24 @@ def test_agsi_is_default_and_loads_independently(monkeypatch,tmp_path):
     assert calls==["IT"] and not app.exception
     app.selectbox(key="AGSI+_scope").select("EU").run()
     assert calls==["IT","EU"] and not app.exception
+
+
+def test_entsog_notice_does_not_hide_other_warnings():
+    from gasops_app.session import source_notices, ENTSOG_METADATA_NOTE
+    assert source_notices(None)==("","")
+    assert source_notices(ENTSOG_METADATA_NOTE)==("",ENTSOG_METADATA_NOTE)
+    stale="Ultimo giorno completo non recente: verifica pubblicazione e disponibilità."
+    assert source_notices(ENTSOG_METADATA_NOTE+" "+stale)==(stale,ENTSOG_METADATA_NOTE)
+    assert source_notices(stale)==(stale,"")
+
+
+def test_overview_quick_links_and_advanced_model(monkeypatch,tmp_path):
+    monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
+    app=AppTest.from_file(Path(__file__).resolve().parents[1]/"app.py",default_timeout=30)
+    app.session_state["selected_source"]=DEMO
+    app.run()
+    assert not app.exception
+    assert any("modello previsionale" in e.label for e in app.expander)
+    assert any("/security-of-supply" in el.value for el in app.markdown)
+    assert app.selectbox(key="overview_model").value==AUTOMATIC
+    assert app.selectbox(key="overview_dataset").value==DEMO

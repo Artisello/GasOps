@@ -178,3 +178,23 @@ div[data-testid="stVerticalBlockBorderWrapper"] { border-color: var(--gas-border
 }
 .gas-flow-track b { color: var(--gas-teal); font-weight: 600; }
 .stApp [data-testid="stText"] { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--gas-font); }
+
+/* Readable navigation and controls; preserve the existing dark theme. */
+.gas-nav-group { color: var(--gas-muted); font-size: .70rem; font-weight: 650;
+  letter-spacing: .035em; margin: .6rem .65rem .1rem; }
+[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"] p { font-size: .88rem; }
+.gas-brand { padding-bottom: .7rem; }
+.gas-kpi { min-height: 6.7rem; }
+.gas-kpi .key { font-size: .85rem; }
+.gas-kpi .detail { font-size: .78rem; line-height: 1.35; overflow-wrap: anywhere; }
+.stApp [data-testid="stCaptionContainer"] p { font-size: .84rem; line-height: 1.45; }
+.gas-row { font-size: .84rem; }
+.gas-row small { font-size: .80rem; }
+.gas-row .num { font-size: .77rem; }
+.gas-panel-head h2 { font-size: 1.10rem; }
+.stApp [data-testid="stButton"] button:focus-visible,
+[data-testid="stSidebar"] a:focus-visible { outline: 2px solid var(--gas-blue); outline-offset: 2px; }
+@media (max-width: 760px) {
+  .gas-kpi { min-height: 0; }
+  .gas-header-meta { gap: .4rem; }
+}

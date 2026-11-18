@@ -4,13 +4,14 @@ from datetime import timedelta
 import streamlit as st
 
 from .data import ROME
-from .italiano import numero
+from .italiano import numero, data_it
 from .models import utc_now
 from .operational_sources import (AGSI_SOURCE,GME_SOURCE,GME_TERMS,JARVIS_SOURCE,
                                   jarvis_template,load_agsi,parse_jarvis,load_alsi,load_iip,
                                   gie_key,attributed_csv,attributed_iip_json,GIE_CREDIT,GIE_LINKS,GIE_TERMS)
 from .public_data import SourceUnavailable
 from .session import database
+from .visuals import local_time
 
 
 def configured_key():
@@ -24,14 +25,15 @@ def configured_key():
 
 def operational_context():
     """Standalone view: no demand source filters or forecast computation."""
-    st.title("Security of supply")
-    st.caption("Stoccaggi, rigassificazione e messaggi di mercato · dati pubblici separati dalle simulazioni.")
+    st.title("Stoccaggi e forniture")
+    st.caption("Security of supply · dati pubblici su stoccaggi, GNL, indisponibilità e stime di rete.")
     key=configured_key()
-    if key:
-        st.caption("Chiave GIE configurata · la connessione viene verificata al caricamento.")
-    else:
-        st.warning("Chiave GIE non configurata. Inserisci GASOPS_GIE_API_KEY nei Secrets di Streamlit e riavvia l’app.")
-    selected=st.radio("Fonte operativa",["AGSI+","ALSI","IIP","Jarvis"],horizontal=True,key="operational_platform")
+    if not key:
+        st.info("Fonti GIE non configurate. Jarvis resta disponibile; consulta la configurazione qui sotto.")
+    with st.expander("Configurazione e accesso API"):
+        st.caption("Chiave GIE configurata; verifica al caricamento." if key else "Imposta GASOPS_GIE_API_KEY nei Secrets di Streamlit e riavvia l’app.")
+    selected=st.radio("Fonte operativa",["AGSI+","ALSI","IIP","Jarvis"],horizontal=True,key="operational_platform",
+                      format_func={"AGSI+":"AGSI+ · Stoccaggi","ALSI":"ALSI · GNL","IIP":"IIP · Indisponibilità","Jarvis":"Jarvis · Rete"}.__getitem__)
     if selected=="AGSI+":
         _inventory_panel(selected,load_agsi,key)
     elif selected=="ALSI":
@@ -105,6 +107,7 @@ def _load_once(state,button,loader,key,*args):
 
 def _inventory_panel(platform,loader,key):
     import pandas as pd
+    st.subheader("Stoccaggi di gas" if platform=="AGSI+" else "Rigassificazione GNL")
     _credit(platform)
     scope=st.selectbox("Perimetro",["IT","EU"],format_func=lambda x:"Italia" if x=="IT" else "Unione europea",
                        key=platform+"_scope")
@@ -124,9 +127,8 @@ def _inventory_panel(platform,loader,key):
     state=st.session_state.get(platform+"_"+scope,{})
     if age>2 or result["failed"] or state.get("error"):
         st.warning("Dato non recente o aggiornamento non riuscito: verificare la fonte.")
-    else:
-        st.success("Dati GIE acquisiti"+(" dalla cache verificata." if result["cached"] else "."))
-    st.caption(f"G {recent['gas_day']} · stato {recent['status']} · acquisito {result['acquired'].isoformat()}"+
+    status={"C":"Confermato","E":"Stimato","N":"Assente"}.get(recent["status"],recent["status"])
+    st.caption(f"Giorno gas: {data_it(recent['gas_day'])} · {status} · acquisizione {local_time(result['acquired'])}"+
                (" · cache" if result["cached"] else ""))
     if platform=="AGSI+" and frame["review"].any():
         st.warning("Alcuni valori di capacità/riempimento richiedono verifica.")
@@ -141,12 +143,22 @@ def _inventory_panel(platform,loader,key):
         box.metric(label,show(recent[field],unit))
     labels={"stock_twh":"Giacenza (TWh)","sendout_gwh_d":"Send-out (GWh/d)",
             "inventory_1000m3_lng":"Inventario (10³ m³ LNG)","inventory_gwh":"Inventario (GWh)"}
+    available=[field for field in labels if field in frame and frame[field].notna().any()]
+    if platform=="AGSI+":
+        labels.update({"fill_pct":"Riempimento (%)","withdrawal_gwh_d":"Erogazione (GWh/d)","injection_gwh_d":"Iniezione (GWh/d)"})
+        available=[field for field in labels if field in frame and frame[field].notna().any()]
+    col=st.selectbox("Indicatore del grafico",available,index=available.index(col),format_func=labels.__getitem__,key=platform+"_"+scope+"_chart")
     chart=frame.set_index("gas_day")[[col]]
     chart=chart.reindex(pd.date_range(chart.index.min(),chart.index.max(),freq="D").date)
     st.line_chart(chart.rename(columns={col:labels[col]+" · "+GIE_CREDIT[platform]}))
     _credit(platform)
     with st.expander("Dettaglio giornaliero"):
-        st.dataframe(frame.assign(source=result["source"]),hide_index=True,width="stretch")
+        headers={"gas_day":"Giorno gas","status":"Stato","stock_twh":"Giacenza (TWh)","capacity_twh":"Capacità (TWh)",
+                 "fill_pct":"Riempimento (%)","withdrawal_gwh_d":"Erogazione (GWh/d)","injection_gwh_d":"Iniezione (GWh/d)",
+                 "inventory_1000m3_lng":"Inventario (10³ m³ LNG)","inventory_gwh":"Inventario (GWh)",
+                 "dtmi_1000m3_lng":"DTMI (10³ m³ LNG)","sendout_gwh_d":"Send-out (GWh/d)",
+                 "dtrs_gwh_d":"DTRS (GWh/d)","sendout_reference_pct":"Send-out / riferimento (%)","review":"Da verificare","source":"Fonte"}
+        st.dataframe(frame.assign(source=result["source"]).rename(columns=headers),hide_index=True,width="stretch")
         st.download_button("Esporta CSV con fonte",attributed_csv(result),
                            "gasops-gie-"+platform.lower().replace("+","")+".csv","text/csv",key=platform+"_csv")
     st.caption("C = confermato, E = stimato, N = assente. Non equivale a disponibilità commerciale. "
@@ -154,6 +166,7 @@ def _inventory_panel(platform,loader,key):
 
 
 def _iip_panel(key):
+    st.subheader("Messaggi urgenti di mercato (UMM)")
     _credit("IIP")
     st.caption("Messaggi attivi richiesti per oggi e i prossimi sette giorni, prima pagina (max 20). "
                "Non è una mappa completa delle indisponibilità né una stima di capacità persa.")

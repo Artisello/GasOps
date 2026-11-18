@@ -28,6 +28,24 @@ DEMO, PUBLIC, ARCHIVE = "Dati di esempio · giornalieri", "Eurostat + ARERA · m
 DAILY = "ENTSOG · prelievi SRG giornalieri"
 SOURCE_CHOICES = (PUBLIC, DAILY, ARCHIVE, DEMO)
 RUN_ANALYSIS = "Avvia analisi di mercato AI"
+SOURCE_LABELS = {
+    PUBLIC: "Italia · bilancio mensile (Eurostat + ARERA)",
+    DAILY: "Italia · prelievi giornalieri (ENTSOG/SRG)",
+    ARCHIVE: "Archivio giornaliero 2015–2021 (JRC)",
+    DEMO: "Simulazione · dati di esempio",
+}
+ENTSOG_METADATA_NOTE = ("ENTSOG: totale dichiarato discordante; griglia giorno-settore richiesta verificata integralmente. "
+                        "Completezza delle eventuali revisioni non certificata.")
+
+
+def source_notices(warning: str | None) -> tuple[str, str]:
+    # Only the exact known informational notice is demoted; any other
+    # warnings, including partial history and stale cache, stay visible.
+    if not warning:
+        return "", ""
+    if ENTSOG_METADATA_NOTE not in warning:
+        return warning, ""
+    return warning.replace(ENTSOG_METADATA_NOTE, "").strip(), ENTSOG_METADATA_NOTE
 
 
 @st.cache_resource(show_spinner=False)
@@ -109,7 +127,9 @@ class Selection:
         if not self.bundle:
             return chip("FONTE NON DISPONIBILE", "failed") + f" <span>{escape(self.name)}</span>"
         origin = self.bundle.origin
-        grain = "Italia · GWh/giorno gas" if origin.grain == "daily" else "Italia · GWh/mese"
+        grain = ("SRG · GWh/giorno gas" if self.name == DAILY else "Italia · GWh/giorno gas") if origin.grain == "daily" else "Italia · GWh/mese"
+        if origin.latest_period:
+            grain += f" · ultimo periodo {origin.latest_period}"
         if origin.archive:
             grain += " · 2015–2021"
         return f"{kind_tag(origin.kind)} <span>{grain}</span>"
@@ -121,11 +141,12 @@ def _choose_source(page: str, source: str) -> None:
 
 
 def source_filters(page: str, *, lookback: bool = True) -> Selection:
-    ctrl = st.columns([2.25, 1.4, 1.8, 1.3] if lookback else [2.25, 1.8, 1.3], vertical_alignment="bottom")
+    ctrl = st.columns([3, 1.35, 1.3] if lookback else [3, 1.3], vertical_alignment="bottom")
     stored = st.session_state.get("selected_source", PUBLIC)
     with ctrl[0]:
         name = st.selectbox("Fonte dati", SOURCE_CHOICES, index=SOURCE_CHOICES.index(stored) if stored in SOURCE_CHOICES else 0,
-                            key=f"{page}_dataset")
+                            key=f"{page}_dataset", format_func=SOURCE_LABELS.__getitem__,
+                            help="Scegli il perimetro: dati mensili nazionali, prelievi SRG giornalieri, archivio o simulazione.")
     st.session_state["selected_source"] = name
     grain = "monthly" if name == PUBLIC else "daily"
     periods = 90 if grain == "daily" else 24
@@ -136,18 +157,25 @@ def source_filters(page: str, *, lookback: bool = True) -> Selection:
             }
             window = st.selectbox("Periodo del grafico", tuple(windows), index=1, key=f"{page}_window_{grain}")
             periods = windows[window]
-    with ctrl[-2]:
-        previous = assumptions()
-        model = st.selectbox("Modello previsionale", MODEL_CHOICES, index=MODEL_CHOICES.index(previous.model),
-                             format_func=MODELLI.__getitem__, key=f"{page}_model",
-                             help="Automatico usa il modello con l’errore medio più basso sugli stessi periodi storici.")
-        save_assumptions(previous.model_copy(update={"model": model}))
     with ctrl[-1]:
         if name in (PUBLIC, DAILY):
             refresh = st.button("Aggiorna fonti", icon=":material/refresh:", width="stretch", key=f"{page}_refresh")
         else:
             refresh = False
             st.caption("Giorno gas dalle 06:00 locali")
+    with st.expander("Impostazioni avanzate · modello previsionale"):
+        previous = assumptions()
+        model = st.selectbox("Modello previsionale", MODEL_CHOICES, index=MODEL_CHOICES.index(previous.model),
+                             format_func=MODELLI.__getitem__, key=f"{page}_model",
+                             help="Automatico usa il modello con l’errore medio più basso sugli stessi periodi storici.")
+        save_assumptions(previous.model_copy(update={"model": model}))
+    st.caption({
+        PUBLIC:"Bilancio nazionale mensile e prezzo medio PSV. La disponibilità è contabile, non fisica.",
+        DAILY:"Somma dei prelievi SRG di distribuzione, industria e termoelettrico. Non è il totale nazionale; non include offerta o prezzi.",
+        ARCHIVE:"Serie pubblica storica 2015–2021. Le proiezioni non descrivono il mercato di oggi.",
+        DEMO:"Dati interamente sintetici, utilizzabili solo per provare i calcoli."
+    }[name])
+    st.session_state[f"{page}_source_note"] = ""
     if name == DEMO:
         bundle = fixture()
     elif name == ARCHIVE:
@@ -160,8 +188,13 @@ def source_filters(page: str, *, lookback: bool = True) -> Selection:
             else:
                 with st.spinner("Caricamento dei dati Eurostat e ARERA…"):
                     bundle, warning = load_monthly(database(), refresh=refresh)
-            if warning:
-                st.warning(warning)
+            visible_warning, note = source_notices(warning)
+            if visible_warning:
+                st.warning(visible_warning)
+            if note:
+                st.session_state[f"{page}_source_note"] = note
+                with st.expander("Nota tecnica ENTSOG"):
+                    st.caption(note)
         except SourceUnavailable as error:
             st.error(str(error))
             if name == DAILY:
