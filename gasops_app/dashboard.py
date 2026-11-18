@@ -263,6 +263,8 @@ def market() -> None:
     _supporting_charts(context, visible, "market")
     from .weather_page import weather_panel
     weather_panel(context)
+    from .operational_sources_page import operational_context
+    operational_context()
     sources, quality = st.columns([1.3, 1], gap="medium")
     with sources:
         with st.container(border=True, key="panel_market_notes"):

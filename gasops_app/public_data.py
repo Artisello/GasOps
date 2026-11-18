@@ -30,6 +30,7 @@ def retrieve(
     params: dict | None = None,
     refresh: bool = False,
     attempts: int = 2,
+    headers: dict | None = None,
 ) -> T:
     now = utc_now()
     existing = store.cached(key)
@@ -43,7 +44,11 @@ def retrieve(
 
     for attempt in range(attempts):
         try:
-            with requests.get(url, params=params, timeout=(3, 5), stream=True) as response:
+            # Never forward API credentials to a redirect target.
+            secure = {"headers": headers, "allow_redirects": False} if headers else {}
+            with requests.get(url, params=params, timeout=(3, 5), stream=True, **secure) as response:
+                if headers and 300 <= response.status_code < 400:
+                    raise ValueError("Redirect autenticato non consentito")
                 response.raise_for_status()
                 body = bytearray()
                 for part in response.iter_content(chunk_size=16_384):

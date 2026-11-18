@@ -55,6 +55,8 @@ def commercial_workbench(ledger_view):
         st.caption(BILL_REF+" · Una differenza non costituisce una nota di credito.")
     with tabs[1]:
         st.subheader("Verifica i prezzi di sbilanciamento")
+        from .operational_sources_page import gme_reference
+        gme_reference()
         st.caption("Regime ordinario · volumi e prezzi ipotetici · inserire la percentuale semestrale pubblicata.")
         a,b=st.columns(2)
         volume=a.number_input("Volume STSP title (MWh)",0.,1e9,2500.,step=100.)
