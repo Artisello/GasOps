@@ -19,6 +19,7 @@ MIN_TEST=14
 GAS_LAG=2
 EXTERNAL_LAG=7
 MODELS=("weekly","autoregressive","multivariate","bayesian_base","bayesian_multi")
+MODEL_LABELS={"weekly":"Naive settimanale","autoregressive":"Ridge autoregressivo","multivariate":"Ridge multivariato","bayesian_base":"Bayes autoregressivo","bayesian_multi":"Bayes multivariato"}
 HORIZONS=(1,3,7)
 ALPHA=10.0
 

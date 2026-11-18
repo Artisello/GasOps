@@ -71,7 +71,11 @@ def test_ui_requires_remote_consent_and_uses_plan(monkeypatch):
             assert "trend_gas" in ids
             return "Trend descrittivo: trend_gas.",["trend_gas"]
     monkeypatch.setattr(page,"reference_facts",lambda:[])
-    monkeypatch.setattr(page,"forecast_facts",lambda state:[])
+    def forecasts(state,*,include_restricted=False):
+        # Remote evidence must never include restricted sources.
+        assert include_restricted is False
+        return []
+    monkeypatch.setattr(page,"forecast_facts",forecasts)
     app=AppTest.from_string("import streamlit as st\nfrom gasops_app.autonomous_analyst_page import panel\npanel(*st.session_state['fixture'])")
     app.session_state["fixture"]=({"gas":item("gas"),"private":item("private",remote=False)},Fake(),datetime(2026,11,18,12,tzinfo=timezone.utc))
     app.run()

@@ -7,12 +7,11 @@ import streamlit as st
 from .data import jrc_archive,ROME
 from .models import Kind,utc_now
 from .quality import inspect
-from .predictive import evaluate,HORIZONS,MODELS,MIN_TRAIN,MIN_TEST
+from .predictive import evaluate,HORIZONS,MODELS,MODEL_LABELS as LABELS,MIN_TRAIN,MIN_TEST
 from .predictive_sources import session_features,historical_weather
 from .public_data import SourceUnavailable
 from .session import database
 
-LABELS={"weekly":"Naive settimanale","autoregressive":"Ridge autoregressivo","multivariate":"Ridge multivariato","bayesian_base":"Bayes autoregressivo","bayesian_multi":"Bayes multivariato"}
 STATE="predictive_study_v1"
 
 
@@ -94,6 +93,9 @@ def panel():
         return
     if saved.get("weather_note"):st.caption(saved["weather_note"])
     r=saved["result"]
+    if not all(m in r["scores"] for m in MODELS):
+        st.caption("Risultato di una versione precedente: esegui un nuovo confronto.")
+        return
     st.caption(f'{r["test_n"]}/28 origini confrontabili · {r["test_start"]} – {r["test_end"]} · calcolato {saved["acquired"]}')
     st.warning("Backtest con dati storici rivisti e ritardi ipotizzati: non certifica performance operativa ex ante. Nessuna promozione automatica del modello.")
     st.markdown("**Errore medio assoluto, GWh**")

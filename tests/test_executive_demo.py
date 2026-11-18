@@ -36,6 +36,23 @@ def test_demo_switches_offline_and_keeps_import_state(monkeypatch):
     assert not app.exception
     assert not app.error
     assert app.session_state[STUDY]["result"]["test_n"]>=14
+    from gasops_app.predictive import MODELS, MODEL_LABELS
+    scores=app.session_state[STUDY]["result"]["scores"]
+    assert set(scores)==set(MODELS)==set(MODEL_LABELS)
+    assert any("Bayes multivariato" in x.proto.body for x in app.get("html"))
+    # Old session results must not crash after an upgrade.
+    from copy import deepcopy
+    current=deepcopy(app.session_state[STUDY])
+    legacy=deepcopy(current)
+    legacy["result"]["scores"].pop("bayesian_base")
+    legacy["result"]["scores"].pop("bayesian_multi")
+    app.session_state[STUDY]=legacy
+    app.run()
+    assert not app.exception and not app.error
+    assert any("versione precedente" in x.value for x in app.caption)
+    app.session_state[STUDY]=current
+    app.run()
+    assert not app.exception
     app.button(key="executive_next").click().run()
     assert not app.exception and app.button(key="executive_next").disabled
     app.radio(key="bso_view").set_value("Panoramica").run()
