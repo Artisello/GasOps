@@ -57,4 +57,4 @@ def test_demo_switches_offline_and_keeps_import_state(monkeypatch):
     assert not app.exception and app.button(key="executive_next").disabled
     app.radio(key="bso_view").set_value("Panoramica").run()
     assert not app.exception
-    assert app.dataframe[0].value["Valore"].isna().all()
+    assert next(t.value for t in app.dataframe if set(t.value.columns)=={"Area","KPI","Valore","Unità","Periodo","Copertura","Stato"})["Valore"].isna().all()

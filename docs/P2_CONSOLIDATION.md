@@ -5,3 +5,5 @@ Existing overview only: management report first after month and participant filt
 Reuse one inspection per bundle for market score and health/report in the same render, using local object identity rather than shared or persistent cache. No new provider calls, no extra dependencies, no weather default changes. No measured performance claims.
 
 Future acquisitions must not count as valid coverage; comparison restricted to real/historical ENTSOG bundles. SAS training rejects vintages outside the historical gas day, including DST edge cases. 6PI uses shared gas-day cutoff; market action counts missing when no complete days. Tests use synthetic fixtures; CI/browser and real data validation remain necessary. This is a targeted consolidation, not production certification.
+
+Prior P1 CI (run 44387727069): 395 passed, four UI regressions from positional dataframe selectors after management report introduction. Existing assertions preserved using exact table schemas; added assertion that the management priority table is rendered. Rerun full CI before merge.
