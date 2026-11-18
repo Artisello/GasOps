@@ -19,7 +19,7 @@ historical observations, simulations and accounting assumptions distinct. Scope 
 the cited editions and raise ambiguities for human review. Do not produce trading, billing, or
 infrastructure instructions. Refer to the executed agents and their supplied evidence."""
 SUMMARY = """Return a JSON object with "interpretation" (up to 3 concise sentences in Italian), and
-"references" (a list of executed tool names). Interpret only the provided results. Leave numerical
+"references" (a list of executed tool names). Interpret only the provided results and explicitly supplied public_operational_context. Prioritize material changes, uncertainty, and what to monitor next. Identify source names, dates and units when available, never infer missing operational data or treat a message count as lost capacity. Distinguish monthly observations from daily context and scenarios. Leave numerical
 calculation and rule resolution to the tools. For regulatory explanations, refer to the supplied
 document and PDF page. State when the evidence cannot answer the question."""
 
@@ -54,9 +54,12 @@ def configuration(secrets=None) -> LLMConfig | None:
     url=setting("GASOPS_LLM_URL","http://127.0.0.1:11434/v1").rstrip("/")
     key=setting("GASOPS_LLM_API_KEY")
     groq_key=setting("GROQ_API_KEY")
-    if not model and groq_key:
-        model,url="openai/gpt-oss-120b","https://api.groq.com/openai/v1"
+    if not model and (groq_key or key.startswith("gsk_")):
+        if groq_key or url in {"http://127.0.0.1:11434/v1","https://api.groq.com/openai/v1"}:
+            model,url="openai/gpt-oss-120b","https://api.groq.com/openai/v1"
     if not model:
+        if key:
+            raise ValueError("Chiave presente, ma modello non configurato. Imposta GASOPS_LLM_MODEL e GASOPS_LLM_URL.")
         return None
     parsed=urlsplit(url)
     candidate=LLMConfig(model,url,key or None)
@@ -202,12 +205,12 @@ class CompatibleReasoner:
                               "Select any additional dependency needed. Leave tool calls empty if sufficient."})
         return self._tool_calls(self._chat(self.messages, remaining), remaining)
 
-    def interpret(self, question: str, results: Mapping[Agent, Result]) -> tuple[str | None, list[Agent]]:
+    def interpret(self, question: str, results: Mapping[Agent, Result], *, context=None) -> tuple[str | None, list[Agent]]:
         self._tool_outputs(results)
         allowed=_evidence(results,external=not self.config.local)
         if not allowed:
             raise ModelUnavailable("Nessun risultato condivisibile con il modello esterno.")
-        evidence = json.dumps({"question": question, "verified_tool_results": allowed})
+        evidence = json.dumps({"question": question, "verified_tool_results": allowed, "public_operational_context": context or {}})
         response = self._chat([*self.messages, {"role": "user", "content": f"{SUMMARY}\n{evidence}"}])
         content = response.get("content") or ""
         if not isinstance(content, str):
@@ -226,4 +229,4 @@ class CompatibleReasoner:
         return narrative.strip(), cited
 
     def summarize(self, run: Run) -> tuple[str | None, list[Agent]]:
-        return self.interpret(run.question, run.results)
+        return self.interpret(run.question, run.results, context=run.assumptions.get("public_operational_context"))

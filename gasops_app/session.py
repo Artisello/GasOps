@@ -95,42 +95,59 @@ def _configuration():
         return configuration()
 
 
-def sidebar() -> None:
-    st.html('<div class="gas-sidebar-foot"></div>')
-    config = None
+def ai_controls(*, prefix="sidebar") -> None:
+    config, problem = None, None
     try:
         config = _configuration()
     except ValueError as error:
-        st.warning(str(error))
-    modes = ["Deterministic", config.model] if config else ["Deterministic"]
-    mode = st.selectbox("Modalità di analisi", modes, index=1 if config and config.groq else 0,
-                        format_func=lambda value: MODALITA.get(value,value),key="execution_mode")
-    if config and mode==config.model:
-        st.caption("Groq Cloud · "+config.model if config.groq else
-                   "Ollama / endpoint locale" if config.local else "Endpoint remoto · possibili costi")
-        if not config.local:
-            st.caption("Solo domande e dati non riservati. L’AI riceve riepiloghi selezionati, "
-                       "non estratti normativi o dati individuali di settlement.")
-        with st.expander("Connessione e limiti AI"):
-            if not config.local:
-                try:
-                    st.caption(f"Richieste interne ultime 24 h: {database().llm_usage()}/30 · max 4/min. "
-                               "Non è il saldo della quota del provider.")
-                except (OSError,sqlite3.Error):
-                    st.caption("Contatore non disponibile: richieste AI bloccate.")
-            if st.button("Test connessione AI",key="llm_probe"):
-                try:
-                    reasoner().probe()
-                    st.session_state["llm_probe_result"]=(config.model,True,"Connessione e risposta testate.")
-                except ModelUnavailable as error:
-                    st.session_state["llm_probe_result"]=(config.model,False,str(error))
-                except Exception:
-                    st.session_state["llm_probe_result"]=(config.model,False,"Connessione o risposta non valida.")
-            probe=st.session_state.get("llm_probe_result")
-            if probe and probe[0]==config.model:
-                (st.success if probe[1] else st.warning)(probe[2])
+        problem = str(error)
+    if problem:
+        st.warning(problem)
+    if config:
+        st.caption(("Groq Cloud" if config.groq else "Ollama locale" if config.local else "Provider remoto")+
+                   " · "+config.model)
     else:
-        st.caption("Calcoli locali senza modello")
+        st.caption("AI non configurata · report deterministico disponibile")
+    with st.expander("Connessione e limiti AI", expanded=not config):
+        if not config:
+            st.write("Per Groq Cloud, imposta GROQ_API_KEY nei Secrets di Streamlit; "
+                     "oppure i tre campi GASOPS_LLM_URL, GASOPS_LLM_MODEL, GASOPS_LLM_API_KEY.")
+            st.code('GROQ_API_KEY = "LA_TUA_CHIAVE"',language="toml")
+            st.caption("Groq Cloud non è Grok di xAI. Non inserire la chiave qui o in GitHub.")
+            return
+        st.caption("Configurazione presente; la connessione va verificata con un test reale.")
+        if not config.local:
+            try:
+                st.caption(f"Richieste interne ultime 24 h: {database().llm_usage()}/30 · max 4/min. "
+                           "Non è il saldo della quota del provider.")
+            except (OSError,sqlite3.Error):
+                st.caption("Contatore non disponibile: richieste AI bloccate.")
+        if st.button("Test connessione AI",key=prefix+"_llm_probe"):
+            try:
+                CompatibleReasoner(config,reserve=None if config.local else lambda:database().reserve_llm()).probe()
+                st.session_state["llm_probe_result"]=(config.model,True,"Connessione e risposta testate.")
+            except ModelUnavailable as error:
+                st.session_state["llm_probe_result"]=(config.model,False,str(error))
+            except Exception:
+                st.session_state["llm_probe_result"]=(config.model,False,"Connessione o risposta non valida.")
+        probe=st.session_state.get("llm_probe_result")
+        if probe and probe[0]==config.model:
+            (st.success if probe[1] else st.warning)(probe[2])
+
+
+def sidebar() -> None:
+    st.html('<div class="gas-sidebar-foot"></div>')
+    config=None
+    try:
+        config=_configuration()
+    except ValueError:
+        pass
+    modes=["Deterministic",config.model] if config else ["Deterministic"]
+    st.selectbox("Modalità di analisi",modes,index=1 if config and config.groq else 0,
+                 format_func=lambda value:MODALITA.get(value,value),key="execution_mode")
+    ai_controls()
+    if config and not config.local:
+        st.caption("Condividi solo domande e dati non riservati; estratti normativi e settlement esclusi.")
     st.html('<div class="sidebar-caption">Europe/Rome · Prototipo indipendente</div>')
 
 
