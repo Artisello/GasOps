@@ -12,6 +12,7 @@ from .regulatory import read_local_pdfs, MAX_DOCUMENTS, MAX_PDF_BYTES
 from .visuals import info
 from .session import reasoner
 from .document_rag import answer, MAX_PASSAGES
+from .review_register import KEY as REVIEW_KEY, LIMIT as REVIEW_LIMIT, STATUSES, valid_cases, register, decide, export_json, export_markdown
 from .supervisor import ModelUnavailable
 from .document_archive import Archive, ArchiveConfig, ArchiveError, display_name
 
@@ -123,7 +124,8 @@ def _update_index(inputs,docs=None,*,state_key=STATE):
     editions={(name,pdf.digest) for name,pdf in docs.documents.items()}
     refs=[item for item in (cached or {}).get("reference_list",[])
           if (item["document"],item["sha256"]) in editions]
-    cached={"identity":key,"docs":docs,"reference_list":refs}
+    cases=valid_cases((cached or {}).get(REVIEW_KEY,[]),docs)
+    cached={"identity":key,"docs":docs,"reference_list":refs,REVIEW_KEY:cases}
     st.session_state[state_key]=cached
     return cached
 
@@ -474,7 +476,7 @@ def _review_documents(cached):
                 except ModelUnavailable as exc:
                     st.warning(str(exc))
                     saved["status"]="unavailable"
-                except (ValueError,TypeError,RuntimeError,KeyError):
+                except (ValueError,TypeError,RuntimeError,KeyError,OSError):
                     saved["status"]="invalid"
             cached["document_review"]=saved
     saved=cached.get("document_review")
@@ -499,6 +501,14 @@ def _review_documents(cached):
             st.caption("Verifica suggerita")
             st.text(item["check"])
     if saved["findings"]:
+        if st.button("Aggiungi rilievi al registro",key="review_register_add",icon=":material/bookmark_add:"):
+            cases,added,omitted=register(cached.get(REVIEW_KEY,[]),saved["findings"],docs,
+                                        theme=saved["theme"],model=saved["model"])
+            cached[REVIEW_KEY]=cases
+            st.success(f"{added} nuovi rilievi nel registro." if added else "Nessun nuovo rilievo aggiunto.")
+            if omitted:
+                st.warning("Registro pieno: esporta e svuota prima di aggiungerne altri.")
+        st.caption("Consulta Registro rilievi per verificare le pagine originali, annotare l’esito ed esportare il dossier.")
         payload={"theme":saved["theme"],"model":saved["model"],"status":"ipotesi da verificare",
                  "editions":{name:docs.documents[name].digest for name in {saved["first"],saved["second"]}},
                  "findings":[{**item,"citations":[c.model_dump(mode="json") for c in item["citations"]]} for item in saved["findings"]]}
@@ -509,6 +519,75 @@ def _review_documents(cached):
             st.caption(hit.document+f" · PDF p. {hit.page}")
             st.text(hit.evidence)
     st.caption("Analisi limitata ai passaggi recuperati, non a tutto il codice. La corrispondenza letterale non prova la correttezza dell’interpretazione.")
+
+
+def _review_register(cached):
+    docs=cached["docs"]
+    cases=valid_cases(cached.get(REVIEW_KEY,[]),docs)
+    cached[REVIEW_KEY]=cases
+    st.subheader("Registro rilievi")
+    st.caption("Dossier della sessione · solo per le edizioni presenti in questo archivio. Nessuna nuova richiesta AI.")
+    if not cases:
+        st.info("Nessun rilievo nel registro. Avvia il Revisore e aggiungi le ipotesi che vuoi approfondire.")
+        return
+    a,b,c=st.columns(3)
+    a.metric("Rilievi",len(cases))
+    b.metric("Da verificare",sum(x["status"]==STATUSES[0] for x in cases))
+    c.metric("In approfondimento",sum(x["status"] in STATUSES[1:3] for x in cases))
+    status=st.selectbox("Filtra stato",["Tutti",*STATUSES],key="review_register_filter")
+    visible=[x for x in cases if status=="Tutti" or x["status"]==status]
+    if visible:
+        entries={x["id"]:x for x in visible}
+        chosen=st.selectbox("Rilievo",list(entries),format_func=lambda k:entries[k]["status"]+" · "+entries[k]["title"],
+                            key="review_register_selected")
+        case=entries[chosen]
+        with st.container(border=True):
+            st.text(case["title"])
+            st.caption(case["status"]+" · "+case["theme"]+" · "+case["model"])
+            st.text(case["detail"])
+            st.caption("Verifica suggerita")
+            st.text(case["check"])
+            st.caption("Citazioni letterali verificate · interpretazione da verificare")
+            for i,hit in enumerate(case["citations"]):
+                st.text(hit["document"]+f" · PDF p. {hit['page']}")
+                st.text("«"+hit["evidence"]+"»")
+                if st.button("Apri pagina originale",key=f"register_page_{chosen}_{i}"):
+                    cached["register_preview"]=(chosen,i)
+                if cached.get("register_preview")== (chosen,i):
+                    _preview(docs.documents[hit["document"]],hit["page"],"register")
+            with st.form("register_decision_"+chosen,clear_on_submit=True):
+                new_status=st.selectbox("Stato della verifica",STATUSES,index=STATUSES.index(case["status"]))
+                note=st.text_area("Motivazione della decisione",max_chars=600,
+                                 placeholder="Es. le disposizioni riguardano perimetri diversi…")
+                submitted=st.form_submit_button("Registra verifica",type="primary")
+            if submitted:
+                try:
+                    updated=decide(case,new_status,note)
+                    cached[REVIEW_KEY]=[updated if x["id"]==chosen else x for x in cases]
+                    st.rerun()
+                except ValueError as error:
+                    st.warning(str(error))
+            with st.expander("Storico decisioni"):
+                st.caption("Annotazioni dell’utente, non risultati verificati automaticamente.")
+                for event in case["history"]:
+                    st.text(event["at"]+" · "+event["from"]+" → "+event["to"])
+                    st.text(event["note"])
+                if not case["history"]:
+                    st.caption("Nessuna decisione registrata.")
+    else:
+        st.caption("Nessun rilievo con questo stato.")
+    st.caption(f"{len(cases)}/{REVIEW_LIMIT} rilievi · esporta prima di chiudere la sessione o rimuovere PDF.")
+    left,right=st.columns(2)
+    left.download_button("Scarica dossier Markdown",export_markdown(cases),"gasops-dossier.md",
+                         "text/markdown",key="review_register_md",width="stretch")
+    right.download_button("Scarica registro JSON",export_json(cases),"gasops-registro.json",
+                          "application/json",key="review_register_json",width="stretch")
+    with st.expander("Svuota registro"):
+        confirmed=st.checkbox("Confermo di voler eliminare il registro di questa sessione.",key="review_register_clear_confirm")
+        if st.button("Svuota",disabled=not confirmed,key="review_register_clear"):
+            cached[REVIEW_KEY]=[]
+            cached.pop("register_preview",None)
+            st.rerun()
 
 
 def _references(cached):
@@ -536,7 +615,7 @@ def document_page():
     if not cached["docs"].documents:
         st.info("Aggiungi almeno un PDF per iniziare. Usa Carica PDF oppure consulta l’archivio pubblico. Non vengono mostrati rilievi o citazioni in assenza di documenti.")
         return
-    action=st.radio("Strumento",["Cerca","Chiedi all’AI","Leggi PDF","Confronta","Revisore","Riferimenti salvati"],
+    action=st.radio("Strumento",["Cerca","Chiedi all’AI","Leggi PDF","Confronta","Revisore","Registro rilievi","Riferimenti salvati"],
                     horizontal=True,label_visibility="collapsed",key="desk_mode")
     if action=="Cerca":
         _search(cached)
@@ -548,5 +627,7 @@ def document_page():
         _compare(cached)
     elif action=="Revisore":
         _review_documents(cached)
+    elif action=="Registro rilievi":
+        _review_register(cached)
     else:
         _references(cached)
