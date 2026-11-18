@@ -33,6 +33,9 @@ class MarketArguments(Arguments):
     comparison: Literal["native", "weekly"] = "native"
 
 
+OFFLINE_REGULATION_QUERY = "Preavviso di esattamente sette giorni per mancata discarica · coefficiente T Piombino"
+
+
 class RegulationArguments(Arguments):
     query: str = Field(max_length=600)
     review_notice: bool = False
@@ -194,7 +197,10 @@ def settlement_result(inputs: SettlementInput) -> Result:
 
 
 def regulation_result(library: Library, args: RegulationArguments, notice: int = 7) -> Result:
-    matches = library.search(args.query)
+    # The preset reviews a known, edition-scoped register entry. It does not
+    # require a live PDF index or repeat a lexical search on every daily report.
+    preset = args.review_notice and args.query == OFFLINE_REGULATION_QUERY
+    matches = [] if preset else library.search(args.query)
     all_cases = bool(re.search(r"inconsisten|incongruenz|anomal|criticità|errori|mismatch", args.query, re.I))
     notice_question = bool(re.search(r"seven days|sette giorni|\b7\s*(days|giorni)", args.query, re.I))
     relevant = {
@@ -212,7 +218,8 @@ def regulation_result(library: Library, args: RegulationArguments, notice: int =
         citations = _unique_citations([c for case in cases for c in case.finding.citations] + citations)
     if cases:
         summary = (
-            f"Il registro delle edizioni esaminate contiene {len(cases)} rilievi pertinenti. "
+            ("Registro delle edizioni esaminate · rilievo storico da verificare, non aggiornamento normativo del giorno. "
+             if preset else f"Rilievi pertinenti nelle edizioni esaminate: {len(cases)}. ")
             + cases[0].finding.detail
         )
     elif matches:

@@ -358,13 +358,11 @@ def _briefing_panel(selection) -> None:
                             st.text(source["reason"])
                     st.json(public,expanded=False)
             with st.expander("Dettaglio degli agenti"):
-                st.caption("Scenari e settlement: calcoli dimostrativi.")
-                for agent,item in run.results.items():
+                for agent,item in sorted(run.results.items(),key=lambda pair:list(Agent).index(pair[0])):
                     if agent in (Agent.SETTLEMENT,Agent.SCENARIO):
                         continue
                     st.markdown("**"+AGENT_LABELS[agent]+"**")
                     st.text(item.summary)
-                st.html(steps(run))
             d1,d2=st.columns(2)
             d1.download_button("Scarica bollettino",markdown(run,{}),f"igor-{run.id[:10]}.md",
                                mime="text/markdown",key="overview_brief_md",width="stretch")

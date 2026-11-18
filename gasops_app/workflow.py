@@ -4,14 +4,13 @@ from collections.abc import Callable
 from decimal import Decimal
 import re
 
-from .agents import Assumptions, MarketArguments, MarketContext, RegulationArguments, ScenarioArguments, catalog
+from .agents import Assumptions, MarketArguments, MarketContext, RegulationArguments, ScenarioArguments, catalog, OFFLINE_REGULATION_QUERY
 from .finance import CENT, MWH_PER_UNIT
 from .models import Agent, Finding, Run
 from .regulatory import Library
 from .supervisor import Arguments, Call, Reasoner, execute
 
 DAILY_BRIEFING = "Bollettino sul mercato del gas"
-OFFLINE_REGULATION_QUERY = "Preavviso di esattamente sette giorni per mancata discarica · coefficiente T Piombino"
 
 INTENTS = {
     Agent.QUALITY: r"anomal|quality|qualità|missing|mancant|duplicat|outlier|stale|freshness|timestamp",
