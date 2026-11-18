@@ -9,7 +9,7 @@ from .models import Agent, AGENT_LABELS, Run, utc_now
 from .reports import markdown
 from . import session
 from .session import analysis_label, launch, market_scope, reasoner, source_filters, ai_activation_panel
-from .visuals import evidence, info, local_time, steps
+from .visuals import evidence, info, local_time, steps, ai_readout
 from .workflow import DAILY_BRIEFING
 
 LOG=logging.getLogger(__name__)
@@ -81,9 +81,7 @@ def _report(report:Run,selection):
         st.warning("La fonte non è stata aggiornata correttamente.")
     if inferred:
         st.markdown("**Risposta AI**")
-        st.text(report.interpretation)
-        if report.interpretation_sources:
-            st.caption("Basata su: "+", ".join(AGENT_LABELS[a] for a in report.interpretation_sources)+". Interpretazione da verificare.")
+        ai_readout(report)
     else:
         if report.mode!="Deterministic":
             st.warning("Nessuna risposta AI generata. I calcoli sottostanti sono soltanto evidenze locali di riserva.")
@@ -101,12 +99,13 @@ def _report(report:Run,selection):
     if report.question==DAILY_BRIEFING:
         available=[a for a in (Agent.MARKET,Agent.FORECAST,Agent.QUALITY,Agent.SCENARIO,Agent.SETTLEMENT,Agent.REGULATORY) if a in report.results]
     if available:
-        st.markdown("**Dati e calcoli**")
-        highlights=[a for a in available if a!=Agent.QUALITY] or available
-        for agent in highlights[:2]:
-            result=report.results[agent]
-            st.caption(AGENT_LABELS[agent]+" · "+ESITI[result.status])
-            st.text(result.summary)
+        if not inferred:
+            st.markdown("**Dati e calcoli**")
+            highlights=[a for a in available if a!=Agent.QUALITY] or available
+            for agent in highlights[:2]:
+                result=report.results[agent]
+                st.caption(AGENT_LABELS[agent]+" · "+ESITI[result.status])
+                st.text(result.summary)
         critical=[f for f in report.findings if f.severity=="high"]
         if critical:
             st.warning("Rilievi ad alta priorità: "+str(len(critical))+". Apri Rilievi da verificare.")

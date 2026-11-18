@@ -225,3 +225,29 @@ def plot(figure: go.Figure, key: str) -> None:
     st.plotly_chart(figure, key=key, width="stretch", theme=None,
                     config={"displaylogo": False, "displayModeBar": "hover", "scrollZoom": False,
                             "modeBarButtonsToRemove": ["lasso2d", "select2d"]})
+
+
+def ai_readout(run: Run):
+    """Fixed headings and plain-text output; provider markup is not executed."""
+    from .ai_response import SECTION_TITLES, reference_labels
+    sections=getattr(run,"ai_sections",[])
+    if sections:
+        for section in sections:
+            st.markdown("**"+SECTION_TITLES.get(section["id"],"Analisi")+"**")
+            st.text(section["text"])
+            labels=reference_labels(run,section["references"])
+            if labels:st.caption("Fonti · "+"; ".join(labels))
+    elif run.interpretation:
+        for paragraph in run.interpretation.splitlines():
+            if paragraph.strip():st.text(paragraph.strip())
+        if run.interpretation_sources:
+            st.caption("Evidenze · "+", ".join(AGENT_LABELS[a] for a in run.interpretation_sources))
+    usage=getattr(run,"ai_usage",{})
+    if usage:
+        calls=usage.get("calls",0)
+        note=f"Chiamate: {calls}"
+        if usage.get("reported_calls")==calls and calls and "total_tokens" in usage:
+            note+=f" · Token effettivi: {usage['total_tokens']} (input {usage['prompt_tokens']}, output {usage['completion_tokens']})"
+        else:
+            note+=" · Conteggio token completo non fornito dal provider"
+        info("Utilizzo AI",note)

@@ -15,7 +15,7 @@ from .models import AGENT_LABELS, Agent, Kind, Provider
 from .session import analysis_label, briefing_run, launch, preview_market, source_filters, market_scope, PUBLIC, DAILY
 from .reports import markdown
 from .executive_briefing import management_readout, outlook_delta
-from .visuals import AMBER, BLUE, ROSE, TEAL, breakdown_chart, chip, demand_chart, error_chart
+from .visuals import AMBER, BLUE, ROSE, TEAL, breakdown_chart, chip, demand_chart, error_chart, ai_readout
 from .visuals import forecast_readout, heading, header, info, kind_tag, kpi_grid, local_time, mini_chart, plot, rows, steps
 
 
@@ -336,10 +336,7 @@ def _briefing_panel(selection) -> None:
             _briefing_operational_context(public)
             if actual_ai:
                 st.markdown("**Sintesi AI**")
-                for paragraph in run.interpretation.splitlines():
-                    if paragraph.strip():
-                        st.text(paragraph.strip())
-                info("Evidenze AI",", ".join(AGENT_LABELS[a] for a in run.interpretation_sources))
+                ai_readout(run)
             else:
                 overview,forecast,priorities=management_readout(run)
                 st.markdown("**Lettura operativa · regole locali**")

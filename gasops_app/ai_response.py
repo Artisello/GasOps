@@ -1,5 +1,6 @@
 """Bounded evidence projection and structured response validation."""
 from .supervisor import ModelUnavailable
+from .models import AGENT_LABELS, Agent
 
 SECTION_TITLES={
     "summary":"In sintesi","market":"Mercato","supply":"Sicurezza delle forniture",
@@ -52,3 +53,21 @@ def parse_sections(raw, ids, agents, sources, limit):
     if not any(ref in agents for ref in refs):
         fail()
     return sections,refs
+
+
+def reference_labels(run,references):
+    public=run.assumptions.get("public_operational_context") or {}
+    labels=[]
+    for ref in references:
+        if ref.startswith("src:"):
+            item=public.get(ref[4:],{})
+            label=str(item.get("source",ref[4:]))
+            period=item.get("gas_day") or item.get("period") or item.get("acquired")
+            if period:label+=" · "+str(period)[:10] if not item.get("period") else " · "+str(period)
+            if item.get("status") in ("stale","unavailable"):
+                label+=" · "+("non recente" if item["status"]=="stale" else "non disponibile")
+        else:
+            try:label=AGENT_LABELS[Agent(ref)]
+            except (ValueError,KeyError):continue
+        if label not in labels:labels.append(label)
+    return labels

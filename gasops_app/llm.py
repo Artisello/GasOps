@@ -104,7 +104,7 @@ class CompatibleReasoner:
         self.usage_reports = []
         self.request_bytes = 0
         self.last_sections = []
-        self.summary_only_full = not config.local
+        self.summary_only_full = True
         self.label = config.model
         self.messages: list[dict] = [{"role": "system", "content": SYSTEM}]
         self.pending: list[tuple[str, Agent]] = []
@@ -133,7 +133,7 @@ class CompatibleReasoner:
                              "parameters": tool.arguments.model_json_schema()},
             } for agent, tool in tools.items()]
             body["tool_choice"] = "auto"
-        size=len(json.dumps(body,ensure_ascii=False,separators=(",",":")).encode("utf-8"))
+        size=len(json.dumps(body).encode("utf-8"))
         if size>32_000 or self.calls>=3:
             raise ModelUnavailable("Limite interno della richiesta AI raggiunto.")
         if self.reserve is not None:

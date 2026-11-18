@@ -5,6 +5,7 @@ import json
 from .italiano import ESITI, GRANULARITA, GRAVITA, MODALITA, TIPI
 from .models import AGENT_LABELS, Run
 from .executive_briefing import management_readout
+from .ai_response import SECTION_TITLES, reference_labels
 
 
 def _plain(text: str) -> str:
@@ -31,8 +32,13 @@ def markdown(run: Run, reviewed: dict[str, str]) -> str:
     if run.warnings:
         lines.extend(["", *[f"- {_plain(warning)}" for warning in run.warnings]])
     if run.interpretation:
-        refs = ", ".join(AGENT_LABELS[name] for name in run.interpretation_sources)
-        lines.extend(["", f"**Interpretazione del modello** {_plain(run.interpretation)}", f"Strumenti consultati · {refs}"])
+        lines.extend(["", "## Interpretazione AI"])
+        for section in getattr(run,"ai_sections",[]):
+            lines.extend(["", "### "+SECTION_TITLES[section["id"]], "", _plain(section["text"]),
+                          "", "Fonti · "+_plain("; ".join(reference_labels(run,section["references"])))])
+        if not getattr(run,"ai_sections",[]):
+            refs=", ".join(AGENT_LABELS[name] for name in run.interpretation_sources)
+            lines.extend(["", _plain(run.interpretation), f"Strumenti consultati · {refs}"])
 
     public=run.assumptions.get("public_operational_context") or {}
     if public:
