@@ -305,6 +305,7 @@ def overview() -> None:
     with top:
         header("Panoramica del mercato","")
         st.markdown("**"+area+"** · "+perimeter)
+        st.markdown("[Cabina di controllo BSO e Executive demo](/kpi)")
     context=None
     if selection.bundle:
         context=preview_market(selection)

@@ -12,3 +12,7 @@ Prototipo indipendente, non ufficiale Snam. Per una presentazione stabile, avvia
 | 4:00–5:00 | Norme e documenti / Monitoraggio fonti | Fonte e pagina PDF, diagnostica se disponibile, stato delle integrazioni. |
 
 Prima della demo: esegui i test e la verifica offline, apri i percorsi scelti e controlla date e unità. Se una fonte live non risponde, mostra l'archivio pubblico o il caso demo dichiarato. Non presentare una cache come dato odierno. Se il modello AI remoto è autorizzato, attivalo solo come extra. La disponibilità dei provider va verificata al momento.
+
+## Percorso integrato
+
+Apri **KPI operativi → Executive demo** (raggiungibile anche dalla Panoramica del mercato). Quattro schermate con Avanti/Indietro: Contesto ACER, Controllo BSO sintetico, backtest storico JRC su richiesta, passaggio al pilot. Funziona senza API o AI. Le misure sintetiche sono calcolate dalle fixture già usate nel registro, non nuove costanti di presentazione. Non modifica importazioni, fonte attiva o modello principale. I collegamenti aprono le viste complete. Controllare il layout su desktop e mobile nella versione deployata; i test Streamlit verificano interazioni, non pixel.

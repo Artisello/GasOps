@@ -13,6 +13,7 @@ from .advanced_kpis import (operations_scores,balancing_scores,archive_scores,pa
 def panel():
     now=utc_now().astimezone(ROME)
     st.caption("Cabina di controllo · dati pubblici e registri importati · nessuna simulazione")
+    st.markdown("**Priorità operative**")
     state=st.session_state
     chosen=st.date_input("Mese delle attività e dei bilanci",value=now.date().replace(day=1),
                          min_value=date(2000,1,1),max_value=now.date(),key="advanced_kpi_month")
@@ -48,7 +49,7 @@ def panel():
         st.warning("Attività oltre termine nel registro: verifica l'agenda in Scadenze.")
     if any(by[k].value is None for k in primary):
         st.info("Alcuni KPI non sono misurabili: importa i registri autorizzati nelle viste dedicate. Le assenze non valgono zero.")
-    st.markdown("**Controllo operativo · mese selezionato**")
+    st.markdown("**Dettaglio operativo · mese selezionato**")
     st.dataframe([{"Area":r.area,"KPI":r.label,"Valore":r.value,"Unità":r.unit,"Periodo":r.period,
                    "Copertura":r.coverage,"Stato":r.status} for r in operational],hide_index=True,width="stretch")
     st.markdown("[Bilanci e stime Jarvis](/security-of-supply) · [Settlement](/balancing) · Scadenze nella vista Registro operativo.")
@@ -59,7 +60,7 @@ def panel():
         context+=historical_scores(state.get("acer_lng_result_v1"),now)+benchmark_scores()
     except (OSError,ValueError,KeyError,StopIteration):
         st.warning("Uno o più archivi storici non sono disponibili o validi.")
-    st.caption("Ultima osservazione di ciascuna fonte, non necessariamente nel mese selezionato. Contesto, non performance del team.")
+    st.caption("Ultima osservazione per fonte · periodo indipendente dal filtro mensile · non performance del team.")
     st.dataframe([{"Area":r.area,"KPI":r.label,"Valore":r.value,"Unità":r.unit,"Periodo":r.period,
                    "Perimetro":r.scope,"Stato":r.status,"Copertura / fonte":r.coverage} for r in context],hide_index=True,width="stretch")
     st.markdown("[Aggiorna fonti rete e stoccaggi](/security-of-supply) · [Aggiorna ACER e Terna](/market)")

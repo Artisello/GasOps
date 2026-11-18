@@ -214,3 +214,11 @@ def settlement_metrics(rows,user,year,month,cutoff):
     return {**result,"records":days,"definitive":definitive,
             "eligible_pct":100*result["eligible"]/result["expected"] if result["expected"] else None,
             "revision_pairs":len(comparable),"revised":revised}
+
+
+def balancing_demo():
+    """Fixed, explicitly synthetic SAS estimates shared by both demo views."""
+    import pandas as pd
+    days=[date(2026,11,d) for d in range(1,18) if d!=7]
+    return pd.DataFrame([{"gas_day":d,"published_at":datetime(d.year,d.month,d.day,18,tzinfo=ROME),
+                          "sas_gwh":float((d.day*13)%71-35)} for d in days])
