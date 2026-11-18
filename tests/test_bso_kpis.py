@@ -88,8 +88,11 @@ def test_bso_overview_default_and_no_demo_fallback():
     assert not app.exception
     assert app.radio(key="bso_view").value=="Panoramica"
     assert not app.tabs
-    assert {m.label:m.value for m in app.metric}=={
-        "Attività aperte in ritardo":"—","|SAS| medio":"—","Definitivi utilizzabili":"—"}
+    metrics={m.label:m.value for m in app.metric}
+    assert "Sbilanciamenti / volume" in metrics and metrics["Sbilanciamenti / volume"]=="7,4 %"
+    assert metrics["Neutralità netta rettificata"]=="0,03 €/MWh"
+    assert len(metrics)==6 and all(v!="—" for v in metrics.values())
+    assert not {"Attività aperte in ritardo","|SAS| medio","Definitivi utilizzabili"}&set(metrics)
     assert any("Le assenze non valgono zero" in e.value for e in app.info)
     operational=app.dataframe[0].value
     assert len(operational)==10
@@ -106,5 +109,5 @@ def test_bso_overview_default_and_no_demo_fallback():
     assert app.radio(key="bso_mode").value=="Demo"
     app.radio(key="bso_view").set_value("Panoramica").run()
     assert not app.exception
-    assert all(m.value=="—" for m in app.metric)
+    assert {m.label:m.value for m in app.metric}==metrics
     assert app.dataframe[0].value["Valore"].isna().all()
