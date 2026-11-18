@@ -8,6 +8,7 @@ from .operational_sources import load_agsi, load_alsi, load_iip, attribution
 from .weather_gas import analyse_gas_day
 from .models import Kind
 from .iip_view import coverage
+from .public_data import SourceUnavailable
 
 
 def inventory_context(result, now, platform):
@@ -37,6 +38,8 @@ def iip_context(result,now):
     reason=("Aggiornamento IIP non riuscito; ultimo dato valido conservato." if result["failed"] else
             "Data di acquisizione futura: verifica orologio e cache." if age<timedelta(0) else
             "Ultima acquisizione oltre 2 ore." if age>timedelta(hours=2) else None)
+    if result["failed"] and result.get("refresh_error"):
+        reason="Aggiornamento IIP non riuscito ("+result["refresh_error"]+"); ultimo dato valido conservato."
     stale=reason is not None
     return {**attribution("IIP"),"request_from":result.get("request_from"),
             "request_to":result.get("request_to"),"acquired":result["acquired"].isoformat(),
@@ -102,6 +105,9 @@ def collect(store, context, now, *, key="", include_gie=False, include_weather=F
             for name,future in futures.items():
                 try:
                     out[name]=future.result()
+                except SourceUnavailable as error:
+                    out[name]={**(attribution(name) if name in ("AGSI+","ALSI","IIP") else {"source":name,"source_url":"https://open-meteo.com/"}),
+                               "status":"unavailable","reason":str(error)}
                 except Exception:
                     out[name]={**(attribution(name) if name in ("AGSI+","ALSI","IIP") else {"source":name,"source_url":"https://open-meteo.com/"}),
                                "status":"unavailable","reason":"Fonte non disponibile o dati non validi; nessun valore sostitutivo."}
