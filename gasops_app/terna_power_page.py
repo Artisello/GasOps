@@ -62,6 +62,8 @@ def _daily():
             st.code('GASOPS_TERNA_CLIENT_ID = "..."\nGASOPS_TERNA_CLIENT_SECRET = "..."',language="toml")
             st.caption("Inserire soltanto nei Secrets Streamlit o in .env locale; mai in chat, GitHub o nei campi pubblici. Verifica condizioni e quote Terna.")
         return
+    from .terna_history_page import panel as history_panel
+    history_panel()
     now=utc_now()
     last=latest_day(now)
     with st.form("terna_request"):
@@ -70,6 +72,7 @@ def _daily():
         end=b.date_input("Al giorno gas",value=last,max_value=last)
         consent=st.checkbox("Confermo uso autorizzato delle API Terna e ENTSOG.")
         align=st.checkbox("Per questa analisi esplorativa tratto i timestamp Terna come inizio intervallo (convenzione da verificare).")
+        archive=st.checkbox("Aggiungi allo storico di sessione",value=True)
         submit=st.form_submit_button("Carica dati",type="primary")
     if submit:
         if not consent or not align:
@@ -87,6 +90,13 @@ def _daily():
                     except (SourceUnavailable,ValueError):
                         pass
                 st.session_state[STATE]={"power":power,"gas":gas}
+                if archive:
+                    from .terna_history import STATE as HISTORY,make_batch,merge
+                    try:
+                        st.session_state[HISTORY]=merge(st.session_state.get(HISTORY,[]),[make_batch(power,utc_now())])
+                        st.success("Acquisizione aggiunta allo storico. Scarica il JSON per conservarla.")
+                    except (ValueError,TypeError,KeyError):
+                        st.warning("Dati visualizzati, ma storico non aggiornato: verificare copertura e limite.")
             except (SourceUnavailable,ValueError):
                 st.error("Richiesta Terna non disponibile o non valida. Ultimo risultato invariato.")
     saved=st.session_state.get(STATE)
