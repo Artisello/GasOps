@@ -239,3 +239,8 @@ div[data-testid="stVerticalBlockBorderWrapper"] { border-color: var(--gas-border
   .gas-header-meta { line-height:1.4; }
 }
 @media(max-width:350px) {.gas-kpi-grid {grid-template-columns:1fr;}}
+
+/* Calm, prominent physical storage indicator; neutral accent, not a safety status. */
+.st-key-panel_storage_fill [data-testid="stProgress"] { margin-top:.15rem; }
+.st-key-panel_storage_fill h3 { font-size:clamp(1.9rem,3vw,2.6rem); font-variant-numeric:tabular-nums; letter-spacing:-.045em; }
+.st-key-panel_supply_history h2 { font-size:1.15rem; }

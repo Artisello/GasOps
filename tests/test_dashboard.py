@@ -90,7 +90,7 @@ def test_agsi_is_default_and_loads_independently(monkeypatch,tmp_path):
     app=AppTest.from_string("from gasops_app.operational_sources_page import operational_context\noperational_context()",default_timeout=30).run()
     assert not app.exception
     assert calls==["IT"] and app.radio(key="operational_platform").value=="AGSI+"
-    assert any(m.label=="Giacenza" for m in app.metric)
+    assert any("Giacenza" in e.proto.body for e in app.get("html"))
     assert any("Gas Infrastructure Europe" in el.value for el in app.markdown)
     app.run()
     assert calls==["IT"] and not app.exception
@@ -283,3 +283,32 @@ def test_market_layout_and_no_weather_request_for_demo(monkeypatch,tmp_path):
     assert any("Variazione dei consumi" in e.proto.body for e in app.get("html"))
     assert any("Dati osservati e previsioni"==e.label for e in app.expander)
     assert any("Provenienza e metodologia"==e.label for e in app.expander)
+
+
+
+def test_supply_snapshot_same_day_and_exact_week():
+    from datetime import date,timedelta
+    import pandas as pd
+    from gasops_app.supply_view import inventory_snapshot,chart_window,scope_label
+    day=date(2026,11,17)
+    frame=pd.DataFrame([
+        {"gas_day":day-timedelta(days=7),"stock_twh":80.,"fill_pct":80.,"withdrawal_gwh_d":3.},
+        {"gas_day":day-timedelta(days=1),"stock_twh":79.,"fill_pct":79.,"withdrawal_gwh_d":4.},
+        {"gas_day":day,"stock_twh":78.,"fill_pct":78.,"withdrawal_gwh_d":None}])
+    latest,changes=inventory_snapshot(frame,"AGSI+")
+    assert latest["gas_day"]==day and pd.isna(latest["withdrawal_gwh_d"])
+    assert changes["fill_pct"]==-2 and "withdrawal_gwh_d" not in changes
+    chart=chart_window(frame,30)
+    assert len(chart)==30 and chart["stock_twh"].notna().sum()==3
+    assert scope_label("IT")=="Italia" and "GIE" in scope_label("EU")
+
+
+def test_supply_alsi_latest_day_with_energy_only():
+    import pandas as pd
+    from datetime import date
+    from gasops_app.supply_view import inventory_snapshot
+    frame=pd.DataFrame([{"gas_day":date(2026,11,16),"sendout_gwh_d":200.,"inventory_1000m3_lng":100.,"inventory_gwh":None},
+                        {"gas_day":date(2026,11,17),"sendout_gwh_d":None,"inventory_1000m3_lng":None,"inventory_gwh":50.}])
+    latest,changes=inventory_snapshot(frame,"ALSI")
+    assert latest["gas_day"]==date(2026,11,17) and latest["inventory_gwh"]==50.
+    assert pd.isna(latest["sendout_gwh_d"]) and changes=={}
