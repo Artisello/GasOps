@@ -241,3 +241,79 @@ def test_compact_context_keeps_units_periods_status_and_original():
     assert projected["Terna"]=={k:v for k,v in original["Terna"].items() if k!="url"}
     assert "url" in original["Terna"]
     assert len(json.dumps(projected))<len(json.dumps(original))
+
+
+
+def test_section_parser_normalizes_only_known_references():
+    import pytest
+    from gasops_app.ai_response import parse_sections,reference_index,InvalidSynthesis
+    agents=["market_intelligence"]
+    context={"AGSI+":{"source":"GIE AGSI+"},"ALSI":{"source":"GIE ALSI"}}
+    codes,aliases=reference_index(agents,context)
+    assert codes=={"A1":"market_intelligence","S1":"src:AGSI+","S2":"src:ALSI"}
+    sections,refs=parse_sections([
+        {"id":"Sicurezza delle forniture","text":"Scorte da monitorare.","references":" GIE AGSI+ "},
+        {"id":"Market","text":"Domanda da monitorare.","references":["s2","S2"]},
+    ],("summary","market","supply"),agents,["src:AGSI+","src:ALSI"],2600,aliases=aliases)
+    assert [section["id"] for section in sections]==["market","supply"]
+    assert refs==["src:ALSI","src:AGSI+"]
+    with pytest.raises(InvalidSynthesis,match="riferimenti non verificabili"):
+        parse_sections([{"id":"market","text":"Dato.","references":["S9"]}],
+                       ("summary","market","supply"),agents,["src:AGSI+"],2600,aliases=aliases)
+
+
+def test_briefing_recovers_invalid_format_once_and_preserves_source_only_answer(monkeypatch):
+    from gasops_app.models import Agent
+    from gasops_app.llm import CompatibleReasoner,LLMConfig
+    seen=[]
+    reserves=[]
+    replies=iter([
+        {"sections":[{"id":"summary","text":"Dato.","references":["invented"]}]},
+        {"interpretation":"Scorte osservate: 70 TWh.","references":["S1"]},
+    ])
+    class Response:
+        status_code=200
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def iter_content(self,chunk_size):
+            yield json.dumps({"choices":[{"message":{"content":json.dumps(next(replies))}}],
+                              "usage":{"prompt_tokens":600,"completion_tokens":100,"total_tokens":700}}).encode()
+    def post(*args,**kwargs):
+        seen.append(kwargs["json"])
+        return Response()
+    def reserve():
+        reserves.append(True)
+        return True
+    monkeypatch.setattr("gasops_app.llm.requests.post",post)
+    model=CompatibleReasoner(LLMConfig("openai/gpt-oss-120b","https://api.groq.com/openai/v1","fixture"),reserve=reserve)
+    run=run_workflow(MarketContext(synthetic(),"Seasonal regression",NOW),Library(),Assumptions(),
+                     full=True,reasoner=model,public_context={"AGSI+":{"source":"GIE","status":"available","values":{"stock_twh":70}}})
+    assert run.mode=="LLM-assisted" and run.interpretation_sources==[]
+    assert run.ai_sections[0]["references"]==["src:AGSI+"]
+    assert run.ai_usage["calls"]==run.ai_usage["reported_calls"]==len(reserves)==2
+    assert run.ai_usage["format_retries"]==1 and run.ai_usage["total_tokens"]==1400
+    assert "invented" not in seen[-1]["messages"][-1]["content"]
+    assert "Recupero formato" in seen[-1]["messages"][-1]["content"]
+    assert len(run.results)==len(Agent)
+
+
+def test_briefing_format_retry_respects_quota(monkeypatch):
+    from gasops_app.llm import CompatibleReasoner,LLMConfig
+    calls=[]
+    class Response:
+        status_code=200
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def iter_content(self,chunk_size):
+            yield json.dumps({"choices":[{"message":{"content":"not-json"}}]}).encode()
+    def post(*args,**kwargs):
+        calls.append(True)
+        return Response()
+    quota=iter([True,False])
+    monkeypatch.setattr("gasops_app.llm.requests.post",post)
+    model=CompatibleReasoner(LLMConfig("openai/gpt-oss-120b","https://api.groq.com/openai/v1","fixture"),reserve=lambda:next(quota))
+    run=run_workflow(MarketContext(synthetic(),"Seasonal regression",NOW),Library(),Assumptions(),
+                     full=True,reasoner=model)
+    assert run.mode=="Deterministic fallback" and not run.ai_sections
+    assert len(calls)==1 and run.ai_usage["calls"]==1
+    assert any("Quota interna" in warning for warning in run.warnings)

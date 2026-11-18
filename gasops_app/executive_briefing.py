@@ -62,10 +62,13 @@ def management_readout(run):
     failures=[f.title for f in run.findings if f.id.startswith("execution-")]
     if failures:
         priorities.append("Verificare gli errori di esecuzione prima di utilizzare i risultati interessati.")
-    if any(name in public and (public[name].get("status")!="available" or
-           (name=="IIP" and public[name].get("coverage")!="Completa"))
-           for name in ("AGSI+","ALSI","IIP","Open-Meteo")):
-        priorities.append("Controllare le fonti operative incomplete, in particolare le comunicazioni di indisponibilità se IIP non è verificato.")
+    gaps=[name for name,item in public.items()
+          if item.get("status")!="available" or (name=="IIP" and item.get("coverage")!="Completa")]
+    if gaps:
+        note="Controllare le fonti operative incomplete: "+", ".join(gaps)+"."
+        if "IIP" in gaps:
+            note+=" Verificare le comunicazioni di indisponibilità."
+        priorities.append(note)
     if run.source.kind!=Kind.SYNTHETIC and not historical:
         priorities.append("Confrontare la previsione con prelievi, nomination e indicatori di bilanciamento aggiornati.")
     else:
