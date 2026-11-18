@@ -134,6 +134,7 @@ def controls(rows,user,session_year,year,month,tolerance=D(".01"),balances=()):
         if any(a.stage=="definitive" and b.stage=="provisional" for a,b in zip(versions,versions[1:])):continue
         if versions[-1].buy is not None and versions[-1].sell is not None and versions[-1].buy<versions[-1].sell:continue
         prior[day]=versions[-1].cash
+    previous_sessions={r.key:r for r in rows}
     out=[]
     for r in selected:
         delta=r.current-r.previous
@@ -143,12 +144,21 @@ def controls(rows,user,session_year,year,month,tolerance=D(".01"),balances=()):
         if r.component=="DS" and r.baseline_kind=="balancing" and prior.get(r.competence) is not None:
             baseline_difference=r.previous-prior[r.competence]
         issues=[]
+        baseline_check="Non confrontata"
+        if baseline_difference is not None:baseline_check="Definitivo importato"
+        if r.baseline_kind=="adjustment":
+            predecessor=previous_sessions.get((r.user,r.session_year-1,r.competence,r.component))
+            if predecessor is not None:
+                if predecessor.result_ref!=r.baseline_ref:issues.append("Riferimento alla sessione precedente discordante")
+                else:
+                    baseline_difference=r.previous-predecessor.current
+                    baseline_check="Precedente esito importato"
         if discrepancy is not None and abs(discrepancy)>tolerance:issues.append("Delta pubblicato discordante")
-        if baseline_difference is not None and abs(baseline_difference)>tolerance:issues.append("Baseline DS discordante")
+        if baseline_difference is not None and abs(baseline_difference)>tolerance:issues.append("Baseline DS discordante" if r.component=="DS" else "Baseline economica discordante")
         if "verifica" in label:issues.append(label)
         out.append({"competence":r.competence.isoformat(),"component":r.component,"previous_eur":r.previous,"current_eur":r.current,
                     "delta_eur":delta,"published_delta_eur":r.published_delta,"difference_eur":discrepancy,
-                    "baseline_difference_eur":baseline_difference,"debit_eur":sum((-v for v in legs if v<0),ZERO),
+                    "baseline_difference_eur":baseline_difference,"baseline_check":baseline_check,"debit_eur":sum((-v for v in legs if v<0),ZERO),
                     "credit_eur":sum((v for v in legs if v>0),ZERO),"classification":label,"issues":"; ".join(issues),
                     "baseline_kind":r.baseline_kind,"baseline_ref":r.baseline_ref,"result_ref":r.result_ref})
     return out

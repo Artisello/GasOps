@@ -53,8 +53,10 @@ def panel():
         with st.expander("Copertura, confronti e provenienza"):
             st.caption(f'{r["compared"]}/{r["rows"]} differenze confrontate con importi pubblicati dichiarati. Assenti ≠ zero; applicabilità delle componenti da confermare.')
             st.dataframe(checks,hide_index=True,width="stretch")
-            st.caption("Tolleranza 0,01 € di studio. Baseline DS annuale confrontata con il definitivo importato solo se univoco e valorizzabile. Nessuna ricostruzione delle allocazioni.")
+            st.caption("Tolleranza 0,01 € di studio. Baseline DS annuale confrontata con il definitivo importato se univoco; pluriennale confrontata con l’esito dell’anno precedente se importato e con riferimento coincidente. Nessuna ricostruzione delle allocazioni.")
+            st.caption(f"{sum(x['baseline_difference_eur'] is not None for x in results)}/{len(results)} baseline confrontate.")
             st.text("SHA-256 archivio · "+saved["sha256"])
+            for h in saved["hashes"]:st.caption("Estratto · "+h)
             st.download_button("Esporta controlli",csv_text(results),"igor-aggiustamenti-controlli.csv","text/csv",key="adj_export")
             st.download_button("Esporta archivio ripristinabile",archive_csv(saved),"igor-aggiustamenti-archivio.csv","text/csv",key="adj_archive")
             clear=st.checkbox("Ho esportato e confermo rimozione.",key="adj_confirm_clear")

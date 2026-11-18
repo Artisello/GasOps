@@ -42,3 +42,15 @@ def test_empty_and_signs():
     from streamlit.testing.v1 import AppTest
     app=AppTest.from_string("from gasops_app.adjustments_page import panel\npanel()").run()
     assert not app.exception and not app.metric
+
+
+def test_prior_adjustment_predecessor():
+    s=merge(None,raw("U1,2025,2024-09-01,DS,balancing,B,A25,-100,-60,40",
+        "U1,2026,2024-09-01,DS,adjustment,A25,A26,-50,-30,20",
+        "U1,2025,2024-09-01,IO,balancing,B,A25,100,110,10",
+        "U1,2026,2024-09-01,IO,adjustment,WRONG,A26,110,115,5"),NOW)
+    r={x["component"]:x for x in controls(s["rows"],"U1",2026,2024,9)}
+    assert r["DS"]["baseline_difference_eur"]==10
+    assert "Baseline" in r["DS"]["issues"]
+    assert r["IO"]["baseline_difference_eur"] is None
+    assert "Riferimento" in r["IO"]["issues"]
