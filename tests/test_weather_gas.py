@@ -57,3 +57,12 @@ def test_conditional_fallback_and_no_imputation():
     future.iloc[0,future.columns.get_loc("hdd")]=np.nan
     with pytest.raises(ValueError):
         evaluate(data,hist,future)
+
+
+
+def test_weather_prediction_shape_for_aggregate_and_sectors():
+    from gasops_app.weather_gas import _predict
+    data,hist,future=fixture()
+    train=hist.join(data)
+    assert _predict(train,future,True,False).shape==(7,1)
+    assert _predict(train,future,True,True).shape==(7,3)

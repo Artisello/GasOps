@@ -1,6 +1,7 @@
 """Panoramica del mercato e analisi delle serie storiche."""
 
 from datetime import date
+import json
 from html import escape
 
 import pandas as pd
@@ -10,8 +11,9 @@ from .agents import MarketContext
 from .data import FIELDS, period_text
 from .forecast import AUTOMATIC, MODELS
 from .italiano import GRAVITA, MODALITA, MODELLI, data_it, numero
-from .models import Kind, Provider
-from .session import ai_controls, analysis_label, applicable_run, launch, preview_market, source_filters
+from .models import AGENT_LABELS, Agent, Kind, Provider
+from .session import ai_controls, analysis_label, briefing_run, launch, preview_market, source_filters
+from .reports import markdown
 from .visuals import AMBER, BLUE, ROSE, TEAL, breakdown_chart, chip, demand_chart, error_chart
 from .visuals import forecast_readout, heading, header, kind_tag, kpi, local_time, mini_chart, plot, rows, steps
 
@@ -169,58 +171,105 @@ def _supporting_charts(context: MarketContext, data: pd.DataFrame, page: str) ->
                 st.caption("Prezzo ufficiale assente per il periodo selezionato.")
 
 
+def _briefing_panel(selection, clicked: bool) -> None:
+    with st.container(border=True,key="panel_overview_brief"):
+        st.subheader("Bollettino di mercato")
+        st.caption("Il pulsante genera un report sui dati selezionati: andamento dei prelievi, "
+                   "previsioni, qualità, scenari e verifiche locali. Se è selezionato un modello AI, "
+                   "aggiunge un'interpretazione dei risultati condivisibili. Non modifica fonti o calcoli.")
+        extras=[]
+        if st.session_state.get("briefing_gie"):
+            extras.append("GIE (AGSI+, ALSI e IIP)")
+        if st.session_state.get("briefing_weather"):
+            extras.append("Open-Meteo")
+        st.caption("Fonti supplementari selezionate: "+(", ".join(extras) if extras else
+                   "nessuna · configurabili in Fonti del briefing AI nel menu laterale."))
+        if clicked:
+            generated=launch(selection,full=True)
+            if generated is None:
+                st.error("Il nuovo bollettino non è stato generato. L’eventuale risultato precedente resta qui sotto.")
+        run=briefing_run()
+        if run is None:
+            st.info("Nessun bollettino generato in questa sessione. Premi il pulsante in alto: il risultato apparirà qui.")
+        else:
+            matches=bool(selection.bundle and run.input_sha256==selection.bundle.fingerprint
+                         and run.assumptions.get("model")==selection.model)
+            if not matches:
+                st.warning("Bollettino precedente: fonte o modello previsionale attuale diverso. Genera un nuovo report per aggiornare i risultati.")
+            actual_ai=run.mode=="LLM-assisted" and bool(run.interpretation)
+            st.markdown("**Ultimo bollettino generato**")
+            st.caption(local_time(run.finished_at)+" · "+run.source.name+" · "+
+                       (run.source.latest_period or "periodo non indicato"))
+            if actual_ai:
+                st.caption("Interpretazione AI · "+(run.model or "modello non indicato"))
+                st.text(run.interpretation)
+                st.caption("Testo generato dal modello, da verificare · Riscontri: "+
+                           ", ".join(AGENT_LABELS[a] for a in run.interpretation_sources))
+            else:
+                st.caption("Report deterministico · nessuna interpretazione AI generata.")
+            for warning in run.warnings:
+                st.warning(warning)
+            completed=sum(r.status=="completed" for r in run.results.values())
+            issues=sum(f.severity in ("high","medium") for f in run.findings)
+            c1,c2,c3=st.columns(3)
+            c1.metric("Controlli completati",f"{completed}/{len(run.steps)}")
+            c2.metric("Rilievi da verificare",issues)
+            c3.metric("Modalità effettiva","AI" if actual_ai else "Deterministica")
+            for agent in (Agent.MARKET,Agent.FORECAST,Agent.QUALITY):
+                if agent in run.results:
+                    item=run.results[agent]
+                    st.markdown("**"+AGENT_LABELS[agent]+"**")
+                    st.text(item.summary)
+            public=run.assumptions.get("public_operational_context") or {}
+            if public:
+                with st.expander("Fonti operative consultate"):
+                    for name,source in public.items():
+                        status={"available":"Disponibile","stale":"Non recente","unavailable":"Non disponibile"}.get(source.get("status"),"Stato non indicato")
+                        st.text(f"{source.get('source',name)} · {status} · {source.get('gas_day') or source.get('acquired') or 'data non indicata'}")
+                        if source.get("reason"):
+                            st.text(source["reason"])
+                    st.json(public,expanded=False)
+            with st.expander("Dettaglio completo · scenari, normativa e settlement"):
+                st.caption("Scenari e regolazione economica possono utilizzare ipotesi dimostrative, non posizioni reali.")
+                for agent,item in run.results.items():
+                    st.markdown("**"+AGENT_LABELS[agent]+"**")
+                    st.text(item.summary)
+                st.html(steps(run))
+            d1,d2=st.columns(2)
+            d1.download_button("Scarica bollettino",markdown(run,{}),f"gasops-{run.id[:10]}.md",
+                               mime="text/markdown",key="overview_brief_md",width="stretch")
+            d2.download_button("Scarica dati JSON",json.dumps(run.model_dump(mode="json"),ensure_ascii=False,indent=2),
+                               f"gasops-{run.id[:10]}.json",mime="application/json",key="overview_brief_json",width="stretch")
+            st.markdown("[Centro operativo AI: domande, storico e riscontri](/operations)")
+        ai_controls(prefix="overview")
+
+
 def overview() -> None:
-    top, controls = st.container(), st.container()
+    top,controls=st.container(),st.container()
     with controls:
-        selection = source_filters("overview")
+        selection=source_filters("overview")
     with top:
-        clicked = header("Panoramica del mercato", selection.meta, analysis_label(), disabled=selection.bundle is None)
-    st.caption("Inizia dalla fonte dati, consulta i valori e avvia il report quando ti serve.")
-    with st.container():
-        a,b,c=st.columns(3)
-        a.markdown("**[Mercato e previsioni](/market)**  \nStorico, andamento e stime")
-        b.markdown("**[Stoccaggi e forniture](/security-of-supply)**  \nAGSI+, ALSI, IIP e Jarvis")
-        c.markdown("**[Registro operativo](/ledger)**  \nFatture, prezzi, garanzie e scadenze")
+        clicked=header("Panoramica del mercato",selection.meta,analysis_label(),disabled=selection.bundle is None)
+    _briefing_panel(selection,clicked)
     if not selection.bundle:
         return
-    if clicked:
-        launch(selection, full=True)
-
-    context = preview_market(selection)
-    st.caption("Ultimo periodo osservato · " + context.facts.get("label", "Non disponibile"))
+    context=preview_market(selection)
+    st.caption("Ultimo periodo osservato · "+context.facts.get("label","Non disponibile"))
     _metrics(context)
-    main, desk = st.columns([2.42, 1], gap="medium")
+    main,desk=st.columns([2.42,1],gap="medium")
     with main:
-        with st.container(border=True, key="panel_main"):
-            data = _charts(context, selection.periods, "overview", height=314)
-        _supporting_charts(context, data, "overview")
+        with st.container(border=True,key="panel_main"):
+            data=_charts(context,selection.periods,"overview",height=314)
+        _supporting_charts(context,data,"overview")
     with desk:
-        with st.container(border=True, key="panel_source"):
+        with st.container(border=True,key="panel_source"):
             heading("Fonti e aggiornamento")
             _source_panel(context)
         _quality_panel(context)
-        run = applicable_run(selection)
-        with st.container(border=True, key="panel_agents"):
-            heading("Analisi di mercato", chip("ULTIMA ANALISI", "ok") if run else chip("PRONTA"))
-            st.caption("Avvia il report per ottenere una sintesi delle evidenze e dei controlli.")
-            ai_controls(prefix="overview")
-            with st.expander("Stato dei singoli agenti"):
-                st.html(steps(run))
-    if run:
-        with st.container(border=True, key="panel_overview_brief"):
-            heading("Sintesi operativa", chip(MODALITA[run.mode]))
-            if run.model:
-                st.caption("Modello selezionato: "+run.model)
-            for warning in run.warnings:
-                st.warning(warning)
-            if run.assumptions.get("public_operational_context"):
-                with st.expander("Fonti operative del briefing"):
-                    st.json(run.assumptions["public_operational_context"],expanded=False)
-            for result in run.results.values():
-                st.text(result.summary)
-            if run.interpretation:
-                st.caption("Interpretazione del modello da rivedere")
-                st.text(run.interpretation)
+    a,b,c=st.columns(3)
+    a.markdown("**[Mercato e previsioni](/market)**  \nStorico, andamento e stime")
+    b.markdown("**[Stoccaggi e forniture](/security-of-supply)**  \nAGSI+, ALSI, IIP e Jarvis")
+    c.markdown("**[Registro operativo](/ledger)**  \nFatture, prezzi, garanzie e scadenze")
 
 
 def _model_comparison(context: MarketContext) -> None:

@@ -28,7 +28,7 @@ LOG = logging.getLogger(__name__)
 DEMO, PUBLIC, ARCHIVE = "Dati di esempio · giornalieri", "Eurostat + ARERA · mensili", "JRC · archivio giornaliero"
 DAILY = "ENTSOG · prelievi SRG giornalieri"
 SOURCE_CHOICES = (PUBLIC, DAILY, ARCHIVE, DEMO)
-RUN_ANALYSIS = "Avvia analisi di mercato AI"
+RUN_ANALYSIS = "Genera bollettino AI"
 SOURCE_LABELS = {
     PUBLIC: "Italia · bilancio mensile (Eurostat + ARERA)",
     DAILY: "Italia · prelievi giornalieri (ENTSOG/SRG)",
@@ -170,7 +170,7 @@ def reasoner() -> CompatibleReasoner | None:
 
 
 def analysis_label() -> str:
-    return RUN_ANALYSIS if reasoner() else "Genera report di mercato"
+    return RUN_ANALYSIS if reasoner() else "Genera bollettino di mercato"
 
 
 @dataclass(frozen=True)
@@ -288,11 +288,22 @@ def applicable_run(selection: Selection) -> Run | None:
     return run
 
 
+def briefing_run() -> Run | None:
+    """Only the last full report from this session, not another visitor's history."""
+    report=st.session_state.get("last_briefing")
+    if report:
+        return report
+    previous=st.session_state.get("last_run")
+    if previous and previous.question==DAILY_BRIEFING and previous.finished_at:
+        return previous
+    return None
+
+
 def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool = False) -> Run | None:
     if selection.bundle is None:
         return None
     context = MarketContext(selection.bundle, selection.model, utc_now())
-    status = st.status("Supervisore in esecuzione", expanded=True)
+    status = st.status("Generazione del bollettino…" if full else "Analisi della domanda…", expanded=True)
     stage = status.empty()
     stage.html(steps(None, grid=True))
     try:
@@ -319,6 +330,8 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
         status.write(str(error))
         return None
     st.session_state["last_run"] = report
+    if full:
+        st.session_state["last_briefing"] = report
     try:
         database().save(report)
     except (OSError, RuntimeError, sqlite3.Error):

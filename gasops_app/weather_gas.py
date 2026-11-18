@@ -85,7 +85,7 @@ def _predict(train, target, use_hdd, sector):
     x=features(train.index,train["hdd"] if use_hdd else None)
     z=features(target.index,target["hdd"] if use_hdd else None)
     model=Ridge(alpha=2.).fit(x,train[cols].to_numpy())
-    pred=np.maximum(model.predict(z),0)
+    pred=np.maximum(np.asarray(model.predict(z),dtype=float).reshape(len(target),len(cols)),0)
     if not np.isfinite(pred).all():
         raise ValueError("Previsione meteo non finita")
     return pred
