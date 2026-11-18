@@ -111,3 +111,22 @@ def test_gie_missing_key_has_attributed_source_status_without_http(monkeypatch):
     result=collect(None,None,NOW,include_gie=True)
     assert set(result)=={"AGSI+","ALSI","IIP"}
     assert all(item["status"]=="unavailable" and item["source_url"] and "values" not in item for item in result.values())
+
+
+def test_fresh_iip_uses_completion_clock_and_stale_cache_has_reason(monkeypatch):
+    acquired=NOW+timedelta(seconds=1)
+    result={"acquired":acquired,"failed":False,"messages":[{}],"reported_total":1,
+            "pages":1,"partial":False,"pagination_verified":True}
+    monkeypatch.setattr("gasops_app.briefing_context.load_iip",lambda *a,**k:result)
+    def missing(*a,**k):
+        raise ValueError("No inventory fixture")
+    monkeypatch.setattr("gasops_app.briefing_context.load_agsi",missing)
+    monkeypatch.setattr("gasops_app.briefing_context.load_alsi",missing)
+    report=collect(None,None,NOW,key="fixture",include_gie=True,
+                   clock=lambda:NOW+timedelta(seconds=2))
+    assert report["IIP"]["status"]=="available" and report["IIP"]["received_records"]==1
+    stale=iip_context({**result,"failed":True},NOW+timedelta(seconds=2))
+    assert stale["status"]=="stale" and stale["received_records"] is None
+    assert "non riuscito" in stale["reason"]
+    aged=iip_context(result,acquired+timedelta(hours=3))
+    assert aged["status"]=="stale" and "oltre 2 ore" in aged["reason"]

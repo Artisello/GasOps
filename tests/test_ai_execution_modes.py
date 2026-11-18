@@ -8,23 +8,28 @@ from gasops_app.supervisor import ModelUnavailable
 import pytest
 
 
-def test_activation_is_explicit_and_syncs_sidebar(monkeypatch,tmp_path):
+def test_configured_ai_is_default_and_local_choice_persists(monkeypatch,tmp_path):
     config=LLMConfig("fixture-local","http://localhost:11434/v1")
     monkeypatch.setattr(session,"_configuration",lambda:config)
     monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
     monkeypatch.setenv("GASOPS_PDF_DIR",str(tmp_path))
+    def no_request(*args,**kwargs):
+        pytest.fail("No automatic AI request during rendering")
+    monkeypatch.setattr("gasops_app.llm.requests.post",no_request)
     app=AppTest.from_string("from gasops_app import session,assistant_page\nsession.sidebar()\nassistant_page.assistant_page()",default_timeout=30)
     app.session_state["selected_source"]=session.DEMO
     app.run()
-    assert not app.exception
-    assert app.selectbox(key="execution_mode").value=="Deterministic"
-    assert app.chat_input(key="assistant_question").disabled
-    app.button(key="assistant_activate_ai").click().run()
     assert not app.exception
     assert app.selectbox(key="execution_mode").value=="fixture-local"
     assert not app.chat_input(key="assistant_question").disabled
     app.selectbox(key="execution_mode").set_value("Deterministic").run()
     assert not app.exception and app.chat_input(key="assistant_question").disabled
+    app.run()
+    assert app.selectbox(key="execution_mode").value=="Deterministic"
+    app.button(key="assistant_activate_ai").click().run()
+    assert not app.exception
+    assert app.selectbox(key="execution_mode").value=="fixture-local"
+    assert not app.chat_input(key="assistant_question").disabled
     assert assistant_page.HISTORY not in app.session_state
 
 
