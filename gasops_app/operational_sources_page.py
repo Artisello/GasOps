@@ -30,9 +30,9 @@ def operational_context():
     """Standalone view; only the selected platform is loaded."""
     st.title("Stoccaggi e forniture")
     key=configured_key()
-    selected=st.radio("Sezione",["AGSI+","ALSI","IIP","Jarvis","MASE"],horizontal=True,key="operational_platform",
+    selected=st.radio("Sezione",["AGSI+","ALSI","IIP","Jarvis","MASE","ENTSOG"],horizontal=True,key="operational_platform",
                       label_visibility="collapsed",
-                      format_func={"AGSI+":"Scorte","ALSI":"Gas liquefatto","IIP":"Avvisi di mercato","Jarvis":"Rete Snam","MASE":"Produzione"}.__getitem__)
+                      format_func={"AGSI+":"Scorte","ALSI":"Gas liquefatto","IIP":"Avvisi di mercato","Jarvis":"Rete Snam","MASE":"Produzione","ENTSOG":"Interconnessioni"}.__getitem__)
     if not key and selected in ("AGSI+","ALSI","IIP"):
         st.info("Accesso GIE non configurato. La sezione Rete Snam resta disponibile.")
     with st.popover("Fonti",icon=":material/info:"):
@@ -44,6 +44,9 @@ def operational_context():
         _inventory_panel(selected,load_alsi,key)
     elif selected=="IIP":
         _iip_panel(key)
+    elif selected=="ENTSOG":
+        from .entsog_network_page import panel
+        panel()
     elif selected=="MASE":
         from .mase_page import panel
         panel()
