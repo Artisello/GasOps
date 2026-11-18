@@ -24,6 +24,8 @@ def test_overview_button_completes_offline_run(monkeypatch, tmp_path):
     app.button(key="analysis_launch").click().run()
     assert not app.exception
     report = app.session_state["last_run"]
+    from gasops_app.session import database
+    assert database().recent()==[]  # Public UI must not persist visitor runs.
     assert report.finished_at and len(report.results) == 6
     assert app.session_state["last_briefing"].id == report.id
     assert any("Ultimo bollettino generato" in e.value for e in app.markdown)

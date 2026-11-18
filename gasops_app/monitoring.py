@@ -221,7 +221,7 @@ class Archive:
         return list({r[:4]:r for r in rows}.values())
 
 
-def run(sources,now,archive=None,collector=collect):
+def run(sources,now,archive=None,collector=collect,*,clock=None):
     statuses=[]
     for source in sources:
         if source not in SOURCES:
@@ -229,11 +229,15 @@ def run(sources,now,archive=None,collector=collect):
         row={"source":source,"url":URLS[source],"status":"skipped","valid":None,"expected":None,
              "latest":None,"revisions":None,"outliers":None,"alerts":[]}
         try:
-            data=collector(source,now)
+            started=clock() if clock else now
+            data=collector(source,started)
+            acquired=clock() if clock else now
+            if acquired.tzinfo is None or acquired<started:
+                raise ValueError("Invalid acquisition clock")
             if data is not None:
                 row.update({k:data[k] for k in ("status","valid","expected","latest","alerts")})
                 if archive is not None:
-                    rev,out=archive.save(source,data,now)
+                    rev,out=archive.save(source,data,acquired)
                     row.update(revisions=rev,outliers=out)
                     if rev: row["alerts"].append("revision")
                     if out: row["alerts"].append("outlier")
@@ -241,7 +245,8 @@ def run(sources,now,archive=None,collector=collect):
             # Controlled status only: never dump payloads, URLs with keys, or exceptions.
             row.update(status="failed",valid=None,expected=None,latest=None,revisions=None,outliers=None,alerts=["provider"])
         statuses.append(row)
-    return {"version":1,"checked_at":now.astimezone(timezone.utc).isoformat(),
+    checked=clock() if clock else now
+    return {"version":1,"checked_at":checked.astimezone(timezone.utc).isoformat(),
             "mode":"private_archive" if archive else "diagnostic_only","sources":statuses}
 
 
@@ -299,7 +304,7 @@ def main():
     if args.diagnostic_only and any(s not in PUBLIC for s in args.sources):
         p.error("Hosted diagnostic supports keyless sources only.")
     archive=None if args.diagnostic_only else Archive(args.db)
-    report=run(list(dict.fromkeys(args.sources)),utc_now(),archive)
+    report=run(list(dict.fromkeys(args.sources)),utc_now(),archive,clock=utc_now)
     write_report(report,args.report)
     # Only status and source codes in logs.
     for row in report["sources"]:

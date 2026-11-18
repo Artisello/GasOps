@@ -1,13 +1,14 @@
-# Demo I.G.O.R. in tre minuti
+# I.G.O.R. — Demo BSO in 5 minuti
 
-Avvia con `streamlit run app.py`. La dashboard si apre in **Panoramica**, sui dati mensili pubblici.
+Prototipo indipendente, non ufficiale Snam. Per una presentazione stabile, avvia `streamlit run app.py`, seleziona **Calcoli senza AI** e tieni pronto **Archivio JRC** (funziona offline). Non mostrare informazioni aziendali riservate.
 
-| Tempo | Mostra | Risultato |
-| --- | --- | --- |
-| 0:00–0:40 | Leggi **Prossima stima** e **Fascia all’80%** sopra il grafico. Apri **Mercato e previsioni**. | Il confronto degli errori spiega la scelta automatica. Il selettore del modello permette di provare un’alternativa. |
-| 0:40–1:10 | Seleziona **JRC · archivio giornaliero**. Guarda i consumi per settore. | La serie contiene 2.557 giorni italiani dal 2015 al 2021 e funziona offline. La previsione sulla coda dell’archivio è una proiezione storica. |
-| 1:10–2:00 | Seleziona **Dati di esempio · giornalieri**. Premi **Avvia analisi di mercato AI** e apri il **Centro operativo AI**. | I sei agenti analizzano il caso. Nella simulazione con domanda a +10%, la copertura passa dal 96,6% all’87,8%. Apri un rilievo ed esporta il rapporto. |
-| 2:00–2:35 | In **Bilanciamento**, imposta un prezzo d’acquisto di −42 e ricalcola. In **Scenari aggregati**, varia la domanda o lo stoccaggio. | Con il prezzo negativo, la posizione corta di esempio genera un credito. La tabella aggiorna la copertura e il valore indicativo del saldo. |
-| 2:35–3:00 | Apri **Analisi normativa** ed esamina il preavviso di sette giorni. | Il registro collega il rilievo alle pagine PDF 103 e 104 di Piombino. Con il PDF caricato, puoi aprire le pagine originali. |
+| Tempo | Vista | Messaggio |
+|---|---|---|
+| 0:00–0:45 | KPI operativi > Panoramica | Tre KPI operativi proposti. Senza registri autorizzati sono indisponibili, non zero. Benchmark annuali ACER, Terna e MASE con fonte e periodo. |
+| 0:45–1:30 | KPI operativi > Registro operativo > Demo | Scadenze, SAS e controllo definitivi su dati sintetici esplicitamente indicati. |
+| 1:30–2:30 | Mercato e previsioni > Laboratorio previsionale | Archivio JRC 2015–2021, confronto naive/Ridge autoregressivo/multivariato su date comuni; proiezione storica, non attuale. |
+| 2:30–3:15 | Mercato e previsioni > Mercato europeo ACER | Benchmark bilanciamento 2024/2025 e 2023/2024, neutralità e trend. |
+| 3:15–4:00 | Bilanciamento / Fatture e garanzie | Controlli del settlement ed eccezioni con input di esempio; nessuna fattura ufficiale. |
+| 4:00–5:00 | Norme e documenti / Monitoraggio fonti | Fonte e pagina PDF, diagnostica se disponibile, stato delle integrazioni. |
 
-La demo sintetica include una lacuna temporale, un valore mancante, un duplicato, letture in conflitto, un’unità non valida, un orario errato e un picco anomalo dell’offerta. L’archivio JRC e i dati di esempio sono entrambi disponibili offline e ciascuno riporta la propria provenienza.
+Prima della demo: esegui i test e la verifica offline, apri i percorsi scelti e controlla date e unità. Se una fonte live non risponde, mostra l'archivio pubblico o il caso demo dichiarato. Non presentare una cache come dato odierno. Se il modello AI remoto è autorizzato, attivalo solo come extra. La disponibilità dei provider va verificata al momento.

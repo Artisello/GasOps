@@ -10,6 +10,12 @@ I.G.O.R. (già GasOps AI) è un prototipo indipendente, non ufficiale Snam. La r
 
 [Procedura GitHub](https://docs.github.com/en/repositories/creating-and-managing-repositories/renaming-a-repository) · [Procedura Streamlit](https://docs.streamlit.io/deploy/streamlit-community-cloud/manage-your-app/rename-your-app)
 
+## Stato di rilascio
+
+Prototipo dimostrativo indipendente, non sistema Snam certificato. [Checklist di rilascio e limiti](docs/PRODUCTION_READINESS.md) · [Demo guidata](DEMO.md).
+
+`python -m gasops_app.readiness` verifica gli archivi inclusi e la persistenza in una cartella temporanea senza chiamare API, leggere Secrets o modificare dati di esercizio.
+
 ## Avvio locale
 
 Da questa cartella usa Python 3.12 o successivo.
@@ -53,7 +59,7 @@ Carica PDF con testo ricercabile su **Analisi normativa** o colloca le copie in 
 
 Per abilitare un modello, copia `.env.example` in `.env`, imposta `GASOPS_LLM_MODEL` e l’URL compatibile, quindi seleziona il modello in **Modalità di analisi**. Ollama usa l’endpoint locale `/v1` e richiede un modello con chiamate a strumenti. Un endpoint HTTPS compatibile può usare `GASOPS_LLM_API_KEY`. La modalità esterna trasmette all’endpoint configurato domande, risultati ed estratti selezionati.
 
-Gli agenti eseguono calcoli deterministici e salvano fonti, storico e revisioni in SQLite sotto `.gasops/`. `GASOPS_STATE_DIR` permette di cambiare la cartella. Il **Centro operativo AI** esporta JSON e Markdown.
+Gli agenti eseguono calcoli deterministici. I report dell'interfaccia e lo storico dell'assistente restano in sessione; scaricali per conservarli. SQLite sotto `.gasops/` conserva cache delle fonti e contatore delle richieste AI. `GASOPS_STATE_DIR` permette di cambiare la cartella. Il **Centro operativo AI** esporta JSON e Markdown.
 
 ## Modelli econometrici
 
