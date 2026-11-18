@@ -21,6 +21,7 @@ REPORT_2025 = "https://www.acer.europa.eu/sites/default/files/documents/Publicat
 REPORT_2026 = "https://acer.europa.eu/sites/default/files/documents/Publications/ACER-Gas-Balancing-Indicators-Highlights-2026.pdf"
 CHEST = "https://aegis.acer.europa.eu/chest/dataitems/1136/view"
 MAX_BYTES = 2_000_000
+CACHE_KEY = "acer-terminal-lng-v1"
 FIELDS = ("nwe","south","eu","benchmark")
 HEADERS = {
     "date":"date",
@@ -107,9 +108,21 @@ def bundled_lng():
 
 
 def load_lng(store, *, refresh=False):
-    return retrieve(store,key="acer-terminal-lng-v1",name="ACER TERMINAL",url=CSV_URL,
+    return retrieve(store,key=CACHE_KEY,name="ACER TERMINAL",url=CSV_URL,
                     parse=parse_lng,ttl=timedelta(hours=24),refresh=refresh,attempts=1,
                     timeout=(5,25),max_bytes=MAX_BYTES,diagnostics=True)
+
+
+def cached_lng(store, now):
+    """Read and validate the shared official cache without a network request."""
+    entry=store.cached(CACHE_KEY)
+    if not entry:return None
+    try:
+        at=datetime.fromisoformat(entry[0])
+        if at.tzinfo is None or at>now:return None
+        return parse_lng(entry[1],at,cached=True)
+    except (ValueError,TypeError,IndexError):
+        return None
 
 
 def with_spreads(rows):
