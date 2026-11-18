@@ -82,10 +82,16 @@ def _jarvis_panel(prefix="supply"):
                 st.warning("CSV superiore a 1 MB.")
             else:
                 try:
-                    st.session_state[state]=parse_jarvis(file.getvalue())
-                    st.success("Stime importate nella sessione.")
+                    from .intraday import merge_snapshot
+                    st.session_state[state]=merge_snapshot(st.session_state.get(state),file.getvalue(),utc_now())
+                    st.success("Stime aggiunte allo storico della sessione.")
                 except (ValueError,TypeError,OverflowError) as error:
-                    st.warning("CSV non valido: "+str(error)+". Le stime precedenti restano disponibili.")
+                    st.caption("Importazione non valida, conflitto o limite archivio. Le stime precedenti restano disponibili.")
+        if state in st.session_state:
+            from .intraday import archive_csv
+            saved=st.session_state[state]
+            st.caption(f"{len(saved['versions'])}/2000 versioni · esporta prima di rimuovere.")
+            st.download_button("Esporta archivio CSV",archive_csv(saved["versions"]),"igor-jarvis-storico.csv","text/csv",key=prefix+"_jarvis_history")
         if state in st.session_state and st.button("Rimuovi stime dalla sessione",key=prefix+"_jarvis_clear"):
             st.session_state.pop(state,None)
             st.rerun()
@@ -102,7 +108,7 @@ def _jarvis_panel(prefix="supply"):
     gas_day=now.date() if now.hour>=6 else now.date()-timedelta(days=1)
     st.caption(f"Giorno gas {data_it(selected)} · versione {local_time(row['published_at'])} · fonte dichiarata, non verificata indipendentemente")
     if selected!=gas_day:
-        st.warning("Giorno gas diverso da quello corrente: consultazione storica.")
+        st.caption("Consultazione storica.")
     elif utc_now()-row["published_at"]>timedelta(hours=3):
         st.warning("Ultima pubblicazione importata oltre 3 ore fa. Verifica il portale; soglia informativa I.G.O.R..")
     fields=(("Prelievo atteso","expected_withdrawal_gwh","Consumo atteso"),
@@ -115,7 +121,7 @@ def _jarvis_panel(prefix="supply"):
         prior=finite(previous[field]) if previous is not None else None
         change=" · Δ "+numero(value-prior,1,signed=True)+" GWh dalla versione precedente" if value is not None and prior is not None else ""
         cards.append((label,value,"GWh",detail+change,1,""))
-    kpi_grid(cards)
+    kpi_grid([c for c in cards if c[1] is not None])
     st.caption("Evoluzione infragiornaliera (GWh)")
     frame=history.copy()
     frame["Pubblicazione"]=pd.to_datetime(frame["published_at"],utc=True).dt.tz_convert(ROME)
@@ -132,9 +138,12 @@ def _jarvis_panel(prefix="supply"):
     else:
         st.caption("Servono almeno due pubblicazioni per mostrare l'evoluzione infragiornaliera.")
     info("Info stime","Il SAS è il valore riportato dalla fonte, non una differenza domanda/offerta calcolata da I.G.O.R. e non il DS del partecipante. Il linepack indica il gas presente nella rete. Il segno del SAS è mantenuto come pubblicato.","Dati importati nella sessione, nessun aggiornamento automatico. Verifica perimetro, convenzioni e orari della fonte.")
+    from .intraday_page import panel as closing_panel
+    closing_panel(versions,selected,utc_now(),prefix)
     with st.expander("Dati importati e versioni"):
         st.dataframe(history,hide_index=True,width="stretch")
         st.text("SHA-256 · "+result["sha256"])
+        for h in result.get("hashes",()):st.caption("Estratto · "+h)
 
 
 def _credit(platform):

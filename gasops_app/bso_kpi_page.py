@@ -110,6 +110,8 @@ def _public(now):
     st.dataframe(rows,hide_index=True,width="stretch",
                  column_config={"Fonte":st.column_config.LinkColumn("Fonte",display_text="Comunicazione")})
     st.markdown("[Comunicazioni commerciali Snam]("+NEWS+") · [Codice di Rete]("+CODE+") · [Jarvis]("+JARVIS+")")
+    from .operating_rules_page import calendar_panel
+    calendar_panel(now)
     info("Calendario","Snapshot delle comunicazioni del 6 e 23 ottobre 2026, consultate il 18 novembre 2026. Nessun aggiornamento automatico. Le milestone possono essere rettificate: verificare la fonte. Date ufficialmente comunicate senza inventare orari o adempimenti completati. Non entrano nel KPI di puntualità.")
 
 

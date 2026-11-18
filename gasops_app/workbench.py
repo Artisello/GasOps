@@ -217,6 +217,8 @@ def balancing() -> None:
     with daily:
         from .settlement_desk_page import panel
         panel()
+        from .operating_rules_page import network_panel
+        network_panel()
     with participant:
         _settlement_panel()
     with aggregate:
