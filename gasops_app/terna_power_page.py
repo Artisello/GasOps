@@ -2,6 +2,9 @@
 from datetime import timedelta
 import pandas as pd
 import streamlit as st
+from .italiano import numero
+from .visuals import TEAL, BLUE, kpi_grid, plot, info
+from .terna_charts import comparison_bars, timeseries, day_label, acquisition_label
 
 from .terna_power import (ANNUAL_URL,CATALOG,PORTAL,GEN_DOC,LOAD_DOC,TOKEN_DOC,
     annual_rows,credentials,latest_day,load_power,load_gas,paired,correlation)
@@ -19,7 +22,7 @@ LABELS={"Thermal":"Termoelettrico (tutti i combustibili)","Wind":"Eolico","Photo
 
 def panel():
     st.subheader("Sistema elettrico · Terna")
-    mode=st.radio("Analisi",["Giorni gas","Previsioni elettriche","Capacità e industria","Statistiche annuali"],horizontal=True,key="terna_mode")
+    mode=st.radio("Analisi",["Statistiche annuali","Giorni gas","Previsioni elettriche","Capacità e industria"],horizontal=True,key="terna_mode",label_visibility="collapsed")
     if mode=="Previsioni elettriche":
         from .terna_forward_page import panel as forward_panel
         forward_panel()
@@ -32,26 +35,53 @@ def panel():
         _daily()
 
 
+ANNUAL_LABELS={
+    "demand":"Fabbisogno elettrico","production_for_consumption":"Produzione destinata al consumo",
+    "net_imports":"Importazioni nette","gross_generation":"Generazione lorda","net_generation":"Generazione netta",
+    "gas_gross":"Generazione lorda da gas","gas_gross_yoy":"Variazione generazione da gas vs 2024",
+    "gas_share_thermal":"Gas / generazione termoelettrica","wind_gross":"Eolico · generazione lorda",
+    "hydro_gross":"Idroelettrico · generazione lorda","bioenergy_gross":"Bioenergie · generazione lorda",
+    "solid_fuels_gross":"Combustibili solidi · generazione lorda","installed_gross":"Potenza lorda installata",
+    "renewable_installed":"Potenza rinnovabile installata","pv_installed":"Fotovoltaico · potenza installata",
+    "wind_installed":"Eolico · potenza installata","thermal_installed":"Termoelettrico · potenza installata",
+}
+
+
 def _annual():
-    rows=annual_rows()
+    try:
+        rows=annual_rows()
+    except (OSError,ValueError):
+        st.warning("Statistiche annuali non disponibili o non validabili.")
+        return
     v={r["metric"]:r["value"] for r in rows}
-    st.caption("Italia · anno civile 2025 · sintesi statistica Terna · dati arrotondati, non live")
-    a,b,c=st.columns(3)
-    a.metric("Generazione lorda da gas",f"{v['gas_gross']:.1f} TWh",f"+{v['gas_gross_yoy']:.1f}% vs 2024",delta_color="off")
-    b.metric("Gas / termoelettrico",f"{v['gas_share_thermal']:.1f}%")
-    c.metric("Fabbisogno elettrico",f"{v['demand']:.1f} TWh")
+    st.caption("Italia · Anno civile 2025 · Statistiche ufficiali Terna · valori arrotondati, non live")
+    info("Fonte e metodologia","Sintesi statistica annuale, non dati in tempo reale. TWh = energia elettrica; GW = potenza installata. La generazione elettrica da gas non è il contenuto energetico del gas consumato.")
+    kpi_grid([("Generazione lorda da gas",v["gas_gross"],"TWh",numero(v["gas_gross_yoy"],signed=True)+"% vs 2024",1,""),
+              ("Gas nel termoelettrico",v["gas_share_thermal"],"%","Quota della produzione termoelettrica",1,""),
+              ("Fabbisogno elettrico",v["demand"],"TWh","Anno 2025",1,"")])
     st.markdown("**Copertura del fabbisogno**")
-    st.bar_chart(pd.DataFrame({"Fonte":["Produzione destinata al consumo","Importazioni nette"],
-        "TWh":[float(v["production_for_consumption"]),float(v["net_imports"])]}),x="Fonte",y="TWh",horizontal=True)
-    st.markdown("**Generazione lorda per fonte · selezione**")
-    metrics={"gas_gross":"Gas naturale","wind_gross":"Eolico","hydro_gross":"Idroelettrico",
-             "bioenergy_gross":"Bioenergie","solid_fuels_gross":"Combustibili solidi"}
-    st.bar_chart(pd.DataFrame({"Fonte":list(metrics.values()),"TWh":[float(v[k]) for k in metrics]}),x="Fonte",y="TWh",horizontal=True)
-    st.caption("Fonti selezionate, non mix completo. Fotovoltaico: oltre 45 TWh nel testo ufficiale; non trasformato in numero esatto. Produzione elettrica da gas ≠ energia del gas consumato.")
-    with st.expander("Dati, capacità installata e fonte"):
-        st.dataframe(rows,hide_index=True,width="stretch")
-        st.download_button("CSV con fonte",pd.DataFrame(rows).to_csv(index=False),"igor-terna-2025.csv","text/csv")
-        st.markdown(f"[Annuario e sintesi Terna]({ANNUAL_URL}) · [Portale dati]({PORTAL})")
+    demand=v["demand"]
+    if demand>0:
+        prod=100*v["production_for_consumption"]/demand
+        imp=100*v["net_imports"]/demand
+        st.caption(f"Produzione destinata al consumo {numero(prod)}% · Importazioni nette {numero(imp)}%")
+    plot(comparison_bars([("Produzione per il consumo",v["production_for_consumption"],TEAL),
+                          ("Importazioni nette",v["net_imports"],BLUE)],"TWh"),"terna_annual_coverage")
+    st.markdown("**Generazione lorda per fonte**")
+    selected=[("Gas naturale",v["gas_gross"]),("Idroelettrico",v["hydro_gross"]),
+              ("Eolico",v["wind_gross"]),("Bioenergie",v["bioenergy_gross"]),("Combustibili solidi",v["solid_fuels_gross"])]
+    plot(comparison_bars([(name,value,TEAL if name=="Gas naturale" else BLUE) for name,value in selected],"TWh"),"terna_annual_generation")
+    st.caption("Selezione delle fonti con valore esatto nella sintesi; fotovoltaico oltre 45 TWh. Non è il mix completo.")
+    st.markdown("**Potenza installata**")
+    kpi_grid([("Totale lordo",v["installed_gross"],"GW","Potenza nominale",1,""),
+              ("Rinnovabili",v["renewable_installed"],"GW","Totale rinnovabili",1,""),
+              ("Termoelettrico",v["thermal_installed"],"GW","Tutti i combustibili",1,"")])
+    plot(comparison_bars([("Fotovoltaico",v["pv_installed"],BLUE),("Eolico",v["wind_installed"],TEAL)],"GW"),"terna_annual_capacity")
+    st.caption("Fotovoltaico ed eolico sono sottoinsiemi delle rinnovabili; le categorie tecnologiche non costituiscono una somma del totale.")
+    with st.expander("Dati e fonti"):
+        st.dataframe(pd.DataFrame([{"Indicatore":ANNUAL_LABELS[r["metric"]],"Valore":numero(r["value"]),"Unità":r["unit"]} for r in rows]),hide_index=True,width="stretch")
+        st.download_button("Scarica dati originali CSV",pd.DataFrame(rows).to_csv(index=False),"igor-terna-2025.csv","text/csv",key="terna_annual_export")
+        st.markdown(f"[Statistiche ufficiali Terna]({ANNUAL_URL}) · [Portale dati]({PORTAL})")
 
 
 def _daily():
