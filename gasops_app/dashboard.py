@@ -329,18 +329,8 @@ def overview() -> None:
                 with st.container(border=True,key="panel_overview_mix"):
                     _overview_mix(context)
                 with st.container(border=True,key="panel_overview_quality"):
-                    st.subheader("Qualità dei dati")
-                    if findings:
-                        st.markdown("**"+str(len(findings))+" rilievi da verificare**")
-                        critical=[f for f in findings if f.severity=="high"]
-                        for f in critical:
-                            st.warning(f.title)
-                        with st.expander("Tutti i controlli"):
-                            for f in context.inspection.findings:
-                                st.markdown("**"+f.title+"** · "+GRAVITA[f.severity])
-                                st.caption(f.detail)
-                    else:
-                        st.caption("Nessun rilievo da rivedere nei controlli eseguiti.")
+                    from .sentinel import panel as sentinel_panel
+                    sentinel_panel(context)
         with st.expander("Fonti e aggiornamento"):
             _source_panel(context)
     if selection.name in (PUBLIC,DAILY):
