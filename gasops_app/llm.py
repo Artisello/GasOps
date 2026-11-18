@@ -115,6 +115,9 @@ class CompatibleReasoner:
             body["max_completion_tokens"]=1024
             if self.config.model in {"openai/gpt-oss-120b","openai/gpt-oss-20b"}:
                 body["reasoning_effort"]="low"
+                # Reasoning tokens count toward the same completion budget.
+                if structured or "verified_tool_results" in messages[-1].get("content",""):
+                    body["max_completion_tokens"]=2048
             if not tools and (structured or "verified_tool_results" in messages[-1].get("content","")):
                 body["response_format"]={"type":"json_object"}
         if tools:
@@ -147,9 +150,15 @@ class CompatibleReasoner:
                 content.extend(part)
                 if len(content) > 160_000:
                     raise ValueError("Model response too large")
-        message = json.loads(content)["choices"][0]["message"]
+        try:
+            choice = json.loads(content)["choices"][0]
+            if choice.get("finish_reason") == "length":
+                raise ModelUnavailable("Risposta AI troncata: limite di generazione raggiunto.")
+            message = choice["message"]
+        except (ValueError, KeyError, IndexError, TypeError, AttributeError):
+            raise ModelUnavailable("Risposta del provider non valida.") from None
         if not isinstance(message, dict):
-            raise ValueError("Invalid model message")
+            raise ModelUnavailable("Risposta del provider non valida.")
         return message
 
     def _tool_calls(self, response: dict, tools: Mapping[Agent, Tool]) -> list[Call]:
@@ -218,21 +227,38 @@ class CompatibleReasoner:
         if not allowed:
             raise ModelUnavailable("Nessun risultato condivisibile con il modello esterno.")
         evidence = json.dumps({"question": question, "verified_tool_results": allowed, "public_operational_context": context or {}})
-        response = self._chat([*self.messages, {"role": "user", "content": f"{SUMMARY}\n{evidence}"}])
+        valid_ids = [agent.value for agent, result in results.items()
+                     if agent.value in allowed and result.evidence]
+        if not valid_ids:
+            raise ModelUnavailable("Nessuna evidenza citabile per la sintesi AI.")
+        instruction = (SUMMARY + "\nMaximum 950 characters for interpretation. "
+                       "Use only these exact reference identifiers: " + ", ".join(valid_ids) +
+                       ". Do not cite source names as references.")
+        try:
+            response = self._chat([*self.messages, {"role": "user", "content": f"{instruction}\n{evidence}"}])
+        except requests.Timeout:
+            raise ModelUnavailable("Tempo di risposta del provider superato.") from None
+        except requests.RequestException:
+            raise ModelUnavailable("Connessione al provider non riuscita.") from None
         content = response.get("content") or ""
-        if not isinstance(content, str):
-            raise ValueError("Expected a JSON text response")
+        if not isinstance(content, str) or not content.strip():
+            raise ModelUnavailable("Il modello non ha restituito una sintesi testuale.")
         content = content.strip()
         if content.startswith("```json") and content.endswith("```"):
             content = content[7:-3].strip()
-        parsed = json.loads(content)
+        try:
+            parsed = json.loads(content)
+        except ValueError:
+            raise ModelUnavailable("La sintesi non rispetta il formato JSON previsto.") from None
+        if not isinstance(parsed, dict):
+            raise ModelUnavailable("Formato della sintesi non valido.")
         narrative = parsed.get("interpretation")
         references = parsed.get("references")
         if not isinstance(narrative, str) or not 1 <= len(narrative.strip()) <= 950 or not isinstance(references, list):
-            raise ValueError("Invalid interpretation format")
+            raise ModelUnavailable("Formato o lunghezza della sintesi non validi.")
+        if not references or any(not isinstance(ref, str) or ref not in valid_ids for ref in references):
+            raise ModelUnavailable("La sintesi contiene riferimenti non verificabili.")
         cited = list(dict.fromkeys(Agent(ref) for ref in references))
-        if not cited or any(ref.value not in allowed or ref not in results or not results[ref].evidence for ref in cited):
-            raise ValueError("Interpretation must cite executed tools with evidence")
         return narrative.strip(), cited
 
     def plan_dataset(self, question, manifest):

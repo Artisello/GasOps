@@ -190,6 +190,53 @@ def _supporting_charts(context: MarketContext, data: pd.DataFrame, page: str) ->
                 st.caption("Prezzo ufficiale assente per il periodo selezionato.")
 
 
+def _briefing_period(run):
+    # The usable observation may precede the publisher's last record.
+    market=run.results.get(Agent.MARKET)
+    observed=(market.values.get("period") if market else None) or run.assumptions.get("source_period")
+    period=observed or run.source.latest_period
+    if isinstance(period,str):
+        try:
+            return data_it(date.fromisoformat(period),day=run.source.grain=="daily")
+        except ValueError:
+            return period
+    return "Periodo non disponibile"
+
+
+def _briefing_highlights(run):
+    market=run.results.get(Agent.MARKET)
+    forecast=run.results.get(Agent.FORECAST)
+    facts=market.values if market and market.status in ("completed","review") else {}
+    series=forecast.values.get("forecast",{}) if forecast and forecast.status in ("completed","review") else {}
+    points=series.get("points",[])
+    point=points[0] if points else {}
+    scope=_briefing_period(run)
+    estimate_period=point.get("period")
+    if estimate_period:
+        try:
+            estimate_period=data_it(date.fromisoformat(estimate_period),day=run.source.grain=="daily")
+        except ValueError:
+            pass
+    historical=run.source.archive or any(f.id=="stale" for f in run.findings)
+    estimate_label="Stima da dati storici" if historical else "Prossima previsione"
+    if run.source.kind==Kind.SYNTHETIC:
+        estimate_label="Previsione di esempio"
+    comparison=facts.get("comparison","")
+    def change(field):
+        value=facts.get(field)
+        return (numero(value,signed=True)+"% "+comparison).strip() if value is not None else scope
+    interval=(numero(point["lower_80"],0)+"–"+numero(point["upper_80"],0)+" GWh · fascia 80%"
+              if point.get("lower_80") is not None and point.get("upper_80") is not None else "")
+    price_label="Prezzo di esempio" if run.source.kind==Kind.SYNTHETIC else "Prezzo PSV (ARERA)"
+    kpi_grid([("Consumi",facts.get("demand_gwh"),"GWh",change("demand_gwh_change_pct"),1,""),
+              (price_label,facts.get("price_eur_mwh"),"€/MWh",change("price_eur_mwh_change_pct"),2,""),
+              (estimate_label,point.get("estimate"),"GWh"," · ".join(x for x in [estimate_period,interval] if x),1,"blue")])
+    if not facts and market:
+        st.caption(market.summary)
+    if not point and forecast:
+        st.caption(forecast.summary)
+
+
 def _briefing_panel(selection) -> None:
     with st.container(border=True,key="panel_overview_brief"):
         lead,action=st.columns([2.2,1],vertical_alignment="center")
@@ -206,7 +253,7 @@ def _briefing_panel(selection) -> None:
         if extras:
             info("Fonti del bollettino",", ".join(extras))
         if clicked:
-            generated=launch(selection,full=True)
+            generated=launch(selection,full=True,compact=True)
             if generated is None:
                 st.error("Il nuovo bollettino non è stato generato. L’eventuale risultato precedente resta qui sotto.")
         run=briefing_run()
@@ -219,24 +266,32 @@ def _briefing_panel(selection) -> None:
                 st.warning("Bollettino precedente: fonte o modello cambiato. Genera un nuovo bollettino.")
             actual_ai=run.mode=="LLM-assisted" and bool(run.interpretation)
             st.markdown("**Ultimo bollettino generato**")
-            st.caption(local_time(run.finished_at)+" · "+run.source.name+" · "+
-                       (run.source.latest_period or "periodo non indicato"))
-            if actual_ai:
-                st.caption("Interpretazione AI · "+(run.model or "modello non indicato"))
-                st.text(run.interpretation)
-                st.caption("Interpretazione da verificare · "+", ".join(AGENT_LABELS[a] for a in run.interpretation_sources))
-            else:
-                st.caption("Report deterministico · nessuna interpretazione AI generata.")
-            for warning in run.warnings:
+            mode="AI · "+(run.model or "modello selezionato") if actual_ai else "Calcoli locali"
+            st.caption(" · ".join((local_time(run.finished_at),run.source.name,_briefing_period(run),mode)))
+            if run.source.kind==Kind.SYNTHETIC:
+                st.caption("Simulazione · dati fittizi.")
+            if run.source.archive or run.source.refresh_failed or any(f.id=="stale" for f in run.findings):
+                st.warning("Dati storici o aggiornamento da verificare. Non rappresentano il mercato attuale.")
+            for warning in dict.fromkeys(run.warnings):
                 st.warning(warning)
-            completed=sum(r.status=="completed" for r in run.results.values())
-            issues=sum(f.severity in ("high","medium") for f in run.findings)
-            c1,c2,c3=st.columns(3)
-            c1.metric("Controlli completati",f"{completed}/{len(run.steps)}")
-            c2.metric("Rilievi da verificare",issues)
-            c3.metric("Modalità effettiva","AI" if actual_ai else "Deterministica")
-            if run.summary and not actual_ai:
-                st.text(run.summary)
+            _briefing_highlights(run)
+            if actual_ai:
+                st.markdown("**Sintesi AI**")
+                st.text(run.interpretation)
+                info("Evidenze AI",", ".join(AGENT_LABELS[a] for a in run.interpretation_sources))
+            issues=[f for f in run.findings if f.severity in ("high","medium")]
+            completed=sum(r.status in ("completed","review") for r in run.results.values())
+            st.caption(f"Analisi eseguite: {completed}/{len(run.steps)} · Da verificare: {len(issues)}")
+            for finding in issues:
+                if finding.severity=="high":
+                    st.warning(finding.title+" — "+finding.detail)
+            if issues:
+                with st.expander(f"Rilievi da verificare · {len(issues)}",expanded=True):
+                    for finding in issues:
+                        st.markdown("**"+finding.title+"**")
+                        st.text(finding.detail)
+            else:
+                st.caption("Nessun rilievo nei controlli eseguiti.")
             public=run.assumptions.get("public_operational_context") or {}
             if public:
                 with st.expander("Fonti operative consultate"):
@@ -248,8 +303,6 @@ def _briefing_panel(selection) -> None:
                     st.json(public,expanded=False)
             with st.expander("Dettaglio degli agenti"):
                 st.caption("Scenari e settlement: calcoli dimostrativi.")
-                if actual_ai and run.summary:
-                    st.text(run.summary)
                 for agent,item in run.results.items():
                     st.markdown("**"+AGENT_LABELS[agent]+"**")
                     st.text(item.summary)
