@@ -23,8 +23,8 @@ def controls(prefix):
             client,secret=credentials()
         options=["monthly","daily","acer"]+(["weather"] if enabled(state) else [])
         if gie:options+=["agsi","alsi"]
-        if client and secret:options+=["terna"]
-        selected=st.multiselect("Fonti",options,default=["monthly"]+(["terna"] if "terna" in options else [])+(["weather"] if "weather" in options else []),format_func=LABELS.__getitem__,key=prefix+"_live_sources")
+        if client and secret:options+=["terna","terna_forward"]
+        selected=st.multiselect("Fonti",options,default=["monthly"]+(["terna","terna_forward"] if "terna" in options else [])+(["weather"] if "weather" in options else []),format_func=LABELS.__getitem__,key=prefix+"_live_sources")
         consent=st.checkbox("Confermo uso autorizzato e termini delle fonti selezionate; per Terna accetto l’assunzione sperimentale di inizio intervallo 06–06.",key=prefix+"_live_consent")
         if st.button("Aggiorna selezione",type="primary",key=prefix+"_live_refresh",disabled=not selected or not consent):
             with st.spinner("Aggiornamento delle fonti selezionate…"):

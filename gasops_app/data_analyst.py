@@ -292,6 +292,16 @@ def forecast_facts(state,now=None):
                     "horizon":7,"from":sector["points"][0]["period"],"to":sector["points"][-1]["period"],
                     "n":len(sector["points"]),"acquired":sector["acquired"],"evaluation":sector["evaluation"],
                     "mae":sector["mae"],"holdout":sector["holdout"],"points":sector["points"],"limitation":sector["limitation"]})
+    from .terna_forward import outlook as electricity_outlook,STATE as FORWARD,digest
+    forecast=electricity_outlook(state,asof)
+    if forecast:facts.append(forecast)
+    saved=state.get("snam_power_result_v1_forward")
+    forward=state.get(FORWARD,[])
+    if saved and signatures and forward:
+        sig=saved["signature"]
+        if sig[0]==signatures and sig[1]==tuple(digest(b) for b in forward):
+            r=saved["result"]
+            facts.append({"id":"backtest_terna_forward","source":"Terna MSD1 + Snam","url":PORTAL,"horizon":sig[2],"from":r["start"],"to":r["end"],"n":r["n"],"scores":r["scores"],"unit":"unità native Jarvis","limitation":"Previsioni acquisite prima del cutoff; importazioni con timestamp dichiarati; consuntivo Snam provvisorio."})
     return facts
 
 

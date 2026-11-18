@@ -16,7 +16,7 @@ from .acer_market import load_lng
 
 BUNDLES="live_public_bundles_v1"
 STATUS="live_public_refresh_v1"
-LABELS={"monthly":"Eurostat + ARERA","daily":"ENTSOG · SRG","agsi":"GIE · AGSI+","alsi":"GIE · ALSI","terna":"Terna","acer":"ACER","weather":"Open-Meteo · temperature e HDD"}
+LABELS={"monthly":"Eurostat + ARERA","daily":"ENTSOG · SRG","agsi":"GIE · AGSI+","alsi":"GIE · ALSI","terna":"Terna · consuntivi","terna_forward":"Terna · previsioni MSD1","acer":"ACER","weather":"Open-Meteo · temperature e HDD"}
 
 
 def valid_bundle(bundle,now,kind):
@@ -82,6 +82,15 @@ def refresh(state,store,now,selected,*,gie=None,terna=None,clock=utc_now):
         except ValueError:
             return "Dati acquisiti; archivio di sessione al limite."
         return p["warning"] or ""
+    def forward():
+        from .terna_forward import acquire,merge,STATE,ATTEMPT
+        last=state.get(ATTEMPT)
+        if last and now-last<timedelta(seconds=60):return "Acquisizione recente"
+        state[ATTEMPT]=now
+        today=now.astimezone(ROME).date()
+        b,notes=acquire(*terna,today,today+timedelta(days=1),now)
+        state[STATE]=merge(state.get(STATE,[]),[b],clock())
+        return " · ".join(notes)
     def acer():
         key="acer_lng_attempt_v1"
         last=state.get(key)
@@ -98,9 +107,9 @@ def refresh(state,store,now,selected,*,gie=None,terna=None,clock=utc_now):
              "daily":lambda:market("daily",load_daily,"daily"),
              "agsi":lambda:inventory("agsi","AGSI+",load_agsi),
              "alsi":lambda:inventory("alsi","ALSI",load_alsi),
-             "terna":power,"acer":acer}
+             "terna":power,"terna_forward":forward,"acer":acer}
     for name in dict.fromkeys(selected):
-        if name not in actions or name in ("agsi","alsi") and not gie or name=="terna" and not terna:
+        if name not in actions or name in ("agsi","alsi") and not gie or name in ("terna","terna_forward") and not terna:
             continue
         attempt(name,actions[name])
     return True

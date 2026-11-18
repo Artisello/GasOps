@@ -245,7 +245,7 @@ class CompatibleReasoner:
             "from and to (YYYY-MM-DD inclusive, no future), benchmarks (list of selected benchmark IDs), "
             "forecasts (list of selected forecast IDs). Use only catalog IDs. Choose dates matching "
             "the question; for current or recent questions prefer actual recent observations over archives. Absent explicit dates use relevant available coverage and mention its last observation; never imply old data is current. "
-            "Never replace a missing source or period with an unrelated source. For weather outlook use the forecasts tool with weather_outlook if present; these are future meteorological estimates, not observed series. Benchmark/forecast tools select "
+            "Never replace a missing source or period with an unrelated source. For electricity load/wind outlook use forecasts tool with terna_forward if present; load minus wind is partial, not full residual demand. For weather outlook use the forecasts tool with weather_outlook if present; these are future meteorological estimates, not observed series. Benchmark/forecast tools select "
             "only relevant corresponding IDs and need no series. For revisions select both phases of the same "
             "native Jarvis metric. For correlations select at least two compatible gas-day series. "
             "When the available evidence cannot address the question return empty lists and today for dates. "
