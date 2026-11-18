@@ -37,12 +37,17 @@ def comparison_bars(items,unit):
 
 def timeseries(frame,unit,*,forecast=False,monthly=False,height=265):
     fig=go.Figure()
-    index=pd.to_datetime(frame.index)
-    order=index.argsort()
+    frame=frame.copy()
+    frame.index=pd.to_datetime(frame.index)
+    frame=frame.sort_index()
+    # Explicit missing dates must interrupt lines too, not just null rows.
+    if len(frame) and frame.index.is_unique and (frame.index[-1]-frame.index[0]).days<=3660:
+        frame=frame.reindex(pd.date_range(frame.index[0],frame.index[-1],freq="MS" if monthly else "D"))
+    index=frame.index
     for i,name in enumerate(frame.columns):
-        values=pd.to_numeric(frame[name],errors="coerce").iloc[order]
+        values=pd.to_numeric(frame[name],errors="coerce")
         if not values.notna().any():continue
-        fig.add_trace(go.Scatter(x=index[order],y=values.to_numpy(),name=str(name),mode="lines+markers",
+        fig.add_trace(go.Scatter(x=index,y=values.to_numpy(),name=str(name),mode="lines+markers",
             connectgaps=False,marker=dict(size=6),line=dict(color=PALETTE[i%len(PALETTE)],width=2.2,
                 dash="dash" if forecast or "previst" in str(name).lower() else "solid"),
             hovertemplate="%{y:,.1f} "+unit+"<extra>"+str(name)+"</extra>",

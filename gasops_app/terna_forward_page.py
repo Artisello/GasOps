@@ -9,7 +9,7 @@ from .data import ROME
 from .models import utc_now
 from .terna_power import credentials,CATALOG
 from .terna_forward import STATE,ATTEMPT,MAX_BYTES,DOCS,acquire,merge,outlook
-from .public_data import SourceUnavailable
+from .public_data import SourceUnavailable, SourceSchemaError
 
 
 def panel():
@@ -38,7 +38,7 @@ def panel():
                     batch,notes=acquire(client,secret,first,last,now)
                     st.session_state[STATE]=merge(st.session_state.get(STATE,[]),[batch],utc_now())
                 if notes:st.caption(" · ".join(notes))
-            except SourceUnavailable as error:
+            except (SourceUnavailable,SourceSchemaError) as error:
                 st.warning(str(error)+" Archivio precedente invariato.")
             except (ValueError,TypeError,KeyError):
                 st.warning("Copertura non validabile; archivio precedente invariato.")

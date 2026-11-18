@@ -10,7 +10,7 @@ from .data import ROME
 from .models import utc_now
 from .terna_power import credentials,PORTAL
 from .terna_context import STATE,ATTEMPT,SELECT,MAX_BYTES,DOCS,UNITS,acquire,merge,scopes,latest_rows,import_exchange,exchange_payload
-from .public_data import SourceUnavailable
+from .public_data import SourceUnavailable, SourceSchemaError
 
 LABELS={"capacity":"Capacità disponibile prevista","industry":"Consumi industriali · IMCEI","exchange":"Scambi esteri programmati"}
 
@@ -47,7 +47,7 @@ def panel():
                 else:
                     with st.spinner("Acquisizione Terna…"):b=acquire(client,secret,kind,first,last,now)
                 state[STATE]=merge(state.get(STATE,[]),[b],utc_now())
-            except SourceUnavailable as error:st.warning(str(error)+" Archivio precedente invariato.")
+            except (SourceUnavailable,SourceSchemaError) as error:st.warning(str(error)+" Archivio precedente invariato.")
             except (ValueError,KeyError,TypeError,OverflowError,IndexError):st.warning("Copertura non validabile o import non valido; archivio precedente invariato.")
     with st.expander("Archivio versionato"):
         f=st.file_uploader("Ripristina archivio I.G.O.R.",type=["json"],key="terna_context_archive")

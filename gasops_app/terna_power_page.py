@@ -9,7 +9,7 @@ from .terna_charts import comparison_bars, timeseries, day_label, acquisition_la
 from .terna_power import (ANNUAL_URL,CATALOG,PORTAL,GEN_DOC,LOAD_DOC,TOKEN_DOC,
     annual_rows,credentials,latest_day,load_power,load_gas,paired,correlation)
 from .models import utc_now
-from .public_data import SourceUnavailable
+from .public_data import SourceUnavailable, SourceSchemaError
 from .session import database
 from .entsog import SOURCE as ENTSOG_URL
 
@@ -65,7 +65,7 @@ def _annual():
         prod=100*v["production_for_consumption"]/demand
         imp=100*v["net_imports"]/demand
         st.caption(f"Produzione destinata al consumo {numero(prod)}% · Importazioni nette {numero(imp)}%")
-    plot(comparison_bars([("Produzione per il consumo",v["production_for_consumption"],TEAL),
+    plot(comparison_bars([("Produzione destinata al consumo",v["production_for_consumption"],TEAL),
                           ("Importazioni nette",v["net_imports"],BLUE)],"TWh"),"terna_annual_coverage")
     st.markdown("**Generazione lorda per fonte**")
     selected=[("Gas naturale",v["gas_gross"]),("Idroelettrico",v["hydro_gross"]),
@@ -131,7 +131,7 @@ def _daily():
                         st.success("Acquisizione aggiunta allo storico. Scarica il JSON per conservarla.")
                     except (ValueError,TypeError,KeyError):
                         st.warning("Dati visualizzati, ma storico non aggiornato: verificare copertura e limite.")
-            except SourceUnavailable as error:
+            except (SourceUnavailable,SourceSchemaError) as error:
                 st.warning(str(error)+" Ultimo risultato valido conservato, se presente.")
             except (ValueError,TypeError,KeyError):
                 st.warning("Dati Terna non validabili. Ultimo risultato valido conservato, se presente.")
@@ -164,8 +164,8 @@ def _daily():
         st.markdown("**Fabbisogno elettrico**")
         plot(timeseries(chart[load],"GWh elettrici"),"terna_daily_load")
     if all(LABELS[k] in chart for k in ("load","Wind","Photovoltaic")):
-        proxy=(chart[LABELS["load"]]-chart[LABELS["Wind"]]-chart[LABELS["Photovoltaic"]]).dropna()
-        if not proxy.empty:
+        proxy=chart[LABELS["load"]]-chart[LABELS["Wind"]]-chart[LABELS["Photovoltaic"]]
+        if proxy.notna().any():
             st.markdown("**Carico al netto di eolico e fotovoltaico**")
             plot(timeseries(proxy.rename("Carico residuo parziale").to_frame(),"GWh elettrici"),"terna_daily_proxy")
             st.caption("Proxy consuntiva; non sottrae importazioni e altre fonti, non misura il consumo di gas.")
