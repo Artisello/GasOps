@@ -8,8 +8,8 @@ import streamlit as st
 from .operations_ledger import REFERENCE, allocate_lng_deviation, monthly_preview, revision_pairs, sample_rows
 
 
-def operations_ledger():
-    st.title("Registro operativo")
+def _ledger_detail():
+    st.subheader("Registro dei bilanci")
     st.caption("Demo sintetica · Codice di Rete XCII e Codice di Rigassificazione 2023-I · Nessuna fatturazione ufficiale")
     st.info("Le edizioni sono fonti di studio. La vigenza, le eccezioni e le convenzioni contabili richiedono convalida specialistica.")
     rows = sample_rows()
@@ -53,3 +53,8 @@ def operations_ledger():
     except ValueError as exc:
         st.warning(str(exc))
     st.caption("Nessuna nomina, transazione o comunicazione operativa viene inviata.")
+
+
+def operations_ledger():
+    from .commercial_page import commercial_workbench
+    commercial_workbench(_ledger_detail)
