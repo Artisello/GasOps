@@ -81,7 +81,9 @@ def panel(cached,*,public):
             quote=st.text_area("Estratto letterale dalla pagina · 15–300 caratteri",max_chars=300)
             st.caption("Controllo letterale sul testo estratto; spazi normalizzati. Il paragrafo dichiarato non viene certificato.")
             confirm=st.checkbox("Confermo di voler associare questo estratto al rilievo, senza attestare conformità.")
-            submit=st.form_submit_button("Collega evidenza",disabled=not confirm)
+            submit=st.form_submit_button("Collega evidenza")
+        if submit and not confirm:
+            st.warning("Conferma esplicitamente il collegamento prima di registrarlo.")
         if submit and confirm:
             try:
                 updated,added=add_reference(records,case,docs,name,page,quote,section,utc_now())
