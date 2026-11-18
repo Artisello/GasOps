@@ -7,7 +7,7 @@ from .terna_history import STATE,MAX_BYTES,export,parse,merge,summary
 def panel():
     archive=st.session_state.get(STATE,[])
     st.markdown("**Archivio storico Terna**")
-    st.caption("Ogni nuova acquisizione autorizzata aggiunge giorni e versioni alla sessione. Esporta il JSON per conservarlo e reimportarlo.")
+    st.caption("Acquisizioni di sessione · esportabili in JSON")
     with st.expander("Ripristina / esporta archivio",expanded=False):
         with st.form("terna_history_import"):
             f=st.file_uploader("Archivio normalizzato I.G.O.R. (JSON)",type=["json"],key="terna_hist_file")
@@ -29,7 +29,7 @@ def panel():
                 st.rerun()
     if archive:
         st.caption(f"{len(archive)} acquisizioni · versioni conservate · timestamp non autenticati per import JSON")
-        st.dataframe(summary(archive),hide_index=True,width="stretch")
-        st.markdown("[Confronto con Snam](/market)")
+        with st.expander("Acquisizioni conservate"):
+            st.dataframe(summary(archive),hide_index=True,width="stretch")
     else:
         st.caption("Nessun giorno archiviato. Seleziona finestre storiche nella sezione Giorni gas.")

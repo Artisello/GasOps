@@ -86,11 +86,12 @@ def _annual():
 
 def _daily():
     st.caption("Italia · generazione netta oraria e carico · aggregazione sperimentale 06:00–06:00")
-    st.markdown(f"[Terna Actual Generation]({GEN_DOC}) · [Total Load]({LOAD_DOC}) · [Access token]({TOKEN_DOC})")
+    with st.expander("Documentazione API"):
+        st.markdown(f"[Actual Generation]({GEN_DOC}) · [Total Load]({LOAD_DOC}) · [Access token]({TOKEN_DOC})")
     from .terna_history_page import panel as history_panel
     try:
         client,secret=credentials(st.secrets)
-    except (FileNotFoundError,KeyError):
+    except (FileNotFoundError,KeyError,ValueError):
         client,secret=credentials()
     if not client or not secret:
         st.info("API Terna non configurata. Le statistiche annuali restano consultabili senza credenziali.")
@@ -98,19 +99,19 @@ def _daily():
             st.markdown(f"[Registrazione Developer Portal]({CATALOG})")
             st.code('GASOPS_TERNA_CLIENT_ID = "..."\nGASOPS_TERNA_CLIENT_SECRET = "..."',language="toml")
             st.caption("Inserire soltanto nei Secrets Streamlit o in .env locale; mai in chat, GitHub o nei campi pubblici. Verifica condizioni e quote Terna.")
-        history_panel()
-        return
     now=utc_now()
     last=latest_day(now)
     with st.form("terna_request"):
         a,b=st.columns(2)
-        first=a.date_input("Dal giorno gas",value=last-timedelta(days=13),max_value=last)
+        first=a.date_input("Dal giorno gas",value=last-timedelta(days=6),max_value=last)
         end=b.date_input("Al giorno gas",value=last,max_value=last)
-        st.caption("Timestamp Terna = inizio intervallo (ipotesi sperimentale da verificare).")
+        st.caption("1–14 giorni conclusi, ultimo giorno disponibile D−2. Timestamp = inizio intervallo (ipotesi sperimentale).")
         archive=st.checkbox("Aggiungi allo storico di sessione",value=True)
-        submit=st.form_submit_button("Carica dati",type="primary")
+        submit=st.form_submit_button("Carica dati",type="primary",disabled=not bool(client and secret))
     if submit:
-        if ATTEMPT in st.session_state and now-st.session_state[ATTEMPT]<timedelta(seconds=60):
+        if not 0<=(end-first).days<14:
+            st.warning("Seleziona un intervallo valido di massimo 14 giorni.")
+        elif ATTEMPT in st.session_state and now-st.session_state[ATTEMPT]<timedelta(seconds=60):
             st.warning("Una richiesta ogni 60 secondi per sessione.")
         else:
             st.session_state[ATTEMPT]=now
@@ -130,52 +131,67 @@ def _daily():
                         st.success("Acquisizione aggiunta allo storico. Scarica il JSON per conservarla.")
                     except (ValueError,TypeError,KeyError):
                         st.warning("Dati visualizzati, ma storico non aggiornato: verificare copertura e limite.")
-            except (SourceUnavailable,ValueError):
-                st.caption("Aggiornamento Terna non disponibile. Ultimo risultato valido conservato, se presente.")
-    history_panel()
+            except SourceUnavailable as error:
+                st.warning(str(error)+" Ultimo risultato valido conservato, se presente.")
+            except (ValueError,TypeError,KeyError):
+                st.warning("Dati Terna non validabili. Ultimo risultato valido conservato, se presente.")
     saved=st.session_state.get(STATE)
     if not saved:
+        st.caption("Nessuna acquisizione. Carica un periodo o ripristina un archivio.")
+        history_panel()
         return
     power,gas=saved["power"],saved["gas"]
-    st.caption(f"Periodo effettivo: {power['first']} – {power['last']} · acquisizione {power['acquired']}")
+    st.caption(f"Periodo acquisito: {day_label(power['first'])} – {day_label(power['last'])} · {acquisition_label(power['acquired'])}")
     if power["warning"]:
         st.warning(power["warning"])
     frame=pd.DataFrame(power["rows"])
     frame["gwh"]=pd.to_numeric(frame.gwh,errors="coerce")
-    chart=frame.pivot(index="gas_day",columns="metric",values="gwh").rename(columns=LABELS)
+    chart=frame.pivot(index="gas_day",columns="metric",values="gwh").sort_index().rename(columns=LABELS)
+    complete=frame[frame["gwh"].notna() & (frame["valid_slots"]==frame["expected_slots"])]
+    cards=[]
+    for field,label in (("load","Ultimo fabbisogno"),("Thermal","Ultimo termoelettrico"),("Wind","Ultimo eolico")):
+        part=complete.loc[complete.metric==field].sort_values("gas_day")
+        if not part.empty:
+            row=part.iloc[-1]
+            cards.append((label,row["gwh"],"GWh elettrici",day_label(row["gas_day"]),1,""))
+    if cards:kpi_grid(cards)
     st.markdown("**Generazione elettrica per fonte**")
     visible=[LABELS[k] for k in ("Thermal","Wind","Photovoltaic","Hydro","Geothermal") if LABELS[k] in chart and chart[LABELS[k]].notna().any()]
     if visible:
-        st.line_chart(chart[visible],y_label="GWh elettrici/giorno gas")
+        plot(timeseries(chart[visible],"GWh elettrici"),"terna_daily_generation")
     load=[LABELS[k] for k in ("load","load_forecast") if LABELS[k] in chart and chart[LABELS[k]].notna().any()]
     if load:
         st.markdown("**Fabbisogno elettrico**")
-        st.line_chart(chart[load],y_label="GWh elettrici/giorno gas")
+        plot(timeseries(chart[load],"GWh elettrici"),"terna_daily_load")
     if all(LABELS[k] in chart for k in ("load","Wind","Photovoltaic")):
         proxy=(chart[LABELS["load"]]-chart[LABELS["Wind"]]-chart[LABELS["Photovoltaic"]]).dropna()
         if not proxy.empty:
             st.markdown("**Carico al netto di eolico e fotovoltaico**")
-            st.line_chart(proxy.rename("Carico residuo parziale"),y_label="GWh elettrici/giorno gas")
+            plot(timeseries(proxy.rename("Carico residuo parziale").to_frame(),"GWh elettrici"),"terna_daily_proxy")
             st.caption("Proxy consuntiva; non sottrae importazioni e altre fonti, non misura il consumo di gas.")
     st.caption("Intervalli mancanti o in conflitto escludono il totale del giorno per quella metrica. Thermal include più combustibili; non è solo gas. Idroelettrico non identificato come rinnovabile puro.")
     if gas is not None:
         st.markdown("**Relazione con i prelievi termoelettrici SRG**")
-        st.markdown(f"[Fonte ENTSOG]({ENTSOG_URL}) · acquisizione {gas['acquired']}")
+        st.caption("ENTSOG · "+acquisition_label(gas["acquired"]))
         if gas["cached"] or gas["failed"] or gas["metadata_warning"]:
             st.warning("Cache o metadati ENTSOG da verificare; copertura non certificata.")
         pairs=paired(power["rows"],gas["gas"])
         r=correlation(pairs)
         a,b=st.columns(2)
         a.metric("Giorni confrontabili",len(pairs))
-        if r is not None:b.metric("Correlazione Pearson",f"{r:.2f}")
+        b.metric("Correlazione Pearson",numero(r,2) if r is not None else "Non calcolabile")
         if pairs:
             pair=pd.DataFrame(pairs)
             st.scatter_chart(pair,x="thermal_gwh",y="sr_gas_gwh",x_label="Terna · termoelettrico GWh elettrici",
                              y_label="ENTSOG · prelievi SRG GWh gas")
         st.caption("Minimo 7 coppie e variabilità non nulla. Correlazione descrittiva su finestra breve, non causalità né rendimento; perimetri diversi. Nessun dato assunto zero, nessun input al forecast.")
+    else:
+        st.caption("Confronto ENTSOG non disponibile per il periodo acquisito.")
     with st.expander("Copertura oraria e download"):
-        st.dataframe(frame,hide_index=True,width="stretch")
+        st.dataframe(frame.assign(metric=frame.metric.map(LABELS)).rename(columns={"gas_day":"Giorno gas","metric":"Indicatore","gwh":"GWh elettrici","valid_slots":"Intervalli validi","expected_slots":"Intervalli attesi"}),hide_index=True,width="stretch")
         st.download_button("CSV Terna con fonte",frame.assign(source="Terna",source_url=PORTAL,
             acquired_at=power["acquired"],time_convention="assumed interval start; Rome 06:00 gas day").to_csv(index=False),
             "igor-terna-giorni-gas.csv","text/csv")
-        st.caption("Dati API solo in sessione; prelievi pubblici ENTSOG in cache SQLite. Nessuna chiamata schedulata o invio ai modelli AI.")
+        st.caption("Dati API in sessione; prelievi pubblici ENTSOG in cache SQLite. Le analisi AI possono consultare aggregati pubblici, non archivi importati automaticamente.")
+        st.markdown(f"[Terna]({PORTAL}) · [ENTSOG]({ENTSOG_URL})")
+    history_panel()
