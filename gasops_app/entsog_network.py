@@ -196,3 +196,24 @@ def export_csv(result):
         writer.writerow({**row,"flow_status":safe(row["flow_status"]),"source_updates":safe(row["source_updates"]),
                          "point_direction":result.point,"extracted_at":result.acquired.isoformat(),"source":result.credit})
     return out.getvalue()
+
+
+def load_programmes(store,point,first,last,*,now=None,refresh=False):
+    """Bounded requests for published nomination/renomination only."""
+    from .data import ROME
+    now=now or utc_now()
+    today=now.astimezone(ROME).date()
+    if not today<=first<=last<=today+timedelta(days=2):
+        raise SourceSchemaError("Programmi: da oggi a D+2.")
+    params=query_params(point,first,last)
+    params["indicator"]="Nomination,Renomination"
+    def parser(text,when,**kwargs):
+        payload=json.loads(text)
+        if not isinstance(payload,dict):raise SourceSchemaError("Risposta non valida")
+        rows=payload.get("operationalData",payload.get("operationaldatas"))
+        if not isinstance(rows,list) or any(not isinstance(r,dict) or r.get("indicator") not in ("Nomination","Renomination") for r in rows):
+            raise SourceSchemaError("Indicatore non richiesto")
+        return parse_network(payload,point,first,last,when,**kwargs)
+    return retrieve(store,key=f"entsog-programmes-v1:{point}:{first}:{last}",name="ENTSOG programmes",
+                    url=URL,parse=parser,ttl=timedelta(hours=2),refresh=refresh,params=params,
+                    attempts=1,timeout=(5,30),diagnostics=True,max_bytes=2_000_000)

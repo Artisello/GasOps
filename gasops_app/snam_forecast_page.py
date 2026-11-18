@@ -55,6 +55,8 @@ def panel():
     power_panel(saved,h)
     from .snam_context_page import panel as context_panel
     context_panel(saved,h)
+    from .snam_entsog_page import panel as network_panel
+    network_panel(saved,h)
     extended=st.checkbox("Modello esteso e incertezza",key="snam_extended")
     models=(*MODELS,"extended") if extended else MODELS
     signatures=tuple((y,v["sha256"]) for y,v in sorted(saved.items()))

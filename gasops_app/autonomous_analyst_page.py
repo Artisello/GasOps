@@ -25,7 +25,7 @@ def panel(items,model,now,*,refresh_catalog=None):
                 with st.spinner("Aggiornamento del contesto meteo…"):
                     items=refresh_catalog()
             facts=reference_facts()
-            forecasts=forecast_facts(st.session_state)
+            forecasts=forecast_facts(st.session_state,include_restricted=not remote)
             available=manifest(items,facts,forecasts,question,today,remote=remote)
             with st.spinner("Selezione delle fonti e degli strumenti…"):
                 draft=model.plan_dataset(question.strip(),available)

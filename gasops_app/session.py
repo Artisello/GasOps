@@ -44,9 +44,14 @@ def source_notices(warning: str | None) -> tuple[str, str]:
     # warnings, including partial history and stale cache, stay visible.
     if not warning:
         return "", ""
-    if ENTSOG_METADATA_NOTE not in warning:
-        return warning, ""
-    return warning.replace(ENTSOG_METADATA_NOTE, "").strip(), ENTSOG_METADATA_NOTE
+    notes = (ENTSOG_METADATA_NOTE,
+             "ENTSOG: totale dichiarato discordante; verificati i singoli valori ricevuti. Completezza delle eventuali revisioni non certificata.")
+    found = []
+    for note in notes:
+        if note in warning:
+            found.append(note)
+            warning = warning.replace(note, "")
+    return warning.strip(), " ".join(found)
 
 
 def store(state_dir: str) -> Store:
