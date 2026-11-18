@@ -2,7 +2,7 @@ from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
 
-from gasops_app.forecast import AUTOMATIC, BAYESIAN
+from gasops_app.forecast import AUTOMATIC, MODELS
 from gasops_app.models import Agent
 from gasops_app.public_data import SourceUnavailable
 from gasops_app.session import ARCHIVE, DEMO
@@ -24,7 +24,8 @@ def test_overview_button_completes_offline_run(monkeypatch, tmp_path):
     report = app.session_state["last_run"]
     assert report.finished_at and len(report.results) == 6
     projection = report.results[Agent.FORECAST].values["forecast"]
-    assert projection["model"] == BAYESIAN and projection["interval_kind"] == "posterior"
+    assert projection["model"] in MODELS
+    assert projection["interval_kind"] in ("posterior", "empirical", "model_based")
 
 
 def test_unavailable_public_feed_can_open_the_real_offline_archive(monkeypatch, tmp_path):

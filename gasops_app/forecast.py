@@ -12,9 +12,9 @@ from . import bayesian
 
 BAYESIAN = "Bayesian seasonal"
 AUTOMATIC = "Automatic"
-ModelName = Literal["Bayesian seasonal", "Seasonal regression", "Seasonal naive"]
-ModelChoice = Literal["Automatic", "Bayesian seasonal", "Seasonal regression", "Seasonal naive"]
-MODELS: tuple[ModelName, ...] = (BAYESIAN, "Seasonal regression", "Seasonal naive")
+ModelName = Literal["Bayesian seasonal", "Seasonal regression", "Seasonal naive", "ARIMA", "SARIMAX"]
+ModelChoice = Literal["Automatic", "Bayesian seasonal", "Seasonal regression", "Seasonal naive", "ARIMA", "SARIMAX"]
+MODELS: tuple[ModelName, ...] = (BAYESIAN, "Seasonal regression", "Seasonal naive", "ARIMA", "SARIMAX")
 MODEL_CHOICES: tuple[ModelChoice, ...] = (AUTOMATIC, *MODELS)
 
 
@@ -39,9 +39,10 @@ class Forecast(BaseModel):
     backtest: list[BacktestPoint] = Field(default_factory=list)
     mae: float | None = None
     rmse: float | None = None
-    interval_kind: Literal["posterior", "empirical"] = "empirical"
+    interval_kind: Literal["posterior", "empirical", "model_based"] = "empirical"
     interval_coverage: float | None = None
     coverage_samples: int = 0
+    details: str | None = None
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,8 @@ class Score:
     mae: float
     rmse: float
     periods: int
+    wape: float | None = None
+    bias: float | None = None
 
 
 def compare(projections: dict[ModelName, Forecast]) -> dict[ModelName, Score]:
@@ -61,9 +64,12 @@ def compare(projections: dict[ModelName, Forecast]) -> dict[ModelName, Score]:
     if len(common) < 12:
         return {}
     scores = {}
+    actual_by_period = {p.period: p.actual for fit in projections.values() for p in fit.backtest}
+    denominator = sum(abs(actual_by_period[day]) for day in common)
     for model, series in errors.items():
         residuals = np.array([series[day] for day in common])
-        scores[model] = Score(float(np.abs(residuals).mean()), float(np.sqrt(np.square(residuals).mean())), len(common))
+        scores[model] = Score(float(np.abs(residuals).mean()), float(np.sqrt(np.square(residuals).mean())), len(common), float(100*np.abs(residuals).sum()/denominator) if denominator else None,
+                              float(-residuals.mean()))
     return scores
 
 
@@ -115,6 +121,9 @@ def _predict(
 
 
 def forecast(series: pd.Series, grain: str, model: ModelName) -> Forecast:
+    if model in ("ARIMA", "SARIMAX"):
+        from .econometrics import econometric_forecast
+        return econometric_forecast(series, grain, model)
     result = Forecast(model=model, interval_kind="posterior" if model == BAYESIAN else "empirical")
     if series.dropna().empty:
         return result

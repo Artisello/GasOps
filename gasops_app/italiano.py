@@ -13,7 +13,7 @@ TIPI = {
     Kind.SIMULATION: "SIMULAZIONE", Kind.ACCOUNTING: "CONVENZIONE CONTABILE", Kind.PHYSICAL: "MISURA FISICA",
 }
 MODELLI = {"Automatic": "Automatico", "Bayesian seasonal": "Bayesiano stagionale",
-           "Seasonal regression": "Regressione stagionale", "Seasonal naive": "Riferimento stagionale"}
+           "Seasonal regression": "Regressione stagionale", "Seasonal naive": "Riferimento stagionale", "ARIMA": "ARIMA", "SARIMAX": "SARIMAX"}
 MODALITA = {"Deterministic": "Deterministica", "LLM-assisted": "Assistita da LLM",
             "Deterministic fallback": "Deterministica di riserva"}
 GRANULARITA = {"daily": "giornaliera", "monthly": "mensile"}
