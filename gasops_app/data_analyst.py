@@ -86,6 +86,17 @@ def catalog(state,now):
                     grain,scope,"JRC ENaGaD" if prefix=="jrc" else "Fonte di mercato selezionata",
                     bundle.origin.url or "",status,bundle.fingerprint,
                     ((str(d.date()),v) for d,v in frame[k].items()))
+    def weather():
+        from .weather_source import archive,SCOPE
+        from .weather import SOURCE as WEATHER_URL
+        item=archive(state,now)
+        if not item:return
+        f=item["frame"]
+        for k,label,unit in (("temperature_c","Temperatura media proxy","°C"),("hdd","HDD Open-Meteo base 18 °C","°C · giorno")):
+            add("weather_"+k,label,unit,"gas_day",SCOPE,"Open-Meteo · ERA5 (CC BY 4.0)",WEATHER_URL,
+                "Rianalisi storica, ritardo 7 giorni; non previsione archiviata"+(" · ultimo dato valido da aggiornare" if item["failed"] else ""),
+                item["acquired"].isoformat(),zip(f.index.date,f[k]))
+    attempt("Open-Meteo",weather)
     attempt("JRC",lambda:gas(jrc_archive(),"jrc","Italia","Archivio 2015–2021; include stime della fonte"))
     bundles=dict(state.get("live_public_bundles_v1",{}))
     b=state.get("active_bundle")
@@ -243,7 +254,7 @@ def reference_facts():
             for r in benchmark_scores() if r.value is not None]
 
 
-def forecast_facts(state):
+def forecast_facts(state,now=None):
     """Only cached experiments matching the currently loaded source identities."""
     annual=state.get("snam_forecast_annual_v1",{})
     signatures=tuple(sorted((y,v["sha256"]) for y,v in annual.items()))
@@ -264,6 +275,23 @@ def forecast_facts(state):
                 "horizon":signature[2],"from":r["start"],"to":r["end"],"n":r["n"],"scores":r["scores"],
                 "strict_acquisition":signature[3],"include_load":signature[4],"unit":"unità native Jarvis",
                 "limitation":"Campione comune; G−3 elettrico; consuntivo G−1 provvisorio. Modalità retrospettiva non certifica disponibilità ex ante."})
+    from .weather_source import outlook
+    from .models import utc_now
+    asof=now or utc_now()
+    weather=outlook(state,asof)
+    if weather:
+        facts.append({"id":"weather_outlook","horizon":7,**weather})
+        saved=state.get("weather_gas_result",{})
+        daily=state.get("live_public_bundles_v1",{}).get("daily") or state.get("active_bundle")
+        r=saved.get("result")
+        if daily is not None and r and saved.get("fingerprint")==daily.fingerprint and not saved.get("error"):
+            from .briefing_context import weather_context
+            sector=weather_context(r,asof)
+            if sector["status"]=="available" and sector.get("points") and sector["acquired"]==weather["acquired"]:
+                facts.append({"id":"weather_srg","source":"Open-Meteo + ENTSOG · scenario settoriale","url":weather["url"],
+                    "horizon":7,"from":sector["points"][0]["period"],"to":sector["points"][-1]["period"],
+                    "n":len(sector["points"]),"acquired":sector["acquired"],"evaluation":sector["evaluation"],
+                    "mae":sector["mae"],"holdout":sector["holdout"],"points":sector["points"],"limitation":sector["limitation"]})
     return facts
 
 

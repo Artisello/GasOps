@@ -10,7 +10,7 @@ from .data import ROME
 STATE="autonomous_analyst_v1"
 
 
-def panel(items,model,now):
+def panel(items,model,now,*,refresh_catalog=None):
     st.caption("Scrivi una domanda: I.G.O.R. sceglie fonti, periodo e strumenti tra quelli disponibili.")
     remote=not model.config.local
     question=st.text_area("Domanda per l’AI",placeholder="Es. Qual è il legame tra generazione termoelettrica e riconsegna gas negli ultimi 90 giorni?",max_chars=600,key="auto_analyst_question")
@@ -21,6 +21,9 @@ def panel(items,model,now):
     if st.button("Analizza con AI",type="primary",key="auto_analyst_run",disabled=not question.strip() or not consent):
         st.session_state.pop(STATE,None)
         try:
+            if refresh_catalog:
+                with st.spinner("Aggiornamento del contesto meteo…"):
+                    items=refresh_catalog()
             facts=reference_facts()
             forecasts=forecast_facts(st.session_state)
             available=manifest(items,facts,forecasts,question,today,remote=remote)

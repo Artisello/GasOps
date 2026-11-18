@@ -16,7 +16,7 @@ from .acer_market import load_lng
 
 BUNDLES="live_public_bundles_v1"
 STATUS="live_public_refresh_v1"
-LABELS={"monthly":"Eurostat + ARERA","daily":"ENTSOG · SRG","agsi":"GIE · AGSI+","alsi":"GIE · ALSI","terna":"Terna","acer":"ACER"}
+LABELS={"monthly":"Eurostat + ARERA","daily":"ENTSOG · SRG","agsi":"GIE · AGSI+","alsi":"GIE · ALSI","terna":"Terna","acer":"ACER","weather":"Open-Meteo · temperature e HDD"}
 
 
 def valid_bundle(bundle,now,kind):
@@ -92,7 +92,9 @@ def refresh(state,store,now,selected,*,gie=None,terna=None,clock=utc_now):
         if not r.rows:raise ValueError("Serie assente")
         state["acer_lng_result_v1"]=r
         return "Cache non aggiornata." if r.failed else ""
-    actions={"monthly":lambda:market("monthly",load_monthly,"monthly"),
+    from .weather_source import refresh as refresh_weather
+    actions={"weather":lambda:refresh_weather(state,store,now,force=True),
+             "monthly":lambda:market("monthly",load_monthly,"monthly"),
              "daily":lambda:market("daily",load_daily,"daily"),
              "agsi":lambda:inventory("agsi","AGSI+",load_agsi),
              "alsi":lambda:inventory("alsi","ALSI",load_alsi),

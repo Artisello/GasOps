@@ -17,7 +17,7 @@ from .llm import CompatibleReasoner, configuration
 from .supervisor import ModelUnavailable
 from .mensile import load_monthly
 from .entsog import load as load_daily
-from .models import Run, utc_now
+from .models import Kind, Run, utc_now
 from .public_data import SourceUnavailable
 from .regulatory import Library, read_local_pdfs
 from .store import Store
@@ -175,8 +175,10 @@ def sidebar() -> None:
     with st.expander("Fonti aggiuntive AI",expanded=False):
         st.checkbox("Stoccaggi, GNL e indisponibilità (GIE)",key="briefing_gie",
                     help="Consulta AGSI+ e ALSI Italia e IIP al lancio del report. Se usi un modello remoto, invia solo indicatori pubblici con attribuzione, non record UMM originali.")
-        st.checkbox("Meteo (demo non commerciale)",key="briefing_weather",
-                    help="Consulta Open-Meteo solo con ENTSOG recente; i riepiloghi possono essere condivisi con il modello selezionato.")
+        import os
+        weather_allowed=os.getenv("IGOR_WEATHER_ENABLED","1").lower() not in ("0","false","no","off")
+        st.checkbox("Meteo · Open-Meteo (demo non commerciale)",value=weather_allowed,key="briefing_weather",disabled=not weather_allowed,
+                    help="Attivo di default nel prototipo: HDD e previsioni, con cache. Disattivabile qui.")
         st.caption("Solo dati pubblici autorizzati alla condivisione.")
     if config and not config.local:
         st.caption("Non inserire dati riservati. Selezionando il modello remoto autorizzi l’invio delle domande e dei risultati pubblici al provider; i PDF richiedono conferma separata.")
@@ -388,7 +390,9 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
         from .briefing_context import collect
         from .operational_sources import gie_key
         include_gie=bool(st.session_state.get("briefing_gie"))
-        include_weather=bool(st.session_state.get("briefing_weather"))
+        from .weather_source import enabled,refresh as refresh_weather,STATE as WEATHER_STATE
+        origin=selection.bundle.origin
+        include_weather=enabled(st.session_state) and not origin.archive and origin.kind in (Kind.HISTORICAL,Kind.LIVE)
         public_context={}
         if include_gie or include_weather:
             try:
@@ -396,7 +400,9 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
             except (FileNotFoundError,KeyError):
                 key=gie_key() if include_gie else ""
             with st.spinner("Consultazione delle fonti pubbliche selezionate…"):
-                public_context=collect(database(),context,utc_now(),key=key,include_gie=include_gie,include_weather=include_weather)
+                if include_weather:refresh_weather(st.session_state,database(),utc_now())
+                public_context=collect(database(),context,utc_now(),key=key,include_gie=include_gie,include_weather=include_weather,
+                    weather_snapshots=st.session_state.get(WEATHER_STATE,{}) if include_weather else None)
         report = run_workflow(
             context, docs, assumptions(), question, full=full, reasoner=model,public_context=public_context,planned_only=planned_only,
             notify=lambda run: stage.html(steps(run, grid=True)),

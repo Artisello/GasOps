@@ -18,15 +18,16 @@ SECTORS={"distribution_gwh":"Distribuzione","industry_gwh":"Industria","power_gw
 
 def weather_panel(context):
     origin=context.bundle.origin
-    if not (origin.grain=="daily" and origin.kind==Kind.HISTORICAL
+    if not (origin.grain=="daily" and origin.kind in (Kind.HISTORICAL,Kind.LIVE)
             and not origin.archive and origin.name.startswith("ENTSOG")):
         return
     with st.container(border=True,key="panel_weather"):
         st.subheader("Meteo e consumi di gas")
         st.caption("Italia · Milano, Roma e Napoli · scenario dei prelievi SRG")
-        info("Info meteo","Open-Meteo · temperature orarie allineate al giorno gas (06:00–06:00). Milano, Roma e Napoli a pesi uguali; HDD base 18 °C.","L’API gratuita è riservata all’uso non commerciale. Nessuna richiesta senza attivazione.")
-        consent=st.checkbox("Attiva meteo automatico · demo non commerciale",key="weather_demo_consent")
-        if not consent:
+        from .weather_source import enabled,refresh as refresh_weather,STATE as WEATHER_STATE
+        info("Info meteo","Open-Meteo · temperature orarie allineate al giorno gas (06:00–06:00). Milano, Roma e Napoli a pesi uguali; HDD base 18 °C.","Attivo nella demo non commerciale; disattivabile in Modalità di analisi / Fonti aggiuntive AI.")
+        if not enabled(st.session_state):
+            st.caption("Meteo disattivato nelle impostazioni.")
             return
         fingerprint=context.bundle.fingerprint
         now=utc_now()
@@ -41,18 +42,23 @@ def weather_panel(context):
         if due or clicked:
             try:
                 with st.spinner("Acquisizione oraria e confronto dei modelli…"):
-                    result=analyse_gas_day(database(),context.inspection.usable,now,refresh=clicked)
+                    refresh_weather(st.session_state,database(),now,force=clicked)
+                    result=analyse_gas_day(database(),context.inspection.usable,now,refresh=False,snapshots=st.session_state.get(WEATHER_STATE,{}))
                 saved={"fingerprint":fingerprint,"attempted":now,"result":result}
             except (ValueError,SourceUnavailable) as error:
-                saved={"fingerprint":fingerprint,"attempted":now,"error":str(error)}
+                saved={"fingerprint":fingerprint,"attempted":now,"error":str(error),
+                       "result":saved.get("result") if saved and saved["fingerprint"]==fingerprint else None}
             st.session_state["weather_gas_result"]=saved
+        show_outlook(now)
         if saved.get("error"):
-            st.warning(saved["error"])
-            return
+            st.caption("Scenario meteo non aggiornabile; eventuale ultimo scenario valido conservato.")
+            with st.expander("Dettaglio copertura meteo"):
+                st.text(saved["error"])
+            if not saved.get("result"):return
         result=saved["result"]
         acquired=datetime.fromisoformat(result["forecast_acquired"])
         if now-acquired>timedelta(hours=12):
-            st.warning("Scenario meteo scaduto: aggiorna le fonti.")
+            st.caption("Scenario precedente scaduto: aggiorna le fonti.")
             return
         if result["refresh_failed"]:
             st.warning("Una fonte non si è aggiornata; utilizzata cache valida.")
@@ -64,7 +70,7 @@ def weather_panel(context):
         b.metric("Errore con meteo",numero(result["mae"]["sector_weather"])+" GWh")
         base=result["mae"]["calendar"]
         change=(result["mae"]["sector_weather"]/base-1)*100 if base>0 else None
-        c.metric("Variazione errore",numero(change,signed=True)+"%" if change is not None else "—")
+        if change is not None:c.metric("Variazione errore",numero(change,signed=True)+"%")
         st.caption(f'{mode} · {result["holdout"]} giorni di verifica · confronto non operativo a 7 giorni.')
         st.markdown("**Possibile andamento dei consumi · prossimi 7 giorni gas**")
         st.caption("Scenario condizionale, non previsione operativa principale.")
@@ -91,3 +97,37 @@ def weather_panel(context):
         st.caption("Fonte: Open-Meteo (CC BY 4.0) · storico fino al "+result["historical_end"]+
                    " · previsione acquisita "+local_time(acquired))
         st.markdown("[Fonte e condizioni](https://open-meteo.com/en/terms)")
+
+
+def show_outlook(now):
+    """Weather-only preview works even without enough matched gas observations."""
+    from .weather_source import outlook
+    result=outlook(st.session_state,now)
+    if not result:return
+    st.markdown("**Previsioni meteo · prossimi giorni gas**")
+    st.caption(result["scope"]+" · acquisito "+local_time(datetime.fromisoformat(result["acquired"])))
+    frame=pd.DataFrame(result["points"]).set_index("day")
+    if not frame.empty:
+        a,b=st.columns(2)
+        a.metric("Temperatura prevista · "+frame.index[0],numero(frame.iloc[0].temperature_c,1)+" °C")
+        b.metric("HDD previsti · "+frame.index[0],numero(frame.iloc[0].hdd,1)+" °C·giorno")
+        st.line_chart(frame[["temperature_c"]].rename(columns={"temperature_c":"Temperatura prevista"}),y_label="°C")
+    st.caption("Open-Meteo · CC BY 4.0 · base HDD 18 °C; non osservazioni effettive.")
+    st.markdown("[Fonte e condizioni](https://open-meteo.com/en/terms)")
+
+
+def outlook_panel():
+    from .weather_source import enabled,refresh
+    if not enabled(st.session_state):
+        st.caption("Meteo disattivato nelle impostazioni.")
+        return
+    now=utc_now()
+    with st.container(border=True):
+        st.subheader("Contesto meteorologico")
+        clicked=st.button("Aggiorna meteo",key="weather_outlook_refresh",icon=":material/refresh:")
+        note=refresh(st.session_state,database(),now,force=clicked)
+        show_outlook(now)
+        if note:
+            with st.expander("Copertura meteo"):
+                st.caption(note)
+        st.caption("Per lo scenario dei consumi settoriali a sette giorni, usa i prelievi giornalieri ENTSOG.")

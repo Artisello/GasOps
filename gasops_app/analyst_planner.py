@@ -13,7 +13,7 @@ TOOLS={
     "volatility":"Sample standard deviation and median/IQR of observations; at least 14.",
     "revisions":"Matched provisional/final native Jarvis aggregate balances, same metric and unit.",
     "benchmarks":"Published reference KPI, its own period (not filtered by series dates).",
-    "forecasts":"Existing compatible backtest metrics only, their own periods; no new forecast."
+    "forecasts":"Existing compatible backtest metrics or current issued weather outlook and precomputed SRG weather scenario, their own periods; no new forecast."
 }
 MAX_CATALOG=48
 

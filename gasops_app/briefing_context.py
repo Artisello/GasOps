@@ -56,7 +56,7 @@ def weather_context(result,now):
             "limitation":"Scenario condizionale settoriale, non previsione principale; tre città a pesi uguali."}
 
 
-def collect(store, context, now, *, key="", include_gie=False, include_weather=False):
+def collect(store, context, now, *, key="", include_gie=False, include_weather=False, weather_snapshots=None):
     """Only called on explicit report launch, never during widget reruns."""
     tasks={}
     out={}
@@ -68,11 +68,25 @@ def collect(store, context, now, *, key="", include_gie=False, include_weather=F
         out["GIE"]={"status":"unavailable","reason":"Chiave GIE non configurata."}
     if include_weather:
         origin=context.bundle.origin
-        if origin.kind==Kind.HISTORICAL and origin.grain=="daily" and not origin.archive and origin.name.startswith("ENTSOG"):
-            tasks["Open-Meteo"]=lambda:weather_context(analyse_gas_day(store,context.inspection.usable,now),now)
-        else:
-            out["Open-Meteo"]={"source":"Open-Meteo","status":"unavailable",
-                               "reason":"Serve la fonte ENTSOG giornaliera recente."}
+        if origin.kind in (Kind.HISTORICAL,Kind.LIVE) and not origin.archive:
+            def weather_task():
+                from .weather_source import refresh,outlook,STATE
+                state={STATE:weather_snapshots} if weather_snapshots is not None else {}
+                if weather_snapshots is None:refresh(state,store,now)
+                estimate=outlook(state,now)
+                result={**estimate,"source_url":estimate["url"],"status":"available"} if estimate else None
+                if origin.grain=="daily" and origin.name.startswith("ENTSOG"):
+                    try:
+                        scenario=weather_context(analyse_gas_day(store,context.inspection.usable,now,
+                            snapshots=state.get(STATE,{})),now)
+                        if scenario["status"]=="available":return scenario
+                    except Exception:
+                        pass
+                if result:
+                    result["limitation"]+=" · nessun forecast consumo derivato disponibile."
+                    return result
+                raise ValueError("Meteo non disponibile")
+            tasks["Open-Meteo"]=weather_task
     if tasks:
         with ThreadPoolExecutor(max_workers=4) as pool:
             futures={name:pool.submit(task) for name,task in tasks.items()}

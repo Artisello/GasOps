@@ -1,5 +1,6 @@
 """Session-only feature adapters. Never silently mix sources, points or units."""
 from datetime import timedelta
+import pandas as pd
 from .predictive import Covariate,series_from_rows
 from .weather_gas import fetch
 from .weather import SOURCE as WEATHER
@@ -34,12 +35,16 @@ def session_features(state):
     return result
 
 
-def historical_weather(store,frame,now):
+def historical_weather(store,frame,now,*,snapshot=None):
     last=min(frame.index.max().date(),now.astimezone(ROME).date()-timedelta(days=7))
     first=max(frame.index.min().date(),last-timedelta(days=364))
     if (last-first).days<70:
         raise ValueError("Storico insufficiente per il meteo.")
-    weather,at,cached,failed=fetch(store,first,last,"era5")
+    if snapshot and snapshot["frame"].index.min()<=pd.Timestamp(first) and snapshot["frame"].index.max()>=pd.Timestamp(last):
+        weather=snapshot["frame"].loc[str(first):str(last)]
+        at,cached,failed=snapshot["acquired"],snapshot["cached"],snapshot["failed"]
+    else:
+        weather,at,cached,failed=fetch(store,first,last,"era5")
     if weather.empty:
         raise ValueError("Archivio meteo assente.")
     return Covariate("HDD base 18 °C",weather["hdd"],"°C · giorno","Milano/Roma/Napoli, pesi uguali",WEATHER,
