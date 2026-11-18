@@ -177,8 +177,8 @@ def sidebar() -> None:
     st.selectbox("Modalità di analisi",modes,index=0,
                  format_func=lambda value:"Calcoli senza AI" if value=="Deterministic" else value,key="execution_mode")
     ai_controls()
-    with st.expander("Fonti aggiuntive AI",expanded=False):
-        st.checkbox("Stoccaggi, GNL e indisponibilità (GIE)",key="briefing_gie",
+    with st.expander("Fonti bollettino",expanded=False):
+        st.checkbox("GIE · stoccaggi, GNL, UMM",value=True,key="briefing_gie",
                     help="Consulta AGSI+ e ALSI Italia e IIP al lancio del report. Se usi un modello remoto, invia solo indicatori pubblici con attribuzione, non record UMM originali.")
         import os
         weather_allowed=os.getenv("IGOR_WEATHER_ENABLED","1").lower() not in ("0","false","no","off")
@@ -406,10 +406,12 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
         docs = library()
         from .briefing_context import collect
         from .operational_sources import gie_key
-        include_gie=bool(st.session_state.get("briefing_gie"))
+        include_gie=bool(st.session_state.get("briefing_gie",True))
         from .weather_source import enabled,refresh as refresh_weather,STATE as WEATHER_STATE
         origin=selection.bundle.origin
-        include_weather=enabled(st.session_state) and not origin.archive and origin.kind in (Kind.HISTORICAL,Kind.LIVE)
+        current_context=not origin.archive and origin.kind in (Kind.HISTORICAL,Kind.LIVE)
+        include_gie=include_gie and current_context
+        include_weather=enabled(st.session_state) and current_context
         public_context={}
         if include_gie or include_weather:
             try:

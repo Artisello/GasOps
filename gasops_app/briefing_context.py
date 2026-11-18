@@ -23,7 +23,7 @@ def inventory_context(result, now, platform):
     age=(now.astimezone(ROME).date()-day).days
     out={**attribution(platform),"scope":result["scope"],"gas_day":day.isoformat(),
          "acquired":result["acquired"].isoformat(),"source_status":row["status"],
-         "status":"stale" if result["failed"] or age>2 or age<0 else "available"}
+         "status":"stale" if result["failed"] or age>2 or age<0 or result["acquired"]>now else "available"}
     if out["status"]=="available":
         out["values"]={key:round(float(row[key]),3) for key in fields
                        if row[key] is not None and math.isfinite(float(row[key]))}
@@ -33,7 +33,7 @@ def inventory_context(result, now, platform):
 
 
 def iip_context(result,now):
-    stale=result["failed"] or now-result["acquired"]>timedelta(hours=2)
+    stale=result["failed"] or not timedelta(0)<=now-result["acquired"]<=timedelta(hours=2)
     return {**attribution("IIP"),"request_from":result.get("request_from"),
             "request_to":result.get("request_to"),"acquired":result["acquired"].isoformat(),
             "status":"stale" if stale else "available",
@@ -65,7 +65,8 @@ def collect(store, context, now, *, key="", include_gie=False, include_weather=F
         tasks["ALSI"]=lambda: inventory_context(load_alsi(store,key,"IT",now=now),now,"ALSI")
         tasks["IIP"]=lambda: iip_context(load_iip(store,key,now=now),now)
     elif include_gie:
-        out["GIE"]={"status":"unavailable","reason":"Chiave GIE non configurata."}
+        out.update({name:{**attribution(name),"status":"unavailable","reason":"Chiave GIE non configurata."}
+                    for name in ("AGSI+","ALSI","IIP")})
     if include_weather:
         origin=context.bundle.origin
         if origin.kind in (Kind.HISTORICAL,Kind.LIVE) and not origin.archive:
@@ -94,6 +95,6 @@ def collect(store, context, now, *, key="", include_gie=False, include_weather=F
                 try:
                     out[name]=future.result()
                 except Exception:
-                    out[name]={"status":"unavailable","source":name,
-                               "reason":"Fonte non disponibile o dati non validi; nessun valore sostitutivo."}
+                    out[name]={**(attribution(name) if name in ("AGSI+","ALSI","IIP") else {"source":name,"source_url":"https://open-meteo.com/"}),
+                               "status":"unavailable","reason":"Fonte non disponibile o dati non validi; nessun valore sostitutivo."}
     return out
