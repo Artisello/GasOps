@@ -119,7 +119,7 @@ def _settlement_panel() -> None:
             evidence([SETTLEMENT_NOTE])
         st.download_button("Scarica simulazione",json.dumps({"tipo":"SIMULAZIONE","modalita":mode,
                            "inputs":inputs.model_dump(mode="json"),"risultato":result.model_dump(mode="json")},ensure_ascii=False,indent=2),
-                           "gasops-bilanciamento.json","application/json",key="balance_download",icon=":material/download:")
+                           "igor-bilanciamento.json","application/json",key="balance_download",icon=":material/download:")
 
 
 def _readout(number, unit: str) -> str:

@@ -1,4 +1,4 @@
-name: GasOps checks
+name: I.G.O.R. checks
 
 on:
   pull_request:

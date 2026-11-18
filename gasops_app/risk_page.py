@@ -104,7 +104,7 @@ def _results(result,base,r,unit):
         with st.expander("Parametri e risultati completi"):
             st.json({"scenario":r,"base":base},expanded=False)
     st.download_button("Scarica simulazione JSON",json.dumps({"scenario":r,"base":base},ensure_ascii=False,indent=2,allow_nan=False),
-                       "gasops-risk.json","application/json",key="risk_export")
+                       "igor-risk.json","application/json",key="risk_export")
 
 
 def risk_page():

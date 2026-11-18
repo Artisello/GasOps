@@ -56,8 +56,8 @@ def _jarvis_panel(prefix="supply"):
     st.caption("Italia · rete Snam · stime pubblicate, non posizioni dei singoli utenti.")
     st.link_button("Apri portale Snam Jarvis",JARVIS_SOURCE,icon=":material/open_in_new:")
     with st.expander("Importa dati pubblici Jarvis",expanded=state not in st.session_state):
-        info("Come importare i dati","Scarica il modello CSV GasOps, compila con i dati pubblici autorizzati e caricalo qui. Il modello non è un export nativo Jarvis.","Usa GWh e date ISO 8601 con offset. Non inserire informazioni riservate o bilanci individuali. I file non vengono inviati a LLM o salvati su disco.")
-        st.download_button("1. Scarica modello CSV",jarvis_template(),"gasops-jarvis-template.csv","text/csv",key=prefix+"_jarvis_template")
+        info("Come importare i dati","Scarica il modello CSV I.G.O.R., compila con i dati pubblici autorizzati e caricalo qui. Il modello non è un export nativo Jarvis.","Usa GWh e date ISO 8601 con offset. Non inserire informazioni riservate o bilanci individuali. I file non vengono inviati a LLM o salvati su disco.")
+        st.download_button("1. Scarica modello CSV",jarvis_template(),"igor-jarvis-template.csv","text/csv",key=prefix+"_jarvis_template")
         with st.form(prefix+"_jarvis_import"):
             file=st.file_uploader("2. Carica il CSV compilato",type=["csv"],key=prefix+"_jarvis_public_extract")
             authorized=st.checkbox("Confermo autorizzazione e assenza di dati riservati.")
@@ -91,7 +91,7 @@ def _jarvis_panel(prefix="supply"):
     if selected!=gas_day:
         st.warning("Giorno gas diverso da quello corrente: consultazione storica.")
     elif utc_now()-row["published_at"]>timedelta(hours=3):
-        st.warning("Ultima pubblicazione importata oltre 3 ore fa. Verifica il portale; soglia informativa GasOps.")
+        st.warning("Ultima pubblicazione importata oltre 3 ore fa. Verifica il portale; soglia informativa I.G.O.R..")
     fields=(("Prelievo atteso","expected_withdrawal_gwh","Consumo atteso"),
             ("SAS pubblicato","sas_gwh","Sbilanciamento atteso di sistema"),
             ("Gas presente in rete","expected_linepack_gwh","Linepack atteso"))
@@ -118,7 +118,7 @@ def _jarvis_panel(prefix="supply"):
             st.line_chart(frame,x="Pubblicazione",y=other_fields)
     else:
         st.caption("Servono almeno due pubblicazioni per mostrare l'evoluzione infragiornaliera.")
-    info("Info stime","Il SAS è il valore riportato dalla fonte, non una differenza domanda/offerta calcolata da GasOps e non il DS del partecipante. Il linepack indica il gas presente nella rete. Il segno del SAS è mantenuto come pubblicato.","Dati importati nella sessione, nessun aggiornamento automatico. Verifica perimetro, convenzioni e orari della fonte.")
+    info("Info stime","Il SAS è il valore riportato dalla fonte, non una differenza domanda/offerta calcolata da I.G.O.R. e non il DS del partecipante. Il linepack indica il gas presente nella rete. Il segno del SAS è mantenuto come pubblicato.","Dati importati nella sessione, nessun aggiornamento automatico. Verifica perimetro, convenzioni e orari della fonte.")
     with st.expander("Dati importati e versioni"):
         st.dataframe(history,hide_index=True,width="stretch")
         st.text("SHA-256 · "+result["sha256"])
@@ -268,7 +268,7 @@ def _iip_panel(key):
         return
     with actions[1]:
         st.download_button("Esporta JSON",attributed_iip_json(result),
-                           "gasops-gie-iip.json","application/json",key="iip_json",icon=":material/download:")
+                           "igor-gie-iip.json","application/json",key="iip_json",icon=":material/download:")
     total=result.get("reported_total")
     state=coverage(result)
     period=(result["request_from"]+" – "+result["request_to"]
@@ -311,7 +311,7 @@ def _iip_panel(key):
                          column_config={"Asset":st.column_config.TextColumn("Impianto",width="medium"),
                                         "Motivo":st.column_config.TextColumn(width="large")})
             info("Info tabella","Ordinamento per pubblicazione quando il fuso è noto. I campi non riconosciuti restano non indicati.","Capacità del singolo messaggio, senza aggregazione. Fonte: "+GIE_CREDIT["IIP"])
-            st.download_button("Esporta CSV filtrato",export_rows(visible,result),"gasops-iip-messaggi.csv",
+            st.download_button("Esporta CSV filtrato",export_rows(visible,result),"igor-iip-messaggi.csv",
                                "text/csv",key="iip_csv",icon=":material/download:")
             by_index={r["record_index"]:r for r in visible}
             chosen=st.selectbox("Apri dettaglio del messaggio",list(by_index),
@@ -344,7 +344,7 @@ def _iip_panel(key):
                        f"{result['pages'] if result['pages'] is not None else 'non indicate'} · {state}")
             diagnostic_text=json.dumps(diagnostic,ensure_ascii=False,indent=2)
             st.code(diagnostic_text,language="json")
-            st.download_button("Scarica diagnostica JSON",diagnostic_text,"gasops-iip-diagnostica.json",
+            st.download_button("Scarica diagnostica JSON",diagnostic_text,"igor-iip-diagnostica.json",
                                "application/json",key="iip_pagination_diagnostic")
     with st.expander("Messaggi originali (JSON)"):
         st.json(result["messages"],expanded=False)

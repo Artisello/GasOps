@@ -169,7 +169,7 @@ def parse_jarvis(content:bytes, *, now=None):
         raw=content.decode("utf-8-sig")
         reader=csv.DictReader(StringIO(raw),strict=True)
         if tuple(reader.fieldnames or ())!=JARVIS_COLUMNS:
-            raise ValueError("Usa esattamente le intestazioni del modello GasOps.")
+            raise ValueError("Usa esattamente le intestazioni del modello I.G.O.R..")
         rows={}
         for i,item in enumerate(reader):
             if i>=2000 or None in item or any(v is None for v in item.values()):

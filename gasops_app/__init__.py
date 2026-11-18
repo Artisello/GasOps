@@ -1,1 +1,1 @@
-"""GasOps AI dashboard and read-only analytical workflows."""
+"""I.G.O.R. dashboard and read-only analytical workflows."""

@@ -1,4 +1,4 @@
-# Demo GasOps AI in tre minuti
+# Demo I.G.O.R. in tre minuti
 
 Avvia con `streamlit run app.py`. La dashboard si apre in **Panoramica**, sui dati mensili pubblici.
 

@@ -65,7 +65,7 @@ def _plain(value):
 
 
 def export_markdown(cases):
-    lines=["# GasOps AI – Registro di revisione","",
+    lines=["# I.G.O.R. – Registro di revisione","",
            "Ipotesi da verificare; le decisioni sono annotazioni dell'utente, non certificazioni legali.",""]
     for case in cases:
         lines.extend(["## "+_plain(case["title"]),"",

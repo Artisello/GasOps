@@ -1,6 +1,14 @@
-# GasOps AI
+# I.G.O.R.
+
+**Intelligent Gas Operations & Risk**
 
 Strumento indipendente in sola lettura per analizzare il mercato italiano del gas. La dashboard Streamlit include panoramica, previsioni, simulazioni di bilanciamento e regolazione, ricerca normativa e un centro operativo per sei agenti.
+
+## Identità e deployment
+
+I.G.O.R. (già GasOps AI) è un prototipo indipendente, non ufficiale Snam. La rinomina del repository esistente in `Artisello/IGOR` e il cambio del sottodominio Streamlit sono operazioni di amministrazione separate dal codice. Conservare i Secrets e le configurazioni prima del redeploy. I riferimenti al vecchio indirizzo GitHub rimangono funzionanti durante la transizione e tramite redirect dopo la rinomina (non ricreare il vecchio repository). Il package `gasops_app`, la CLI `gasops.py`, le variabili `GASOPS_*`, i bucket e i percorsi di persistenza mantengono i nomi tecnici per compatibilità. Non migrare o cancellare dati per un cambio di marchio.
+
+[Procedura GitHub](https://docs.github.com/en/repositories/creating-and-managing-repositories/renaming-a-repository) · [Procedura Streamlit](https://docs.streamlit.io/deploy/streamlit-community-cloud/manage-your-app/rename-your-app)
 
 ## Avvio locale
 
@@ -193,10 +201,10 @@ La finestra mensile più recente può conservare valori giorno-settore ricevuti 
 Questa configurazione sostituisce il precedente archivio di sessione. I documenti
 pubblicati restano in Storage anche dopo la chiusura del browser, una nuova
 sessione o il redeploy Streamlit. Non si usa il disco effimero dell'app.
-Il bucket è pubblico: ogni PDF è accessibile anche fuori da GasOps tramite URL.
+Il bucket è pubblico: ogni PDF è accessibile anche fuori da I.G.O.R. tramite URL.
 Solo pubblicazione autorizzata, nessun documento aziendale riservato.
 
-1. Scegli un progetto Supabase (preferibilmente dedicato a GasOps; verifica
+1. Scegli un progetto Supabase (preferibilmente dedicato a I.G.O.R.; verifica
    costi e quote). Storage > New bucket: gasops-documents, Public bucket,
    file size limit 24 MB, allowed MIME type application/pdf.
 2. In Authentication > Users aggiungi un utente amministratore con email e
@@ -221,7 +229,7 @@ Solo pubblicazione autorizzata, nessun documento aziendale riservato.
 
 8 documenti, 24 MiB per file, 64 MiB e 2.000 pagine complessive per l'indice.
 I limiti aggregati sono controlli applicativi, non quote atomiche del bucket;
-usa la gestione GasOps da un amministratore alla volta. I file nel bucket
+usa la gestione I.G.O.R. da un amministratore alla volta. I file nel bucket
 devono essere PDF nella radice. Le aggiunte sono validate e deduplicate per
 SHA-256, senza sovrascrivere versioni. Pubblicazione multipla non atomica:
 in caso d'errore controllare i documenti già salvati. Cache pubblica di lettura

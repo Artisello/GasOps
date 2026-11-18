@@ -43,7 +43,7 @@ def _ledger_detail():
     writer = csv.DictWriter(output, fieldnames=list(data[0]))
     writer.writeheader()
     writer.writerows(data)
-    st.download_button("Scarica registro completo CSV", output.getvalue(), "gasops-registro-sintetico.csv", "text/csv")
+    st.download_button("Scarica registro completo CSV", output.getvalue(), "igor-registro-sintetico.csv", "text/csv")
     st.subheader("Riconciliazione GNL")
     info("Info GNL","Ripartizione pro-quota dello scostamento già al netto dei margini concordati (cap. 9 §3.2.1, PDF p. 96).")
     a,b=st.columns(2)

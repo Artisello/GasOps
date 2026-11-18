@@ -57,7 +57,7 @@ def _admin_panel(config,archive,local,remote):
                 email=st.text_input("Email account autorizzato",max_chars=254)
                 password=st.text_input("Password",type="password",max_chars=256)
                 login=st.form_submit_button("Accedi")
-                st.caption("Account GasOps autorizzato · nessun account GitHub richiesto.")
+                st.caption("Account I.G.O.R. autorizzato · nessun account GitHub richiesto.")
             if login:
                 try:
                     st.session_state[ADMIN]=(config,archive.login(email,password))
@@ -513,7 +513,7 @@ def _review_documents(cached):
                  "editions":{name:docs.documents[name].digest for name in {saved["first"],saved["second"]}},
                  "findings":[{**item,"citations":[c.model_dump(mode="json") for c in item["citations"]]} for item in saved["findings"]]}
         st.download_button("Esporta rilievi JSON",json.dumps(payload,ensure_ascii=False,indent=2),
-                           "gasops-revisione.json","application/json",key="desk_review_export")
+                           "igor-revisione.json","application/json",key="desk_review_export")
     with st.expander("Estratti esaminati"):
         for hit in [*saved["left"],*saved["right"]]:
             st.caption(hit.document+f" · PDF p. {hit.page}")
@@ -578,9 +578,9 @@ def _review_register(cached):
         st.caption("Nessun rilievo con questo stato.")
     st.caption(f"{len(cases)}/{REVIEW_LIMIT} rilievi · esporta prima di chiudere la sessione o rimuovere PDF.")
     left,right=st.columns(2)
-    left.download_button("Scarica dossier Markdown",export_markdown(cases),"gasops-dossier.md",
+    left.download_button("Scarica dossier Markdown",export_markdown(cases),"igor-dossier.md",
                          "text/markdown",key="review_register_md",width="stretch")
-    right.download_button("Scarica registro JSON",export_json(cases),"gasops-registro.json",
+    right.download_button("Scarica registro JSON",export_json(cases),"igor-registro.json",
                           "application/json",key="review_register_json",width="stretch")
     with st.expander("Svuota registro"):
         confirmed=st.checkbox("Confermo di voler eliminare il registro di questa sessione.",key="review_register_clear_confirm")
@@ -600,7 +600,7 @@ def _references(cached):
         st.text(r["document"]+f" · PDF p. {r['page']}")
         st.text(r["excerpt"])
     st.download_button("Esporta riferimenti JSON",json.dumps(items,ensure_ascii=False,indent=2),
-                       "gasops-riferimenti.json","application/json",key="desk_refs_export")
+                       "igor-riferimenti.json","application/json",key="desk_refs_export")
     if st.button("Svuota raccolta",key="desk_refs_clear"):
         items.clear()
         st.rerun()
@@ -610,7 +610,7 @@ def document_page():
     st.title("Norme e documenti")
     st.caption("Cerca, interroga e confronta i documenti dell’archivio.")
     info("Info archivio","La ricerca mostra testo estratto dalle pagine dei PDF presenti, non note precompilate. Le corrispondenze per parole chiave non sono un parere legale.",
-         "Usa solo copie pubbliche o autorizzate. I PDF autorizzati pubblicati nel repository o in Storage sono condivisi tra tutti i visitatori e conservati indipendentemente dalla sessione Streamlit. Chiunque può caricare PDF nel proprio spazio di sessione senza account. Solo gli account GasOps autorizzati possono pubblicare nell’archivio condiviso; la rimozione dei documenti condivisi è riservata all’amministratore. Non caricare dati riservati. I PDF non entrano nel bollettino; la ricerca è sul server. Con Chiedi all’AI, soltanto la domanda e gli estratti sono inviati al modello selezionato, previo consenso per provider remoti. Non caricare documenti riservati su un deployment pubblico. Nessun OCR. La vigenza delle edizioni non è verificata.")
+         "Usa solo copie pubbliche o autorizzate. I PDF autorizzati pubblicati nel repository o in Storage sono condivisi tra tutti i visitatori e conservati indipendentemente dalla sessione Streamlit. Chiunque può caricare PDF nel proprio spazio di sessione senza account. Solo gli account I.G.O.R. autorizzati possono pubblicare nell’archivio condiviso; la rimozione dei documenti condivisi è riservata all’amministratore. Non caricare dati riservati. I PDF non entrano nel bollettino; la ricerca è sul server. Con Chiedi all’AI, soltanto la domanda e gli estratti sono inviati al modello selezionato, previo consenso per provider remoti. Non caricare documenti riservati su un deployment pubblico. Nessun OCR. La vigenza delle edizioni non è verificata.")
     cached=_archive()
     if not cached["docs"].documents:
         st.info("Aggiungi almeno un PDF per iniziare. Usa Carica PDF oppure consulta l’archivio pubblico. Non vengono mostrati rilievi o citazioni in assenza di documenti.")

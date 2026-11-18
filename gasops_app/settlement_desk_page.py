@@ -18,8 +18,8 @@ def panel():
     st.caption("Dati di esempio o CSV normalizzato autorizzato · MWh, €/MWh, importi prima delle imposte. Nessuna fattura o misura ufficiale.")
     with st.expander("Fonti e importazione"):
         st.markdown(f"[Snam · Jarvis: bilanci e dati operativi]({JARVIS}) · [GME · parametri dei prezzi di sbilanciamento]({GME})")
-        st.caption("Riferimenti alle fonti, non download automatici. Il CSV è uno schema GasOps, non un formato Jarvis/GME: normalizza soltanto dati per i quali hai diritto d’uso. Prezzi forniti dall’utente, non stimati dal prezzo PSV.")
-        st.download_button("Scarica modello CSV sintetico",template(),"gasops-modello-bilanci.csv","text/csv",key="desk_template")
+        st.caption("Riferimenti alle fonti, non download automatici. Il CSV è uno schema I.G.O.R., non un formato Jarvis/GME: normalizza soltanto dati per i quali hai diritto d’uso. Prezzi forniti dall’utente, non stimati dal prezzo PSV.")
+        st.download_button("Scarica modello CSV sintetico",template(),"igor-modello-bilanci.csv","text/csv",key="desk_template")
         st.warning("Non caricare dati aziendali riservati o identificativi reali sul prototipo pubblico.")
         with st.form("desk_upload"):
             f=st.file_uploader("CSV bilanci e versioni",type=["csv"],help="UTF-8, virgola come separatore, decimali con punto, fino a 2 MiB.")
@@ -90,7 +90,7 @@ def panel():
         st.caption("Nessuna giornata corrispondente al filtro.")
     export=[{"user":user,"period":f"{year}-{month:02d}","source":"CSV_NON_VERIFICATO" if uploaded else "SYNTHETIC",
              **r,"issues":"; ".join(r["issues"])} for r in daily]
-    st.download_button("Esporta controllo giornaliero CSV",csv_text(export),"gasops-controllo-giornaliero.csv",
+    st.download_button("Esporta controllo giornaliero CSV",csv_text(export),"igor-controllo-giornaliero.csv",
                        "text/csv",key="daily_desk_export")
     with st.expander("Metodo e limiti"):
         st.write("DS = immissioni + stoccaggio netto + transazioni nette PSV − prelievi. Calcolo dimostrativo con arrotondamento per giorno a centesimi. Rettifiche: confronto ultimo provvisorio e ultimo definitivo; effetto quantità valorizzato ai prezzi del provvisorio per il segno del DS finale, poi effetto prezzo residuo. Se manca il prezzo controfattuale, nessuna scomposizione. Gli importi escludono i giorni con eccezioni e non sono fatture. Le soglie e le eccezioni sono controlli di studio, non regole di accettazione Snam. Nessuna trasmissione AI o salvataggio persistente del CSV.")

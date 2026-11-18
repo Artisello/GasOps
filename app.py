@@ -1,4 +1,4 @@
-"""Streamlit entry point for the GasOps AI desktop dashboard."""
+"""Streamlit entry point for the I.G.O.R. desktop dashboard."""
 
 from pathlib import Path
 
@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parent
 
 st.set_page_config(
-    page_title="GasOps AI",
+    page_title="I.G.O.R.",
     page_icon=":material/monitoring:",
     layout="wide",
     initial_sidebar_state="auto",
@@ -34,11 +34,11 @@ with st.sidebar:
     st.html("""
         <div class="gas-brand">
           <div class="gas-mark"><span></span><span></span><span></span></div>
-          <div><strong>GasOps <em>AI</em></strong><small>Mercato del gas</small></div>
+          <div><strong>I.G.O.R.</strong><small>Intelligent Gas Operations &amp; Risk</small></div>
         </div>
     """)
     sidebar_navigation(pages, current)
     st.html('<div class="gas-nav-group gas-nav-settings">Impostazioni AI</div>')
     session.sidebar()
-    st.html('<div class="gas-byline"><strong>Prototipo per SNAM creato da Igor</strong><small>Progetto indipendente, non ufficiale.</small></div>')
+    st.html('<div class="gas-byline"><strong>Prototipo per Snam · creato da Igor</strong><small>Progetto indipendente, non ufficiale.</small></div>')
 current.run()
