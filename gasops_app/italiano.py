@@ -1,6 +1,7 @@
 """Formattazione italiana indipendente dalle impostazioni locali del sistema."""
 
 from datetime import date
+from math import isfinite
 
 from .models import Kind
 
@@ -26,8 +27,18 @@ ESITI = {"charge": "Addebito", "credit": "Credito", "flat": "Neutro", "buy": "Ac
 def numero(value, decimals: int = 1, *, signed: bool = False) -> str:
     if value is None:
         return "—"
-    style = "+" if signed else ""
-    return format(value, f"{style},.{decimals}f").translate(str.maketrans(",.", ".,"))
+    try:
+        # NaN/Inf are missing observations, not values or zero.
+        if not isfinite(value):
+            return "—"
+        style = "+" if signed else ""
+        result = format(value, f"{style},.{decimals}f")
+    except (TypeError, ValueError, ArithmeticError):
+        return "—"
+    # Avoid misleading negative zero after rounding for display only.
+    if result.startswith("-") and not any(c in "123456789" for c in result):
+        result = ("+" if signed else "") + result[1:]
+    return result.translate(str.maketrans(",.", ".,"))
 
 
 def data_it(value: date, *, day: bool = True) -> str:

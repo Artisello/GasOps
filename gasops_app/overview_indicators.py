@@ -23,6 +23,8 @@ def price_snapshot(prices,now):
         raise ValueError("Prezzo assente.")
     period=max(prices.rows)
     val=finite(prices.rows[period])
+    if val is None:
+        raise ValueError("Ultimo prezzo non valido.")
     month=pd.Timestamp(period)
     local=now.astimezone(ROME)
     age=(local.year-month.year)*12+local.month-month.month
@@ -99,7 +101,12 @@ def reuse_indicators(snapshot,context,visited,now):
         values=context.inspection.usable["price_eur_mwh"].dropna()
         if companion and not values.empty:
             period=values.index[-1].date().isoformat()
-            merged["price"]=price_snapshot(Prices({period:values.iloc[-1]},companion),now)
+            try:
+                item=price_snapshot(Prices({period:values.iloc[-1]},companion),now)
+                item["stale"]=item["stale"] or bool(getattr(context.bundle.origin,"refresh_failed",False))
+                merged["price"]=item
+            except (ValueError,TypeError):
+                merged["price"]={"error":True}
     for name,platform in (("storage","AGSI+"),("lng","ALSI")):
         if name in merged:
             continue
@@ -141,13 +148,7 @@ def panel(context=None):
                 st.session_state[STATE]=previous
         snapshots=reuse_indicators(previous.get("values",{}),context,st.session_state,now)
         cards=current_rows(snapshots,now,gie_enabled=bool(key))
-        visible=[r for r in cards if r[1] is not None]
-        if visible:kpi_grid(visible)
-        else:st.caption("Aggiorna gli indicatori per consultare le ultime pubblicazioni.")
-        if len(visible)<len(cards):
-            with st.expander("Copertura delle fonti"):
-                for r in cards:
-                    if r[1] is None:st.caption(r[0]+" · "+r[3])
+        kpi_grid(cards)
         links=["[ARERA · CMEM,m]("+ARERA_URL+")"]
         for platform in ("AGSI+","ALSI"):
             source=attribution(platform)

@@ -70,7 +70,15 @@ def heading(label: str, right: str = "") -> None:
 
 
 def _kpi_markup(label,value,unit,detail,decimals=1,tone=""):
-    return f'<div class="gas-kpi"><span class="key">{escape(label)}</span><div class="readout"><span class="value {escape(tone)}">{numero(value,decimals)}</span><span class="unit">{escape(unit if value is not None else "")}</span></div><span class="detail">{escape(detail)}</span></div>'
+    readout = numero(value, decimals)
+    missing = readout == "—"
+    unit_text = "" if missing else unit
+    detail_text = ("Non disponibile" + (" · " + detail if detail else "")) if missing and "disponibile" not in detail.lower() else detail
+    return (f'<div class="gas-kpi{" gas-kpi-missing" if missing else ""}">'
+            f'<span class="key">{escape(label)}</span><div class="readout">'
+            f'<span class="value {escape(tone if not missing else "")}">{escape(readout)}</span>'
+            f'<span class="unit">{escape(unit_text)}</span></div>'
+            f'<span class="detail">{escape(detail_text)}</span></div>')
 
 
 def kpi(label,value,unit,detail,decimals=1,tone=""):
@@ -85,7 +93,8 @@ def forecast_readout(point: ForecastPoint, grain: str, *, historical: bool = Fal
     period = data_it(date.fromisoformat(point.period), day=grain == "daily")
     label = "Stima su dati storici" if historical else "Consumo previsto"
     interval = (f"{numero(point.lower_80, 0)}–{numero(point.upper_80, 0)} GWh"
-                if point.lower_80 is not None else "Campione insufficiente")
+                if numero(point.lower_80, 0) != "—" and numero(point.upper_80, 0) != "—"
+                else "Non disponibile")
     st.html(f"""
         <div class="gas-forecast-readout">
           <div><small>{label} · {period}</small><strong>{numero(point.estimate, 0)} GWh</strong></div>
