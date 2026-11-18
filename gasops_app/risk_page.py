@@ -65,7 +65,7 @@ def _results(result,base,r,unit):
             fig=_graph("Offerta − domanda ("+unit+")",unit)
             for mask,name,color in ((h["negative"],"Carenza",ROSE),(~h["negative"],"Saldo ≥ 0",TEAL)):
                 fig.add_bar(x=h["center"][mask],y=h["pct"][mask],width=h["width"][mask],
-                            name=name,marker_color=color,hovertemplate="%{y:.2f}% delle simulazioni<extra>%{fullData.name}</extra>")
+                            name=name,marker_color=color,marker_pattern_shape="/" if name=="Carenza" else "",hovertemplate="%{y:.2f}% delle simulazioni<extra>%{fullData.name}</extra>")
             fig.add_vline(x=0,line_dash="dash",line_color="#a3b4c9")
             plot(fig,"risk_gap_distribution")
         lo,hi=r["probability_deficit_mc_interval95"]

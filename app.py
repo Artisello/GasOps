@@ -34,7 +34,7 @@ current = st.navigation(pages, position="hidden")
 with st.sidebar:
     st.html("""
         <div class="gas-brand">
-          <div class="gas-mark"><span></span><span></span><span></span></div>
+          <div class="gas-mark" aria-hidden="true"><span></span><span></span><span></span></div>
           <div><strong>I.G.O.R.</strong><small>Intelligent Gas Operations &amp; Risk</small></div>
         </div>
     """)
