@@ -146,3 +146,7 @@ Firma nella navigazione: «Prototipo per SNAM creato da Igor» (progetto indipen
 ### Aggiornamenti a caldo e quota AI
 
 Il wrapper SQLite non è memorizzato nella cache delle risorse Streamlit: una nuova istanza usa il medesimo database persistente e lo schema idempotente. Contatore non disponibile o vecchia classe: diagnostica controllata, test remoto disabilitato, prenotazione quota fail-closed. Nessun reset della quota o cancellazione dei dati. In presenza di moduli Python ancora caricati da un vecchio deployment, riavviare l'app.
+
+### Panoramica accessibile
+
+Indicatori principali in griglia adattiva, interpretazione in italiano semplice basata esclusivamente sui dati selezionati, bollettino con azione e risultato nello stesso pannello, grafico principale con legenda esplicita, fonti e approfondimenti secondari. Le serie di settore e prezzi restano in Mercato e previsioni; le sezioni operative mantengono i percorsi e i calcoli. Terminologia più accessibile, con etichette tecniche e avvisi sulle simulazioni conservati. Nessun nuovo servizio, nessuna dipendenza. Layout da verificare sul deployment desktop e mobile.

@@ -34,7 +34,7 @@ def operational_context():
     with st.popover("Accesso API",icon=":material/info:"):
         st.caption("Chiave GIE configurata; verifica al caricamento." if key else "Imposta GASOPS_GIE_API_KEY nei Secrets di Streamlit e riavvia l’app.")
     selected=st.radio("Fonte operativa",["AGSI+","ALSI","IIP","Jarvis"],horizontal=True,key="operational_platform",
-                      format_func={"AGSI+":"AGSI+ · Stoccaggi","ALSI":"ALSI · GNL","IIP":"IIP · Indisponibilità","Jarvis":"Jarvis · Rete"}.__getitem__)
+                      format_func={"AGSI+":"Scorte (AGSI+)","ALSI":"Gas liquefatto (ALSI)","IIP":"Interruzioni e avvisi (IIP)","Jarvis":"Rete Snam (Jarvis)"}.__getitem__)
     if selected=="AGSI+":
         _inventory_panel(selected,load_agsi,key)
     elif selected=="ALSI":
@@ -107,9 +107,9 @@ def _load_once(state,button,loader,key,*args,primary=False):
 
 def _inventory_panel(platform,loader,key):
     import pandas as pd
-    st.subheader("Stoccaggi di gas" if platform=="AGSI+" else "Rigassificazione GNL")
+    st.subheader("Stoccaggi di gas" if platform=="AGSI+" else "Gas naturale liquefatto (GNL)")
     _credit(platform)
-    scope=st.selectbox("Perimetro",["IT","EU"],format_func=lambda x:"Italia" if x=="IT" else "Unione europea",
+    scope=st.selectbox("Area geografica",["IT","EU"],format_func=lambda x:"Italia" if x=="IT" else "Unione europea",
                        key=platform+"_scope")
     if not key:
         st.info("Per attivare questa fonte serve una chiave GIE gratuita con accesso abilitato.")
@@ -137,8 +137,8 @@ def _inventory_panel(platform,loader,key):
     specs=([("Giacenza","stock_twh","TWh"),("Riempimento","fill_pct","%"),("Erogazione","withdrawal_gwh_d","GWh/d")]
            if platform=="AGSI+" else
            [("Inventario GNL","inventory_1000m3_lng","10³ m³ LNG"),
-            ("Send-out","sendout_gwh_d","GWh/d"),
-            ("Send-out / riferimento","sendout_reference_pct","%")])
+            ("Gas immesso in rete","sendout_gwh_d","GWh/d"),
+            ("Immissione / riferimento","sendout_reference_pct","%")])
     for box,(label,field,unit) in zip(st.columns(3),specs,strict=True):
         box.metric(label,show(recent[field],unit))
     labels={"stock_twh":"Giacenza (TWh)","sendout_gwh_d":"Send-out (GWh/d)",
@@ -164,7 +164,7 @@ def _inventory_panel(platform,loader,key):
 
 
 def _iip_panel(key):
-    st.subheader("Messaggi urgenti di mercato (UMM)")
+    st.subheader("Interruzioni e avvisi di mercato (UMM)")
     st.caption("Messaggi UMM · non misura della capacità persa.")
     info("Info UMM","Informazioni e indisponibilità pubblicate dagli operatori. Il conteggio non indica eventi unici o capacità persa aggregata.")
     _credit("IIP")
@@ -207,7 +207,7 @@ def _iip_panel(key):
         st.info("Nessun messaggio restituito per questa richiesta. Non dimostra assenza di indisponibilità.")
     else:
         st.subheader("Messaggi ricevuti")
-        search=st.text_input("Cerca per asset, operatore, ID o motivo",key="iip_search",
+        search=st.text_input("Cerca impianto, operatore o motivo",key="iip_search",
                              placeholder="Cerca nei campi disponibili")
         c1,c2,c3=st.columns(3)
         countries=c1.multiselect("Paese",options(rows,"country"),key="iip_country",placeholder="Tutti")
@@ -227,7 +227,7 @@ def _iip_panel(key):
                 format_func=lambda i:f'{i+1} · {by_index[i]["message_id"] or "ID non indicato"} · {by_index[i]["asset"] or MISSING}',
                 key="iip_detail")
             row=by_index[chosen]
-            with st.expander("Dettaglio UMM"):
+            with st.expander("Leggi il messaggio selezionato"):
                 st.markdown("**Messaggio selezionato**")
                 a,b=st.columns(2)
                 with a:

@@ -22,7 +22,7 @@ def weather_panel(context):
             and not origin.archive and origin.name.startswith("ENTSOG")):
         return
     with st.container(border=True,key="panel_weather"):
-        st.subheader("Meteo e domanda")
+        st.subheader("Come il meteo può influenzare i consumi")
         info("Info meteo","Open-Meteo · temperature orarie allineate al giorno gas (06:00–06:00). Milano, Roma e Napoli a pesi uguali; HDD base 18 °C.","L’API gratuita è riservata all’uso non commerciale. Nessuna richiesta senza attivazione.")
         consent=st.checkbox("Attiva meteo automatico · demo non commerciale",key="weather_demo_consent")
         if not consent:
@@ -59,13 +59,14 @@ def weather_panel(context):
             st.warning(result["previous_note"])
         mode="Meteo archiviato a 24 ore" if result["evaluation"]=="archived_day1" else "Meteo storico realizzato"
         a,b,c=st.columns(3)
-        a.metric("MAE calendario",numero(result["mae"]["calendar"])+" GWh")
-        b.metric("MAE con meteo per settori",numero(result["mae"]["sector_weather"])+" GWh")
+        a.metric("Errore senza meteo",numero(result["mae"]["calendar"])+" GWh")
+        b.metric("Errore con meteo per settori",numero(result["mae"]["sector_weather"])+" GWh")
         base=result["mae"]["calendar"]
         change=(result["mae"]["sector_weather"]/base-1)*100 if base>0 else None
-        c.metric("Variazione MAE",numero(change,signed=True)+"%" if change is not None else "—")
+        c.metric("Variazione errore",numero(change,signed=True)+"%" if change is not None else "—")
         st.caption(f'{mode} · {result["holdout"]} giorni di verifica · confronto non operativo a 7 giorni.')
-        st.markdown("**Scenario condizionale · prossimi sette giorni gas**")
+        st.markdown("**Possibile andamento dei consumi · prossimi 7 giorni gas**")
+        st.caption("Scenario condizionale, non previsione operativa principale.")
         frame=pd.DataFrame(result["points"]).set_index("period")
         st.line_chart(frame[["calendar_gwh","estimate_gwh"]].rename(columns={
             "calendar_gwh":"Calendario (GWh)","estimate_gwh":"Meteo settoriale (GWh)"}))
