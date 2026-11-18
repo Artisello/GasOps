@@ -151,7 +151,7 @@ def _forecast(context: MarketContext) -> Result:
         summary = f"{label} per {period} con {MODELLI[series.model].lower()} pari a {numero(first.estimate)} GWh."
     if first and facts.get("period") and not monthly:
         lead=(date.fromisoformat(first.period)-date.fromisoformat(facts["period"])).days
-        summary += f" Ultima osservazione {facts[\'label\']}; stima a {lead} giorni dall’ultimo dato."
+        summary += f" Ultima osservazione {facts['label']}; stima a {lead} giorni dall’ultimo dato."
     if first and first.lower_80 is not None:
         interval = {"posterior": "Fascia bayesiana", "empirical": "Fascia empirica", "model_based": "Fascia predittiva state-space"}[series.interval_kind]
         summary += f" {interval} all’80% da {numero(first.lower_80)} a {numero(first.upper_80)} GWh."

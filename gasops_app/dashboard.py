@@ -146,7 +146,7 @@ def _charts(context: MarketContext, horizon: int, page: str, height: int = 330, 
             st.caption(f"{model}{note} · orizzonte di {horizon_text}")
             if context.facts.get("period") and origin.grain=="daily":
                 lead=(pd.Timestamp(projection.points[0].period)-pd.Timestamp(context.facts["period"])).days
-                st.caption(f"Prima stima a {lead} giorni dall’ultima osservazione ({context.facts[\'label\']}).")
+                st.caption(f"Prima stima a {lead} giorni dall’ultima osservazione ({context.facts['label']}).")
             if context.model not in (AUTOMATIC, projection.model):
                 st.caption(f"Modello non disponibile per {MODELLI[context.model].lower()}.")
         else:
@@ -348,7 +348,7 @@ def _market_headlines(context: MarketContext):
     if point and facts.get("period"):
         lead=(pd.Timestamp(point.period)-pd.Timestamp(facts["period"])).days
         if origin.grain=="daily":
-            st.caption(f"Stima a {lead} giorni dall’ultima osservazione ({facts[\'label\']}); non è un nuovo dato pubblicato.")
+            st.caption(f"Stima a {lead} giorni dall’ultima osservazione ({facts['label']}); non è un nuovo dato pubblicato.")
 
 
 def _market_quality_notice(context):

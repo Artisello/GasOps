@@ -96,7 +96,8 @@ def parse_month(payload: dict, first: date, last: date, retrieved_at: datetime,
         # for seven gas days and three points. The total is not sufficient
         # to establish whether this particular requested grid is incomplete.
         # Do not accept a saturated page, a smaller total or a mismatched
-        # page count; only a fully validated grid may override the total.
+        # page count. Historical windows require a fully validated grid;
+        # the most recent window may explicitly retain validated partial data.
         try:
             limit=int(meta["limit"]) if meta.get("limit") is not None else 500
         except (ValueError,TypeError,OverflowError) as exc:
