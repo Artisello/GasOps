@@ -259,20 +259,56 @@ def load_alsi(store,api_key,scope="IT",*,now=None,refresh=False):
                     timeout=(5,20),diagnostics=True,refresh=refresh)
 
 
+IIP_PAGE_SIZE = 20
+
+
+def _page_count(value):
+    if value is None:
+        return None
+    if isinstance(value,bool) or not re.fullmatch(r"[0-9]{1,9}",str(value)):
+        raise SourceSchemaError("IIP: last_page non è un intero non negativo")
+    return int(value)
+
+
 def parse_iip(text,acquired,*,cached=False,failed=False):
-    """Preserve publisher messages without guessing fields, event units or revision semantics."""
+    """Keep original UMM records. Unknown pagination is explicitly unverified."""
     payload=_gie_payload(text)
-    data=payload.get("data")
-    pages=int(payload["last_page"])
-    if not isinstance(data,list) or pages<0 or len(data)>100 or any(not isinstance(r,dict) for r in data):
-        raise SourceSchemaError("Formato IIP non valido.")
-    if (pages==0 and data) or (pages>1 and not data):
-        raise SourceSchemaError("Paginazione IIP incoerente.")
-    if not data and pages==0 and payload.get("message"):
-        # Do not interpret an unrecognised API error as absence of outages.
-        raise SourceSchemaError("Risposta IIP vuota con messaggio: verifica la fonte.")
-    return {"messages":data,"pages":pages,"partial":pages>1,
-            "acquired":acquired,"cached":cached,"failed":failed,
+    pages=_page_count(payload.get("last_page"))
+    if "data" not in payload:
+        raise SourceSchemaError("IIP: campo data assente nella risposta JSON")
+    data=payload["data"]
+    record_keys=None
+    if data is None or data=={}:
+        if pages!=0:
+            raise SourceSchemaError("IIP: data vuoto senza conferma di zero pagine")
+        messages=[]
+    elif isinstance(data,list):
+        messages=data
+    elif isinstance(data,dict):
+        # Accept a single identifiable record or an associative collection.
+        # This compatibility path preserves source records and keys; it does
+        # not claim the authenticated publisher schema has been verified.
+        ids={"messageid","messageidentifier","ummid","id"}
+        fields={re.sub(r"[^a-z0-9]","",k.lower()) for k in data}
+        if ids & fields:
+            messages=[data]
+        elif data and all(isinstance(v,dict) and v for v in data.values()):
+            record_keys=list(data.keys())
+            messages=list(data.values())
+        else:
+            raise SourceSchemaError("IIP: oggetto data non riconducibile a messaggi")
+    else:
+        raise SourceSchemaError("IIP: data non è una lista o un oggetto JSON")
+    if len(messages)>IIP_PAGE_SIZE:
+        raise SourceSchemaError("IIP: la risposta supera la dimensione di pagina richiesta")
+    if any(not isinstance(r,dict) or not r for r in messages):
+        raise SourceSchemaError("IIP: uno o più record non sono oggetti JSON validi")
+    if (pages==0 and messages) or (pages is not None and pages>1 and not messages):
+        raise SourceSchemaError("IIP: paginazione incompatibile con il numero di record")
+    if not messages and (pages is None or payload.get("message")):
+        raise SourceSchemaError("IIP: risposta vuota non confermata; consultare il portale")
+    return {"messages":messages,"record_keys":record_keys,"pages":pages,
+            "partial":pages is None or pages>1,"acquired":acquired,"cached":cached,"failed":failed,
             "platform":"IIP",**attribution("IIP")}
 
 
@@ -284,14 +320,14 @@ def load_iip(store,api_key,*,now=None,refresh=False):
     # Bounded active messages intersecting the requested period. First page
     # only: no claim of complete event coverage or available capacity.
     params={"from":today.isoformat(),"to":(today+timedelta(days=7)).isoformat(),
-            "status":"active","size":100,"page":1}
-    return retrieve(store,key="iip-active-v1-"+today.isoformat(),name=GIE_CREDIT["IIP"],
+            "status":"active","size":IIP_PAGE_SIZE,"page":1}
+    return retrieve(store,key="iip-active-v2-"+today.isoformat(),name=GIE_CREDIT["IIP"],
                     url=IIP_SOURCE+"api",parse=parse_iip,ttl=timedelta(hours=2),
                     params=params,attempts=1,headers={"x-key":api_key.strip(),"Accept":"application/json"},
-                    timeout=(5,20),diagnostics=True,refresh=refresh)
+                    timeout=(5,20),diagnostics=True,refresh=refresh,max_bytes=2_000_000)
 
 
 def attributed_iip_json(result):
     return json.dumps({**attribution("IIP"),"retrieved_at":result["acquired"].isoformat(),
                        "pages":result["pages"],"partial":result["partial"],
-                       "messages":result["messages"]},ensure_ascii=False,indent=2,allow_nan=False)
+                       "record_keys":result.get("record_keys"),"messages":result["messages"]},ensure_ascii=False,indent=2,allow_nan=False)

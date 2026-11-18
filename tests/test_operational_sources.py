@@ -131,3 +131,51 @@ def test_gie_secret_can_be_read_before_env_export(monkeypatch):
     from gasops_app.operational_sources import gie_key
     monkeypatch.delenv("GASOPS_GIE_API_KEY",raising=False)
     assert gie_key({"GASOPS_GIE_API_KEY":"  secret  "})=="secret"
+
+
+@pytest.mark.parametrize("data,expected,keys",[
+    ([{"messageId":"fixture"}],1,None),
+    ({"messageId":"fixture","detail":{"intervals":[]}},1,None),
+    ({"fixture-a":{"messageId":"fixture-a"},"fixture-b":{"messageId":"fixture-b"}},2,["fixture-a","fixture-b"]),
+])
+def test_iip_record_shapes_preserve_content(data,expected,keys):
+    from gasops_app.operational_sources import parse_iip,attributed_iip_json
+    result=parse_iip(json.dumps({"last_page":"1","data":data}),NOW)
+    assert len(result["messages"])==expected
+    assert result["record_keys"]==keys
+    assert result["partial"] is False
+    assert json.loads(attributed_iip_json(result))["record_keys"]==keys
+
+
+@pytest.mark.parametrize("data",[[],{},None])
+def test_iip_confirmed_empty(data):
+    from gasops_app.operational_sources import parse_iip
+    assert parse_iip(json.dumps({"last_page":0,"data":data}),NOW)["messages"]==[]
+
+
+def test_iip_unknown_page_count_never_claims_completeness():
+    from gasops_app.operational_sources import parse_iip
+    result=parse_iip(json.dumps({"data":[{"messageId":"fixture"}]}),NOW)
+    assert result["pages"] is None and result["partial"] is True
+    for payload in ({"data":[]},{"last_page":1},{"last_page":"not a number","data":[]},
+                    {"last_page":1,"data":[None]},{"last_page":0,"data":[],"message":"unknown error"},
+                    {"last_page":0,"data":[{"messageId":"fixture"}]},
+                    {"last_page":1,"data":{"unexpected":"shape"}}):
+        with pytest.raises(ValueError,match="IIP"):
+            parse_iip(json.dumps(payload),NOW)
+
+
+def test_iip_download_contract(monkeypatch):
+    import gasops_app.operational_sources as op
+    calls=[]
+    def retrieve(store,**kwargs):
+        calls.append(kwargs)
+        return kwargs["parse"](json.dumps({"last_page":1,"data":[{"messageId":"fixture"}]}),NOW)
+    monkeypatch.setattr(op,"retrieve",retrieve)
+    assert op.load_iip(None,"test-key",now=NOW)["messages"]
+    assert len(calls)==1
+    assert calls[0]["url"]=="https://iip.gie.eu/api"
+    assert calls[0]["params"]=={"from":"2026-11-18","to":"2026-11-25","status":"active","size":20,"page":1}
+    assert calls[0]["max_bytes"]==2_000_000
+    assert calls[0]["headers"]["x-key"]=="test-key"
+    assert calls[0]["diagnostics"] is True
