@@ -30,6 +30,17 @@ class SettlementInput(BaseModel):
         return None if value in (None, "") else number(value)
 
 
+class CommercialInput(SettlementInput):
+    """Complete illustrative commercial balance; signed additional components."""
+    storage_net: Decimal | None = Field(default=D(0), ge=D("-1e12"), le=D("1e12"))
+    psv_net: Decimal | None = Field(default=D(0), ge=D("-1e12"), le=D("1e12"))
+
+    @field_validator("storage_net", "psv_net", mode="before")
+    @classmethod
+    def signed_decimal(cls,value):
+        return SettlementInput.finite_decimal(value)
+
+
 class Settlement(BaseModel):
     delivered_mwh: Decimal | None = None
     withdrawn_mwh: Decimal | None = None
@@ -42,6 +53,14 @@ class Settlement(BaseModel):
 
 
 def settle(inputs: SettlementInput) -> Settlement:
+    return _settle(inputs,D(0),D(0))
+
+
+def settle_commercial(inputs: CommercialInput) -> Settlement:
+    return _settle(inputs,inputs.storage_net,inputs.psv_net)
+
+
+def _settle(inputs: SettlementInput, storage_net: Decimal | None, psv_net: Decimal | None) -> Settlement:
     result = Settlement()
     if inputs.buy_eur_mwh is not None and inputs.sell_eur_mwh is not None:
         if inputs.buy_eur_mwh < inputs.sell_eur_mwh:
@@ -52,7 +71,10 @@ def settle(inputs: SettlementInput) -> Settlement:
     if result.delivered_mwh is None or result.withdrawn_mwh is None:
         result.problems.append("Inserisci sia l’energia immessa sia quella prelevata.")
         return result
-    result.imbalance_mwh = result.delivered_mwh - result.withdrawn_mwh
+    if storage_net is None or psv_net is None:
+        result.problems.append("Indica entrambi i saldi netti; inserisci zero solo se effettivamente nulli.")
+        return result
+    result.imbalance_mwh = result.delivered_mwh + scale * (storage_net + psv_net) - result.withdrawn_mwh
     if result.imbalance_mwh == 0:
         result.side, result.cash_flow_eur, result.direction = "flat", D("0.00"), "flat"
         return result
@@ -66,6 +88,15 @@ def settle(inputs: SettlementInput) -> Settlement:
     result.cash_flow_eur = cash if cash else D("0.00")
     result.direction = "charge" if cash < 0 else "credit" if cash > 0 else "flat"
     return result
+
+
+def settlement_sensitivity(result: Settlement) -> list[tuple[Decimal,Decimal]]:
+    """Illustrative price changes of +/- 10 EUR/MWh, holding the balance fixed."""
+    if result.imbalance_mwh is None or result.price_eur_mwh is None:
+        return []
+    return [(result.price_eur_mwh+delta,
+             (result.imbalance_mwh*(result.price_eur_mwh+delta)).quantize(CENT))
+            for delta in (D(-10),D(0),D(10))]
 
 
 class ScenarioInput(BaseModel):
