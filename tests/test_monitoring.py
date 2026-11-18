@@ -73,3 +73,12 @@ def test_monitor_ui_empty(monkeypatch,tmp_path):
     app.run()
     assert not app.exception
     assert app.metric[0].value=="1"
+
+
+def test_report_rejects_impossible_counts_and_failed_observations():
+    r=run(["entsog"],NOW,collector=lambda *_:sample())
+    r["sources"][0]["valid"]=2
+    with pytest.raises(ValueError):parse_report(json.dumps(r).encode())
+    r["sources"][0]["valid"]=1
+    r["sources"][0]["status"]="failed"
+    with pytest.raises(ValueError):parse_report(json.dumps(r).encode())

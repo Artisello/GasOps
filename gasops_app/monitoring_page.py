@@ -13,6 +13,9 @@ ALERTS={"coverage":"Copertura parziale","stale":"Osservazioni non recenti","revi
 
 
 def panel():
+    from .source_health_page import panel as health_panel
+    health_panel()
+    st.divider()
     st.subheader("Monitoraggio automatico")
     st.caption("Diagnostica delle fonti · nessuna richiesta di rete da questa vista")
     with st.expander("Carica report di monitoraggio"):

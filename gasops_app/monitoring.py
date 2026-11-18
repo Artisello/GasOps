@@ -146,9 +146,10 @@ def collect(source,now):
             return None
         last=terna.latest_day(now); first=last-timedelta(days=13)
         r=terna.load_power(client,secret,first,last,now=now)
-        rows=[obs(x["gas_day"],"IT:electricity",x["metric"],"GWh_electric/gas_day",x["gwh"]) for x in r["rows"]]
+        rows=[obs(x["gas_day"],"IT:electricity",x["metric"],"GWh_electric/gas_day",x["gwh"]) for x in r["rows"]
+              if x["metric"] in (*terna.SOURCES,"load") and x["expected_slots"]>0 and x["valid_slots"]==x["expected_slots"]]
         valid=sum(x is not None for x in rows)
-        expected=14*7
+        expected=14*(len(terna.SOURCES)+1)
         latest=max((x[0] for x in rows if x is not None),default=None)
         alerts=["coverage"] if valid<expected or r["warning"] else []
         if latest and (last-date.fromisoformat(latest)).days>2: alerts.append("stale")
@@ -282,6 +283,12 @@ def parse_report(raw):
         for k in ("valid","expected","revisions","outliers"):
             if item[k] is not None and (type(item[k]) is not int or not 0<=item[k]<=10_000_000):
                 raise ValueError("Invalid count")
+        if item["valid"] is not None and item["expected"] is not None and item["valid"]>item["expected"]:
+            raise ValueError("Valid count exceeds expected")
+        if item["status"] in ("failed","skipped") and any(item[k] is not None for k in ("valid","expected","latest","revisions","outliers")):
+            raise ValueError("Failed/skipped source has observations")
+        if item["status"]=="ok" and (item["valid"] is None or item["expected"] is None or item["valid"]!=item["expected"] or item["latest"] is None):
+            raise ValueError("Success without complete observations")
         if item["latest"] is not None:
             latest=date.fromisoformat(item["latest"])
             if latest>stamp.astimezone(ROME).date():
