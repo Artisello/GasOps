@@ -176,7 +176,11 @@ def _settlement(demo,now):
 def page():
     st.title("KPI operativi")
     st.caption("Balancing · Settlement · Operations")
-    view=st.radio("Vista KPI",["Panoramica","Registro operativo"],horizontal=True,label_visibility="collapsed",key="bso_view")
+    view=st.radio("Vista KPI",["Panoramica","Registro operativo","Monitoraggio fonti"],horizontal=True,label_visibility="collapsed",key="bso_view")
+    if view=="Monitoraggio fonti":
+        from .monitoring_page import panel
+        panel()
+        return
     if view=="Panoramica":
         from .advanced_kpi_page import panel
         panel()
