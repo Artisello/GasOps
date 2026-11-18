@@ -120,7 +120,7 @@ def _charts(context: MarketContext, horizon: int, page: str, height: int = 330) 
             note = " · scelto dallo storico" if context.model == AUTOMATIC and projection.model in context.forecast_scores else ""
             st.caption(f"{model}{note} · orizzonte di {horizon_text}")
             if context.model not in (AUTOMATIC, projection.model):
-                st.caption(f"Lo storico è troppo breve per {MODELLI[context.model].lower()}.")
+                st.caption(f"Modello non disponibile per {MODELLI[context.model].lower()}.")
         else:
             st.caption("Serve una serie storica più lunga per generare una stima.")
     return data
@@ -210,6 +210,9 @@ def _model_comparison(context: MarketContext) -> None:
                        "Valori più bassi indicano stime più vicine ai consumi osservati.")
             st.dataframe([{
                 "Modello": MODELLI[name], "Errore medio (GWh)": numero(scores[name].mae, 1) if name in scores else "—",
+                "RMSE (GWh)": numero(scores[name].rmse, 1) if name in scores else "—",
+                "WAPE (%)": numero(scores[name].wape, 1) if name in scores else "—",
+                "Bias (GWh)": numero(scores[name].bias, 1) if name in scores else "—",
                 "In uso": "Sì" if name == projection.model else "",
             } for name in (*ordered, *(model for model in MODELS if model not in scores))],
                 hide_index=True, width="stretch")
@@ -223,8 +226,14 @@ def _model_comparison(context: MarketContext) -> None:
                     included = round(projection.interval_coverage * projection.coverage_samples)
                     st.caption(f"Nel test storico, la fascia ha incluso {included} osservazioni su "
                                f"{projection.coverage_samples} per il periodo successivo.")
+            elif projection.interval_kind == "model_based":
+                st.write("Fascia predittiva state-space all’80%, condizionata ai parametri stimati. Non è una fascia bayesiana; il backtest aggiorna lo stato senza ristimare i parametri a ogni passo.")
+                if projection.interval_coverage is not None:
+                    st.caption(f"Copertura osservata: {projection.interval_coverage:.1%} su {projection.coverage_samples} periodi.")
             else:
                 st.write("La fascia si basa sugli errori delle previsioni ricostruite sullo storico.")
+            if projection.details:
+                st.caption(projection.details)
             if projection.backtest:
                 plot(error_chart(projection, context.bundle.origin.grain), "market_error")
 

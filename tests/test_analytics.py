@@ -114,12 +114,13 @@ def test_bayesian_improves_on_the_public_daily_archive():
     projections = {model: forecast(series, "daily", model) for model in MODELS}
     scores = compare(projections)
     chosen = choose(projections, scores, AUTOMATIC)
-    assert chosen.model == BAYESIAN
+    assert scores[chosen.model].mae == min(s.mae for s in scores.values())
     assert scores[BAYESIAN].mae < scores["Seasonal naive"].mae
     assert all(fit.periods == 56 for fit in scores.values())
-    assert chosen.interval_kind == "posterior" and chosen.coverage_samples == 56
-    assert 0 < chosen.interval_coverage < 1
-    assert all(0 <= p.lower_80 <= p.estimate <= p.upper_80 for p in chosen.points)
+    bayes = projections[BAYESIAN]
+    assert bayes.interval_kind == "posterior" and bayes.coverage_samples == 56
+    assert 0 < bayes.interval_coverage < 1
+    assert all(0 <= p.lower_80 <= p.estimate <= p.upper_80 for p in bayes.points)
 
 
 def test_comparison_uses_common_periods_and_respects_an_explicit_choice():

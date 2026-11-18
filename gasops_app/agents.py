@@ -147,10 +147,10 @@ def _forecast(context: MarketContext) -> Result:
         label = "Proiezione storica" if context.bundle.origin.archive else "Previsione"
         summary = f"{label} per {period} con {MODELLI[series.model].lower()} pari a {numero(first.estimate)} GWh."
     if first and first.lower_80 is not None:
-        interval = "Fascia bayesiana" if series.interval_kind == "posterior" else "Fascia empirica"
+        interval = {"posterior": "Fascia bayesiana", "empirical": "Fascia empirica", "model_based": "Fascia predittiva state-space"}[series.interval_kind]
         summary += f" {interval} all’80% da {numero(first.lower_80)} a {numero(first.upper_80)} GWh."
     if first and context.model not in (AUTOMATIC, series.model):
-        summary += f" La serie è troppo breve per {MODELLI[context.model].lower()}."
+        summary += f" Modello non disponibile: {MODELLI[context.model].lower()}."
     if series.mae is not None:
         summary += f" Errore medio assoluto a un passo pari a {numero(series.mae)} GWh."
     gap, coverage = facts.get("gap_gwh"), facts.get("coverage_pct")
