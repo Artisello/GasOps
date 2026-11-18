@@ -244,7 +244,7 @@ class CompatibleReasoner:
             "series (list of at most 6 advertised series IDs), tools (at most 4 advertised tool names), "
             "from and to (YYYY-MM-DD inclusive, no future), benchmarks (list of selected benchmark IDs), "
             "forecasts (list of selected forecast IDs). Use only catalog IDs. Choose dates matching "
-            "the question; absent explicit dates use relevant available coverage, never imply old data is current. "
+            "the question; for current or recent questions prefer actual recent observations over archives. Absent explicit dates use relevant available coverage and mention its last observation; never imply old data is current. "
             "Never replace a missing source or period with an unrelated source. Benchmark/forecast tools select "
             "only relevant corresponding IDs and need no series. For revisions select both phases of the same "
             "native Jarvis metric. For correlations select at least two compatible gas-day series. "

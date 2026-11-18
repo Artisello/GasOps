@@ -1,4 +1,4 @@
-"""Public-first BSO overview. No network calls or demo fallback."""
+"""Live-first BSO overview. Explicit refresh only; no demo fallback."""
 from datetime import date
 import streamlit as st
 
@@ -17,7 +17,7 @@ PRECISION={"baf_net_adjusted_neutrality":2,"mase_prod":2,"power_corr":2,"lng":2,
 def _cards(metrics,limit=3):
     for start in range(0,len(metrics),limit):
         group=metrics[start:start+limit]
-        cols=st.columns(limit)
+        cols=st.columns(len(group))
         for col,r in zip(cols,group):
             with col:
                 st.metric(r.label,numero(r.value,PRECISION.get(r.code,1))+(f" {r.unit}" if r.unit else ""),help=r.definition)
@@ -38,7 +38,8 @@ def panel():
         try:
             context+=getter()
         except (OSError,ValueError,KeyError,StopIteration):
-            st.warning("Un archivio pubblico non è disponibile o validabile.")
+            with st.expander("Copertura archivio"):
+                st.caption("Un archivio pubblico non è disponibile o validabile.")
     context_by={r.code:r for r in context}
     def current(r):
         try:
@@ -68,7 +69,7 @@ def panel():
             st.caption("Periodi espliciti · non dati odierni né KPI interni.")
     with st.expander("Come aggiornare i dati"):
         st.markdown("[Rete Snam · importazione nativa e stime Jarvis](/security-of-supply) · [Terna e ACER](/market)")
-        st.caption("Carica dati nelle viste dedicate nella stessa sessione dell’app. La panoramica li riutilizza senza nuove chiamate API; gli archivi storici restano visibili senza credenziali.")
+        st.caption("I dati acquisiti nelle viste dedicate o con Aggiorna fonti reali sono riutilizzati nella stessa sessione. Gli archivi storici restano consultabili senza credenziali.")
     st.divider()
     st.markdown("**Controlli operativi interni**")
     chosen=st.date_input("Mese delle attività e dei bilanci",value=now.date().replace(day=1),

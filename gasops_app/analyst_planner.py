@@ -31,6 +31,7 @@ def manifest(items,benchmarks,forecasts,question,today,*,remote):
         "today":today.isoformat(),"tools":TOOLS,
         "series":[{"id":k,"label":eligible[k].label[:120],"source":eligible[k].source[:80],
                    "scope":eligible[k].scope[:120],"unit":eligible[k].unit[:70],"grain":eligible[k].grain,
+                   "status":eligible[k].status[:180],
                    "first":eligible[k].values.index[0],"last":eligible[k].values.index[-1],
                    "n":len(eligible[k].values)} for k in keys],
         "benchmarks":[{k:r[k] for k in ("id","label","period","unit","source")} for r in benchmarks],

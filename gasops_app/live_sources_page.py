@@ -10,7 +10,7 @@ from .live_sources import refresh,STATUS,LABELS
 def controls(prefix):
     state=st.session_state
     now=utc_now()
-    with st.expander("Aggiorna fonti reali",expanded=False):
+    with st.expander("Aggiorna fonti reali",expanded=not bool(state.get(STATUS)) and not bool(state.get("live_public_bundles_v1"))):
         st.caption("Seleziona le fonti autorizzate. I risultati alimentano anche l’Analista dati nella stessa sessione.")
         try:
             gie=configured_key()
@@ -23,7 +23,7 @@ def controls(prefix):
         options=["monthly","daily","acer"]
         if gie:options+=["agsi","alsi"]
         if client and secret:options+=["terna"]
-        selected=st.multiselect("Fonti",options,default=["monthly"],format_func=LABELS.__getitem__,key=prefix+"_live_sources")
+        selected=st.multiselect("Fonti",options,default=["monthly"]+(["terna"] if "terna" in options else []),format_func=LABELS.__getitem__,key=prefix+"_live_sources")
         consent=st.checkbox("Confermo uso autorizzato e termini delle fonti selezionate; per Terna accetto l’assunzione sperimentale di inizio intervallo 06–06.",key=prefix+"_live_consent")
         if st.button("Aggiorna selezione",type="primary",key=prefix+"_live_refresh",disabled=not selected or not consent):
             with st.spinner("Aggiornamento delle fonti selezionate…"):
@@ -31,7 +31,7 @@ def controls(prefix):
             if not ok:st.caption("Aggiornamento già richiesto nell’ultimo minuto.")
         saved=state.get(STATUS,{})
         if saved.get("sources"):
-            st.dataframe([{"Fonte":LABELS[k], "Stato":v["status"],"Ultimo tentativo":v["at"],"Nota":v["note"] or "—"}
+            st.dataframe([{"Fonte":LABELS[k], "Stato":v["status"],"Ultimo tentativo":v["at"],"Nota":v["note"] or "Nessun rilievo"}
                           for k,v in saved["sources"].items()],hide_index=True,width="stretch")
         st.markdown("[Jarvis · importa pubblicazioni originali](/security-of-supply) · [Serie Terna e ACER](/market)")
         st.caption("Nessuna sostituzione con dati simulati. Una fonte temporaneamente indisponibile non blocca le altre.")

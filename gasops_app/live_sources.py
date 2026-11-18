@@ -73,7 +73,10 @@ def refresh(state,store,now,selected,*,gie=None,terna=None,clock=utc_now):
         end=latest_day(now)
         p=load_power(*terna,end-timedelta(days=13),end,now=now)
         batch=make_batch(p,clock())
-        state["terna_power_v1"]={"power":p,"gas":None}
+        prior=state.get("terna_power_v1",{})
+        old_power=prior.get("power",{})
+        gas=prior.get("gas") if (old_power.get("first"),old_power.get("last"))==(p["first"],p["last"]) else None
+        state["terna_power_v1"]={"power":p,"gas":gas}
         try:
             state[HISTORY]=merge(state.get(HISTORY,[]),[batch])
         except ValueError:
