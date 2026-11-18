@@ -270,6 +270,37 @@ def _page_count(value):
     return int(value)
 
 
+def iip_pagination_diagnostic(payload, pages, record_count):
+    """Metadata-only diagnostic, without message content, URLs or credentials."""
+    # List known paging fields and safe structural names, never arbitrary
+    # response values. Numeric values are limited to known paging fields.
+    numeric_names={"lastpage","totalpages","pagecount","total","count","totalcount",
+                   "totalrecords","recordcount","currentpage","page","size","pagesize",
+                   "perpage","limit","offset","last","current","records","numberofpages",
+                   "numberofrecords","totalitems","itemcount"}
+    container_names={"pagination","paging","pageinfo","meta","metadata","page"}
+    def normalized(name):
+        return re.sub(r"[^a-z0-9]","",name.lower())
+    def describe(obj):
+        result={}
+        for key,val in obj.items():
+            name=normalized(key)
+            if name in numeric_names and isinstance(val,(int,str)) and not isinstance(val,bool):
+                if re.fullmatch(r"[0-9]{1,9}",str(val)):
+                    result[key]=int(val)
+        return result
+    safe_keys=[key for key in payload if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]{0,39}",key)
+               and not any(x in normalized(key) for x in ("key","token","secret","password","auth","credential"))]
+    details={"source":GIE_CREDIT["IIP"],"source_url":IIP_SOURCE,
+             "returned_records":record_count,"requested_page":1,"requested_size":IIP_PAGE_SIZE,
+             "recognized_last_page":pages,"top_level_fields":sorted(safe_keys)[:40],
+             "numeric_pagination_fields":describe(payload),"nested_pagination_fields":{}}
+    for key in safe_keys:
+        if normalized(key) in container_names and isinstance(payload[key],dict):
+            details["nested_pagination_fields"][key]=describe(payload[key])
+    return details
+
+
 def parse_iip(text,acquired,*,cached=False,failed=False):
     """Keep original UMM records. Unknown pagination is explicitly unverified."""
     payload=_gie_payload(text)
@@ -309,6 +340,7 @@ def parse_iip(text,acquired,*,cached=False,failed=False):
         raise SourceSchemaError("IIP: risposta vuota non confermata; consultare il portale")
     return {"messages":messages,"record_keys":record_keys,"pages":pages,
             "partial":pages is None or pages>1,"acquired":acquired,"cached":cached,"failed":failed,
+            "pagination_diagnostic":iip_pagination_diagnostic(payload,pages,len(messages)),
             "platform":"IIP",**attribution("IIP")}
 
 
@@ -330,4 +362,5 @@ def load_iip(store,api_key,*,now=None,refresh=False):
 def attributed_iip_json(result):
     return json.dumps({**attribution("IIP"),"retrieved_at":result["acquired"].isoformat(),
                        "pages":result["pages"],"partial":result["partial"],
-                       "record_keys":result.get("record_keys"),"messages":result["messages"]},ensure_ascii=False,indent=2,allow_nan=False)
+                       "record_keys":result.get("record_keys"),"pagination_diagnostic":result.get("pagination_diagnostic"),
+                       "messages":result["messages"]},ensure_ascii=False,indent=2,allow_nan=False)

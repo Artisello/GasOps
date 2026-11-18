@@ -1,5 +1,6 @@
 """Optional panels; no background network work, no storage of uploaded files."""
 from datetime import timedelta
+import json
 
 import streamlit as st
 
@@ -180,11 +181,19 @@ def _iip_panel(key):
     if result["failed"] or utc_now()-result["acquired"]>timedelta(hours=2):
         st.warning("Messaggi non aggiornati: verifica il portale IIP.")
     if result["pages"] is None:
-        st.warning("Paginazione non indicata: completezza non verificabile. Consulta il portale IIP.")
+        st.warning("Messaggi disponibili · prima pagina. Il totale non è verificabile: non usare l’elenco come inventario completo delle indisponibilità.")
     elif result["partial"]:
         st.warning("Risultati parziali: prima pagina di "+str(result["pages"])+". Consulta il portale per l’elenco completo.")
-    st.metric("Messaggi restituiti",len(result["messages"]))
+    st.metric("Messaggi ricevuti",len(result["messages"]))
     _credit("IIP")
+    diagnostic=result.get("pagination_diagnostic")
+    if diagnostic is not None:
+        with st.expander("Diagnostica paginazione IIP"):
+            st.caption("Metadati della risposta, senza contenuto dei messaggi o credenziali. Utili per controllare il formato API.")
+            diagnostic_text=json.dumps(diagnostic,ensure_ascii=False,indent=2)
+            st.code(diagnostic_text,language="json")
+            st.download_button("Scarica diagnostica JSON",diagnostic_text,"gasops-iip-diagnostica.json",
+                               "application/json",key="iip_pagination_diagnostic")
     if not result["messages"]:
         st.caption("Nessun messaggio restituito per la richiesta; non dimostra assenza di indisponibilità.")
     else:
