@@ -19,7 +19,9 @@ from sklearn.preprocessing import StandardScaler
 from .jarvis_native import safezip,xml,N,REL,MAX_BYTES
 
 SHEETS={"Storico_G-1":-1,"Storico_G":0,"Storico_G+1":1,"Storico_G+2":2}
-COLS=("A","B","C","E","AA")
+COLS=("A","B","C","E","AA","F","H","J")
+EXTRA_HEADERS={"F":"- Clienti finali direttamente allacciati alla Rete di Trasporto","H":"- Interconnessione Altre Reti di Trasporto e Distribuzione","J":"ESPORTAZIONI"}
+EXTRA_FIELDS=("direct_clients","other_networks","exports")
 HEADERS={"A":"pubblicazione","B":"aggiornato il","C":"IMMESSO","E":"RICONSEGNATO (1)","AA":"Gradi Giorno Medi Ponderali Italia 18°C"}
 FIELDS=("origin","h","published","slot","target","demand","injection","hdd","file","sha256","sheet","row")
 FEATURES=["demand","injection","hdd"]
@@ -50,15 +52,17 @@ def num(value):
     return n if np.isfinite(n) and 0<=n<=1e10 else np.nan
 
 
-def extract_rows(rows,sheet,filename,digest):
+def extract_rows(rows,sheet,filename,digest,*,include_extended=False):
     """Rows are (physical row, exact selected cells). Unrecognized schema fails."""
     offset=SHEETS[sheet]
     out=[]
     bad=0
+    extended=False
     for i,r in rows:
         if i==1:
             if any(r.get(k)!=v for k,v in HEADERS.items()):
                 raise ValueError("Intestazioni annuali Jarvis non riconosciute")
+            extended=all(r.get(k)==v for k,v in EXTRA_HEADERS.items())
             continue
         a=r.get("A") or ""
         if not re.fullmatch(r"\d{4}_\d{2}_\d{2}_\d{2}(?:_\d+)?",a):
@@ -73,9 +77,12 @@ def extract_rows(rows,sheet,filename,digest):
             raise ValueError("Anno non supportato")
         if not 6<=int(a[11:13])<=15 or not origin.replace(hour=6)<=stamp<=origin.replace(hour=15):
             continue
-        out.append((origin,offset,stamp,a,origin+timedelta(days=offset),
+        record=(origin,offset,stamp,a,origin+timedelta(days=offset),
                     num(r.get("E")),num(r.get("C")),num(r.get("AA")),
-                    filename,digest,sheet,i))
+                    filename,digest,sheet,i)
+        if include_extended:
+            record+=tuple(num(r.get(c)) if extended else np.nan for c in EXTRA_HEADERS)
+        out.append(record)
     return out,bad
 
 
@@ -139,7 +146,7 @@ def read_annual(raw,name):
                 path=path.lstrip("/") if path.startswith("/") else posixpath.normpath(posixpath.join("xl",path))
                 if not re.fullmatch(r"xl/worksheets/sheet\d+\.xml",path) or sheet in seen:
                     raise ValueError("Struttura workbook non riconosciuta")
-                rows,invalid=extract_rows(sheet_rows(z,path,strings),sheet,name,fingerprint)
+                rows,invalid=extract_rows(sheet_rows(z,path,strings),sheet,name,fingerprint,include_extended=True)
                 if not rows or any(r[0].year!=year for r in rows):
                     raise ValueError("Anno o foglio privo di pubblicazioni utilizzabili")
                 records.extend(rows);bad+=invalid;seen.add(sheet)
@@ -150,7 +157,7 @@ def read_annual(raw,name):
     except (zipfile.BadZipFile,ET.ParseError,UnicodeError,KeyError,IndexError,OverflowError) as exc:
         raise ValueError("Formato annuale non valido") from exc
     return {"year":year,"sha256":fingerprint,"name":name,"bad":bad,
-            "frame":pd.DataFrame.from_records(records,columns=FIELDS)}
+            "frame":pd.DataFrame.from_records(records,columns=(*FIELDS,*EXTRA_FIELDS))}
 
 
 def daily_vintages(frame,asof):
@@ -163,11 +170,11 @@ def daily_vintages(frame,asof):
     conflicts=0
     for _,group in f.groupby(["origin","h"],sort=False):
         latest=group[group.published==group.published.iloc[-1]]
-        if len(latest[FEATURES].drop_duplicates())>1:
+        if len(latest[[*FEATURES,*[c for c in EXTRA_FIELDS if c in latest]]].drop_duplicates())>1:
             conflicts+=1
             continue
         selected.append(latest.iloc[-1])
-    return pd.DataFrame(selected,columns=FIELDS),conflicts
+    return pd.DataFrame(selected,columns=f.columns),conflicts
 
 
 def samples(vintages,horizon):
