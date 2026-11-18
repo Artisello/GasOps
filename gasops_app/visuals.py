@@ -13,7 +13,7 @@ from .forecast import Forecast, ForecastPoint
 from .italiano import ESITI, TIPI, data_it, numero
 from .models import AGENT_LABELS, Agent, Citation, Kind, Run
 
-TEAL, BLUE, AMBER, ROSE, MUTED = "#65dfbf", "#83acff", "#f2be72", "#f6929d", "#a3b4c9"
+TEAL, BLUE, AMBER, ROSE, MUTED = "#65dfbf", "#83b4ff", "#f2be72", "#f6929d", "#a9b8ca"
 CHIP = {
     Kind.SYNTHETIC: "synthetic", Kind.HISTORICAL: "historical", Kind.LIVE: "live",
     Kind.FORECAST: "forecast", Kind.SIMULATION: "simulation", Kind.ACCOUNTING: "review", Kind.PHYSICAL: "ok",
@@ -137,14 +137,14 @@ def _frame(fig: go.Figure, grain: str, unit: str, height: int) -> go.Figure:
     fig.update_layout(
         template="plotly_dark", height=height, separators=",.",
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=5, r=10, t=15, b=9), hovermode="x unified", dragmode="zoom",
-        font=dict(family="Inter, Avenir Next, system-ui, sans-serif", color=MUTED, size=11),
+        margin=dict(l=8, r=14, t=42, b=16), hovermode="x unified", dragmode="zoom",
+        font=dict(family="Inter, Avenir Next, system-ui, sans-serif", color=MUTED, size=12),
         legend=dict(orientation="h", x=0, y=1.03, yanchor="bottom", xanchor="left",
-                    font=dict(size=11), traceorder="normal", itemclick="toggle", itemdoubleclick="toggleothers"),
+                    font=dict(size=12), traceorder="normal", itemclick="toggle", itemdoubleclick="toggleothers"),
         hoverlabel=dict(bgcolor="#142235", bordercolor="#334963", font=dict(color="#edf4ff", size=12)),
         xaxis=dict(showgrid=True, gridcolor="rgba(153,180,214,0.09)", showline=True, linecolor="#253548",
                    tickformat="%d/%m" if grain == "daily" else "%m/%Y", zeroline=False, nticks=8),
-        yaxis=dict(side="right", showgrid=True, gridcolor="rgba(153,180,214,0.12)", showline=True,
+        yaxis=dict(side="right", title=dict(text=unit, font=dict(size=12)), showgrid=True, gridcolor="rgba(153,180,214,0.12)", showline=True,
                    linecolor="#253548", tickformat=",.0f" if unit == "GWh" else ",.1f",
                    zeroline=False, nticks=6, automargin=True),
     )
@@ -183,7 +183,7 @@ def demand_chart(data: pd.DataFrame, projection: Forecast, grain: str, *, height
     if data["supply_gwh"].notna().any():
         label = "Disponibilità contabile" if grain == "monthly" else "Offerta"
         supply = _line(label, data.index, data["supply_gwh"], "#afc3de", "GWh", grain)
-        supply.update(line=dict(color="#afc3de", width=1.3, dash="dot" if grain == "monthly" else "solid"),
+        supply.update(line=dict(color="#afc3de", width=1.3, dash="dot"),
                       legendrank=2)
         fig.add_trace(supply)
     if future:

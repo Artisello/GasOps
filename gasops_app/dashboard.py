@@ -452,25 +452,22 @@ def _market_data(context, visible):
 
 
 def market() -> None:
+    header("Mercato e previsioni", "")
     view=st.radio("Vista mercato",["Domanda e previsioni","Mercato europeo ACER","Sistema elettrico Terna","Laboratorio previsionale","Forecasting Snam"],horizontal=True,label_visibility="collapsed",key="market_view")
     if view=="Forecasting Snam":
         from .snam_forecast_page import panel
-        st.title("Mercato e previsioni")
         panel()
         return
     if view=="Laboratorio previsionale":
         from .predictive_page import panel
-        st.title("Mercato e previsioni")
         panel()
         return
     if view=="Sistema elettrico Terna":
         from .terna_power_page import panel
-        st.title("Mercato e previsioni")
         panel()
         return
     if view=="Mercato europeo ACER":
         from .acer_market_page import panel
-        st.title("Mercato e previsioni")
         panel()
         return
     top,controls=st.container(),st.container()
@@ -478,7 +475,6 @@ def market() -> None:
         selection=source_filters("market")
     area,perimeter=market_scope(selection.name)
     with top:
-        header("Mercato e previsioni", "")
         st.markdown("**"+area+"** · "+perimeter)
     if not selection.bundle:
         st.markdown("[Stoccaggi e forniture (Security of supply)](/security-of-supply)")
