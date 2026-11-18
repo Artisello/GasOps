@@ -35,10 +35,10 @@ def _metrics(context: MarketContext) -> None:
             ("Variazione delle scorte", "stock_change_gwh", "GWh/mese", "Positiva in accumulo", 1, "blue"),
             ("Prezzo PSV · ARERA", "price_eur_mwh", "€/MWh", "Media mensile CMEM,m", 2, ""),
         ]
-    elif origin.archive:
+    elif origin.grain == "daily" and "distribution_gwh" in origin.fields:
         specs = [(title, field, "GWh/giorno", _change(facts, field), 1, tone) for title, field, tone in (
-            ("Consumo nazionale", "demand_gwh", "teal"), ("Industria", "industry_gwh", ""),
-            ("Generazione elettrica", "power_gwh", "blue"), ("Residenziale e terziario", "distribution_gwh", ""),
+            ("Consumo nazionale" if origin.archive else "Prelievi SRG (proxy)", "demand_gwh", "teal"), ("Industria", "industry_gwh", ""),
+            ("Generazione elettrica", "power_gwh", "blue"), ("Residenziale e terziario" if origin.archive else "Distribuzione", "distribution_gwh", ""),
         )]
     else:
         specs = [
@@ -70,7 +70,9 @@ def _source_panel(context: MarketContext) -> None:
     details = [("Fonte", origin.name), ("Ultimo periodo", facts.get("label", "Non disponibile")),
                ("Stato", status)]
     if not origin.archive:
-        details.append(("Data della fonte", local_time(origin.published_at)))
+        if origin.published_at is not None:
+            details.append(("Data della fonte", local_time(origin.published_at)))
+        details.append(("Ultima acquisizione", local_time(origin.retrieved_at)))
     if raw_flag:
         flag_labels = {"p": "provvisorio", "O": "dato originale", "E": "stima della fonte"}
         details.append(("Nota sulla misura", ", ".join(flag_labels.get(flag, flag) for flag in raw_flag.split())))
@@ -78,6 +80,10 @@ def _source_panel(context: MarketContext) -> None:
         period = data_it(date.fromisoformat(feed.latest_period), day=False) if feed.latest_period else "Non disponibile"
         details.extend([(feed.name, period), ("Stato ARERA", _state(feed))])
     rows(details)
+    if origin.grain == "daily" and "distribution_gwh" in origin.fields and not origin.archive:
+        st.caption("Tre aggregati ENTSOG/SRG: proxy parziale, non domanda nazionale ufficiale. Nessun prezzo o offerta osservati.")
+        with st.expander("Perimetro e metodologia"):
+            st.write(origin.description)
     links = [f"[{feed.name}]({feed.url})" for feed in (origin, *origin.companions) if feed.url]
     if links:
         st.markdown(" · ".join(links))
@@ -105,7 +111,7 @@ def _charts(context: MarketContext, horizon: int, page: str, height: int = 330) 
     origin = context.bundle.origin
     data = context.inspection.usable.tail(horizon)
     title = ("Consumo interno e disponibilità" if origin.grain == "monthly" else
-             "Consumi nazionali" if origin.archive else "Domanda e offerta")
+             "Consumi nazionali" if origin.archive else "Prelievi SRG (proxy)" if "distribution_gwh" in origin.fields else "Domanda e offerta")
     projection = context.projection
     heading(title, kind_tag(Kind.FORECAST) if projection.points else "")
     if not data["demand_gwh"].notna().any():
@@ -136,7 +142,7 @@ def _supporting_charts(context: MarketContext, data: pd.DataFrame, page: str) ->
                 ("net_imports_gwh", "Importazioni nette", BLUE), ("production_gwh", "Produzione interna", TEAL),
                 ("stock_change_gwh", "Variazione scorte", AMBER),
             ], origin.grain), f"{page}_balance")
-        elif origin.archive:
+        elif origin.grain == "daily" and "distribution_gwh" in origin.fields:
             heading("Industria e generazione", "<small>GWh/giorno</small>")
             plot(breakdown_chart(data, [
                 ("industry_gwh", "Industria", BLUE), ("power_gwh", "Generazione elettrica", AMBER),
@@ -146,9 +152,10 @@ def _supporting_charts(context: MarketContext, data: pd.DataFrame, page: str) ->
             gap = data["supply_gwh"] - data["demand_gwh"]
             plot(mini_chart(gap, "Offerta − domanda", origin.grain, "GWh", ROSE, zero=True), f"{page}_gap")
     with right, st.container(border=True, key=f"panel_{page}_price"):
-        if origin.archive:
-            heading("Residenziale e terziario", "<small>GWh/giorno</small>")
-            plot(mini_chart(data["distribution_gwh"], "Residenziale e terziario", origin.grain,
+        if origin.grain == "daily" and "distribution_gwh" in origin.fields:
+            label = "Residenziale e terziario" if origin.archive else "Distribuzione"
+            heading(label, "<small>GWh/giorno</small>")
+            plot(mini_chart(data["distribution_gwh"], label, origin.grain,
                             "GWh", TEAL), f"{page}_distribution")
         else:
             title = "Prezzo PSV · ARERA" if origin.grain == "monthly" else "Prezzo di esempio"

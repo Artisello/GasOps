@@ -29,6 +29,7 @@ def retrieve(
     ttl: timedelta,
     params: dict | None = None,
     refresh: bool = False,
+    attempts: int = 2,
 ) -> T:
     now = utc_now()
     existing = store.cached(key)
@@ -40,7 +41,7 @@ def retrieve(
         except VALIDATION_ERRORS:
             LOG.warning("Cache non valida per %s", name)
 
-    for attempt in range(2):
+    for attempt in range(attempts):
         try:
             with requests.get(url, params=params, timeout=(3, 5), stream=True) as response:
                 response.raise_for_status()

@@ -15,6 +15,7 @@ from .forecast import MODEL_CHOICES, ModelChoice
 from .italiano import MODALITA, MODELLI
 from .llm import CompatibleReasoner, configuration
 from .mensile import load_monthly
+from .entsog import load as load_daily
 from .models import Run, utc_now
 from .public_data import SourceUnavailable
 from .regulatory import Library, read_local_pdfs
@@ -24,7 +25,8 @@ from .workflow import DAILY_BRIEFING, run_workflow
 
 LOG = logging.getLogger(__name__)
 DEMO, PUBLIC, ARCHIVE = "Dati di esempio · giornalieri", "Eurostat + ARERA · mensili", "JRC · archivio giornaliero"
-SOURCE_CHOICES = (PUBLIC, ARCHIVE, DEMO)
+DAILY = "ENTSOG · prelievi SRG giornalieri"
+SOURCE_CHOICES = (PUBLIC, DAILY, ARCHIVE, DEMO)
 RUN_ANALYSIS = "Avvia analisi di mercato AI"
 
 
@@ -141,7 +143,7 @@ def source_filters(page: str, *, lookback: bool = True) -> Selection:
                              help="Automatico usa il modello con l’errore medio più basso sugli stessi periodi storici.")
         save_assumptions(previous.model_copy(update={"model": model}))
     with ctrl[-1]:
-        if name == PUBLIC:
+        if name in (PUBLIC, DAILY):
             refresh = st.button("Aggiorna fonti", icon=":material/refresh:", width="stretch", key=f"{page}_refresh")
         else:
             refresh = False
@@ -152,12 +154,18 @@ def source_filters(page: str, *, lookback: bool = True) -> Selection:
         bundle = archive()
     else:
         try:
-            with st.spinner("Caricamento dei dati Eurostat e ARERA…"):
-                bundle, warning = load_monthly(database(), refresh=refresh)
+            if name == DAILY:
+                with st.spinner("Aggiornamento ENTSOG (finestre mensili; primo caricamento più lungo)…"):
+                    bundle, warning = load_daily(database(), refresh=refresh)
+            else:
+                with st.spinner("Caricamento dei dati Eurostat e ARERA…"):
+                    bundle, warning = load_monthly(database(), refresh=refresh)
             if warning:
                 st.warning(warning)
         except SourceUnavailable as error:
             st.error(str(error))
+            if name == DAILY:
+                st.button("Apri Eurostat + ARERA", on_click=_choose_source, args=(page, PUBLIC), key=f"{page}_monthly")
             left, right = st.columns(2)
             left.button("Apri archivio pubblico JRC", on_click=_choose_source, args=(page, ARCHIVE), key=f"{page}_archive")
             right.button("Usa dati di esempio", on_click=_choose_source, args=(page, DEMO), key=f"{page}_demo")
