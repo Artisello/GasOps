@@ -122,9 +122,15 @@ def run_workflow(
     reasoner: Reasoner | None = None,
     public_context: dict | None = None,
     planned_only: bool = False,
+    market_only: bool = False,
 ) -> Run:
     question = question.strip()[:600] or DAILY_BRIEFING
     defaults = plan(question, full)
+    if market_only:
+        # Never dispatch Italian normative/settlement tools for a foreign market.
+        defaults=[Call(Agent.MARKET,MarketArguments()),*[call for call in defaults if call.agent in (Agent.QUALITY,Agent.FORECAST)]]
+        full=False
+        planned_only=True
     editions = {title: pdf.digest for title, pdf in library.documents.items()}
     run = Run(
         question=question, source=context.bundle.origin, input_sha256=context.bundle.fingerprint,
@@ -132,7 +138,7 @@ def run_workflow(
                      "public_operational_context":public_context or {}, "full_briefing":full,
                      "source_period":context.facts.get("period")},
     )
-    required = set(Agent) if full else {call.agent for call in defaults} if len(defaults) == len(Agent) else set()
+    required = {call.agent for call in defaults} if market_only else set(Agent) if full else {call.agent for call in defaults} if len(defaults) == len(Agent) else set()
     report = execute(
         run, catalog(context, library, assumptions), defaults, required,
         lambda report: validate(report, context, assumptions), notify or (lambda _: None), reasoner, planned_only=planned_only,

@@ -23,6 +23,7 @@ from .regulatory import Library, read_local_pdfs
 from .store import Store
 from .visuals import chip, info, kind_tag, local_time, steps
 from .workflow import DAILY_BRIEFING, run_workflow
+from .country_analysis import requested_country, country_report, direct_market_question
 
 LOG = logging.getLogger(__name__)
 DEMO, PUBLIC, ARCHIVE = "Dati di esempio · giornalieri", "Eurostat + ARERA · mensili", "JRC · archivio giornaliero"
@@ -399,12 +400,26 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
     model = None if ai_policy == "off" else reasoner()
     if ai_policy == "required" and model is None:
         raise ModelUnavailable("AI non attiva. Nessuna domanda eseguita.")
+    country=requested_country(question) if not full else None
+    if country:
+        from .operational_sources import gie_key
+        try:
+            key=gie_key(st.secrets)
+        except (FileNotFoundError,KeyError):
+            key=gie_key()
+        with st.spinner("Consultazione delle fonti del mercato richiesto…"):
+            report=country_report(
+                database(),question,country,selection.model,model,gie_key=key,
+                include_gie=bool(st.session_state.get("briefing_gie",True)))
+        st.session_state["last_run"]=report
+        return report
     context = MarketContext(selection.bundle, selection.model, utc_now())
     status = st.status("Generazione del bollettino…" if full else "Analisi della domanda…", expanded=not compact)
     stage = status.empty()
     stage.html(steps(None, grid=True))
     try:
-        docs = library()
+        direct=not full and direct_market_question(question)
+        docs = Library(include_notes=False) if direct else library()
         from .briefing_context import collect
         from .operational_sources import gie_key
         include_gie=bool(st.session_state.get("briefing_gie",True))
@@ -435,7 +450,7 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
                 public_context.update(collect_market_sources(database(),selection.bundle,utc_now(),
                     st.session_state,terna=terna,clock=utc_now))
         report = run_workflow(
-            context, docs, assumptions(), question, full=full, reasoner=model,public_context=public_context,planned_only=planned_only,
+            context, docs, assumptions(), question, full=full, reasoner=model,public_context=public_context,planned_only=planned_only or direct,
             notify=lambda run: stage.html(steps(run, grid=True)),
         )
     except ValueError as error:

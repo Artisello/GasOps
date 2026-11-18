@@ -72,8 +72,13 @@ def _report(report:Run,selection):
           "Calcoli locali · AI non disponibile" if report.mode=="Deterministic fallback" else "Calcoli locali · senza risposta AI")
     st.caption(mode+" · "+local_time(report.finished_at))
     period=report.assumptions.get("source_period") or report.source.latest_period or "non indicato"
+    if report.assumptions.get("scope_unavailable"):
+        st.info(report.summary)
+        return
     st.text(f"{report.source.name} · {TIPI[report.source.kind]} · periodo {period}")
-    if not selection.bundle or report.input_sha256!=selection.bundle.fingerprint or report.assumptions.get("model")!=selection.model:
+    if report.assumptions.get("requested_country")=="DE":
+        st.caption("Perimetro della domanda: Germania · selezione automatica per questa analisi. Prezzo THE e dati di bilanciamento effettivi non integrati.")
+    if (not report.assumptions.get("requested_country") and (not selection.bundle or report.input_sha256!=selection.bundle.fingerprint)) or report.assumptions.get("model")!=selection.model:
         st.warning("Questo risultato usa dati o un modello previsionale diversi dalla selezione corrente. Esegui una nuova analisi per aggiornarlo.")
     for warning in report.warnings:
         st.warning(warning)
@@ -83,8 +88,8 @@ def _report(report:Run,selection):
         st.markdown("**Risposta AI**")
         ai_readout(report)
     else:
-        if report.mode!="Deterministic":
-            st.warning("Nessuna risposta AI generata. I calcoli sottostanti sono soltanto evidenze locali di riserva.")
+        if report.mode!="Deterministic" and not report.warnings:
+            st.caption("Nessuna risposta AI generata; risultati locali.")
         st.markdown("**Report di calcolo (senza AI)**")
         if not report.results:
             st.text(report.summary or "Nessun risultato disponibile.")
