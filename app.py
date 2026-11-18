@@ -16,7 +16,7 @@ st.set_page_config(
 load_dotenv(ROOT / ".env", override=False)
 st.html(ROOT / "gasops_app" / "theme.css")
 
-from gasops_app import dashboard, session, workbench, operations_page, risk_page, operational_sources_page
+from gasops_app import dashboard, session, workbench, operations_page, risk_page, operational_sources_page, bso_kpi_page
 from gasops_app.navigation import sidebar_navigation
 
 pages = [
@@ -28,6 +28,7 @@ pages = [
     st.Page(risk_page.risk_page, title="Simulazione rischi", icon=":material/query_stats:", url_path="risk"),
     st.Page(workbench.regulatory, title="Norme e documenti", icon=":material/menu_book:", url_path="regulatory"),
     st.Page(workbench.operations, title="Assistente AI", icon=":material/hub:", url_path="operations"),
+    st.Page(bso_kpi_page.page, title="KPI operativi", icon=":material/monitoring:", url_path="kpi"),
 ]
 current = st.navigation(pages, position="hidden")
 with st.sidebar:

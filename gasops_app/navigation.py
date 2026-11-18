@@ -3,7 +3,7 @@ import streamlit as st
 
 GROUPS=(
     ("Mercato",(1,2)),
-    ("Operazioni",(3,4)),
+    ("Operazioni",(8,3,4)),
     ("Analisi e strumenti",(5,6,7)),
 )
 
