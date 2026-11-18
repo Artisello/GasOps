@@ -339,11 +339,12 @@ def briefing_run() -> Run | None:
     return None
 
 
-def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool = False) -> Run | None:
+def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool = False,
+           persist: bool = True, planned_only: bool = False, compact: bool = False) -> Run | None:
     if selection.bundle is None:
         return None
     context = MarketContext(selection.bundle, selection.model, utc_now())
-    status = st.status("Generazione del bollettino…" if full else "Analisi della domanda…", expanded=True)
+    status = st.status("Generazione del bollettino…" if full else "Analisi della domanda…", expanded=not compact)
     stage = status.empty()
     stage.html(steps(None, grid=True))
     try:
@@ -361,7 +362,7 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
             with st.spinner("Consultazione delle fonti pubbliche selezionate…"):
                 public_context=collect(database(),context,utc_now(),key=key,include_gie=include_gie,include_weather=include_weather)
         report = run_workflow(
-            context, docs, assumptions(), question, full=full, reasoner=reasoner(),public_context=public_context,
+            context, docs, assumptions(), question, full=full, reasoner=reasoner(),public_context=public_context,planned_only=planned_only,
             notify=lambda run: stage.html(steps(run, grid=True)),
         )
     except ValueError as error:
@@ -372,13 +373,15 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
     st.session_state["last_run"] = report
     if full:
         st.session_state["last_briefing"] = report
-    try:
-        database().save(report)
-    except (OSError, RuntimeError, sqlite3.Error):
-        LOG.exception("Could not persist GasOps run")
-        st.warning("Esecuzione disponibile in questa sessione. Salvataggio nello storico locale non riuscito.")
-    for warning in report.warnings:
-        st.warning(warning)
+    if persist:
+        try:
+            database().save(report)
+        except (OSError, RuntimeError, sqlite3.Error):
+            LOG.exception("Could not persist GasOps run")
+            st.warning("Esecuzione disponibile in questa sessione. Salvataggio nello storico locale non riuscito.")
+    if not compact:
+        for warning in report.warnings:
+            st.warning(warning)
     state = "error" if any(step.status == "failed" for step in report.steps.values()) else "complete"
     status.update(label=f"{MODALITA[report.mode]} · {local_time(report.finished_at)}", state=state, expanded=False)
     return report

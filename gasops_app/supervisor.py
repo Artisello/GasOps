@@ -112,10 +112,11 @@ def execute(
     validate: Callable[[Run], list[Finding]],
     notify: Callable[[Run], None],
     reasoner: Reasoner | None = None,
+    *, planned_only: bool = False,
 ) -> Run:
     """Run the quality gate, bounded batches and a deterministic validation pass."""
     calls = {call.agent: call for call in defaults}
-    summary_only = bool(reasoner and getattr(reasoner,"summary_only_full",False) and required==set(tools))
+    summary_only = bool(reasoner and (planned_only or (getattr(reasoner,"summary_only_full",False) and required==set(tools))))
     if reasoner:
         run.mode, run.model = "LLM-assisted", reasoner.label
     if reasoner and not summary_only:

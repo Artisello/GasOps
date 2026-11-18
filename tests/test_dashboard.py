@@ -430,3 +430,44 @@ def test_document_desk_pdf_search_and_rag_without_model(monkeypatch,tmp_path):
     app.radio(key="desk_mode").set_value("Chiedi all’AI").run()
     assert not app.exception
     assert next(b for b in app.button if b.label=="Chiedi ai documenti").disabled
+
+
+
+def test_assistant_session_history_isolated_and_shortcut_works(monkeypatch,tmp_path):
+    from gasops_app import session, assistant_page
+    from gasops_app.models import Run
+    from gasops_app.data import synthetic
+    monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
+    monkeypatch.setenv("GASOPS_PDF_DIR",str(tmp_path))
+    monkeypatch.setattr(session,"reasoner",lambda:None)
+    monkeypatch.setattr(assistant_page,"reasoner",lambda:None)
+    monkeypatch.setattr(assistant_page,"analysis_label",lambda:"Genera bollettino di mercato")
+    db=session.database()
+    data=synthetic()
+    foreign=Run(question="DOMANDA_DI_UN_ALTRO_VISITATORE",source=data.origin,input_sha256=data.fingerprint,assumptions={})
+    db.save(foreign)
+    app=AppTest.from_string("from gasops_app.assistant_page import assistant_page\nassistant_page()",default_timeout=30)
+    app.session_state["selected_source"]=DEMO
+    app.run()
+    assert not app.exception
+    assert not any(foreign.question in e.value for e in app.text)
+    assert any("Il risultato apparirà qui" in e.value for e in app.caption)
+    app.button(key="assistant_starter_Consumi").click().run()
+    assert not app.exception
+    history=app.session_state[assistant_page.HISTORY]
+    assert len(history)==1 and Agent.MARKET in history[0].results
+    assert history[0].mode=="Deterministic"
+    assert len(db.recent())==1 and db.recent()[0].id==foreign.id
+    assert any("Calcoli locali · senza risposta AI" in e.value for e in app.caption)
+    app.button(key="assistant_starter_Stress +10%").click().run()
+    assert not app.exception
+    history=app.session_state[assistant_page.HISTORY]
+    assert len(history)==2 and Agent.SCENARIO in history[0].results
+    assert history[0].results[Agent.SCENARIO].values["changes"]["demand_pct"]=="10"
+    assert len(db.recent())==1
+    app.selectbox(key=assistant_page.SELECTED).set_value(history[1].id).run()
+    assert not app.exception
+    assert any(e.value==history[1].question for e in app.text)
+    app.button(key="assistant_clear").click().run()
+    assert not app.exception and assistant_page.HISTORY not in app.session_state
+    assert len(db.recent())==1
