@@ -166,8 +166,12 @@ def market_scores(state,now):
                     source=next((s for s in b.origin.companions if field in s.fields),source)
                 deadline=3 if daily else 93
                 status="Storico / da aggiornare" if age>deadline or source.refresh_failed else "Ultimo dato pubblicato"
-                if state.get(STATUS,{}).get("sources",{}).get(k,{}).get("status")=="Da aggiornare":
-                    status="Ultimo dato valido · aggiornamento sospeso"
+                attempt=state.get(STATUS,{}).get("sources",{}).get(k,{})
+                if attempt.get("status")=="Da aggiornare":
+                    from datetime import datetime
+                    at=datetime.fromisoformat(attempt["at"])
+                    if at>=source.retrieved_at:
+                        status="Ultimo dato valido · aggiornamento sospeso"
                 out.append(entry("Mercato",code,label,v.iloc[-1],unit,d.isoformat() if daily else d.strftime("%Y-%m"),
                     "SRG · perimetro parziale" if daily else "Italia",source.name,source.url or "",status,
                     "Acquisito "+source.retrieved_at.isoformat(timespec="minutes"),
