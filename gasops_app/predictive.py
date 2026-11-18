@@ -10,6 +10,7 @@ import pandas as pd
 from sklearn.linear_model import Ridge
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
+from .bayesian import posterior_regression
 
 SECTORS=("distribution_gwh","industry_gwh","power_gwh")
 MIN_TRAIN=45
@@ -17,7 +18,7 @@ HOLDOUT=28
 MIN_TEST=14
 GAS_LAG=2
 EXTERNAL_LAG=7
-MODELS=("weekly","autoregressive","multivariate")
+MODELS=("weekly","autoregressive","multivariate","bayesian_base","bayesian_multi")
 HORIZONS=(1,3,7)
 ALPHA=10.0
 
@@ -112,7 +113,19 @@ def _scores(records):
         error=np.array([r[model] for r in records])-actual
         scores[model]={"mae":float(np.abs(error).mean()),"rmse":float(np.sqrt((error**2).mean())),
                        "bias":float(error.mean()),"wape":float(100*np.abs(error).sum()/actual.sum()) if actual.sum()>0 else None}
+    for model in ("bayesian_base","bayesian_multi"):
+        covered=[r[model+"_low"]<=r["actual"]<=r[model+"_high"] for r in records]
+        scores[model]["coverage_80"]=float(100*np.mean(covered))
+        scores[model]["mean_width"]=float(np.mean([r[model+"_high"]-r[model+"_low"] for r in records]))
     return scores
+
+
+def _bayes(train,point,ar,multi):
+    out={}
+    for name,cols in (("bayesian_base",ar),("bayesian_multi",multi)):
+        p=posterior_regression(train,point,cols)
+        out.update({name:p["estimate"],name+"_low":p["low"],name+"_high":p["high"]})
+    return out
 
 
 def evaluate(frame,external=(),horizon=1,reference=None):
@@ -135,6 +148,7 @@ def evaluate(frame,external=(),horizon=1,reference=None):
            "train_target_end":(train.index.max()+pd.Timedelta(days=horizon)).date().isoformat(),
            "train_n":len(train),"actual":float(point["actual"].iloc[0]),"weekly":float(point["weekly"].iloc[0]),
            "autoregressive":_fit(train,point,ar),"multivariate":_fit(train,point,multi)}
+        r.update(_bayes(train,point,ar,multi))
         records.append(r)
     if len(records)<MIN_TEST:
         raise ValueError(f"Solo {len(records)}/{HOLDOUT} date valutabili; servono almeno {MIN_TEST} e {MIN_TRAIN} coppie di training per origine. Riduci le variabili o amplia lo storico.")
@@ -148,6 +162,7 @@ def evaluate(frame,external=(),horizon=1,reference=None):
                   "train_target_end":(train.index.max()+pd.Timedelta(days=horizon)).date().isoformat(),
                   "weekly":float(point["weekly"].iloc[0]),"autoregressive":_fit(train,point,ar),
                   "multivariate":_fit(train,point,multi)}
+        forecast.update(_bayes(train,point,ar,multi))
         # Empirical descriptive range, not calibrated coverage. No interval for
         # small samples and no auto-promoting a contender from this evaluation.
         if len(records)>=20:

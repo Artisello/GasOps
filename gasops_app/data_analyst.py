@@ -357,6 +357,15 @@ def forecast_facts(state,now=None,*,include_restricted=False):
     if saved and signatures and saved["signature"][0]==signatures and saved["signature"][1]==tuple(context_digest(b) for b in batches):
         r=saved["result"]
         facts.append({"id":"backtest_terna_context","source":"Terna + Snam Jarvis","url":PORTAL,"horizon":saved["signature"][2],"from":r["start"],"to":r["end"],"n":r["n"],"scores":r["scores"],"kind":saved["signature"][3],"scope":" / ".join(saved["signature"][4]),"limitation":"Acquisizioni anteriori al cutoff; singolo gruppo, consuntivo gas provvisorio, nessuna promozione."})
+    saved_bayes=state.get("snam_bayesian_v1")
+    if saved_bayes and signatures:
+        from .snam_bayesian import groups,signature
+        sig=saved_bayes["signature"]
+        options=groups(state)
+        keys=[k for k,*_ in sig[2]]
+        if sig[0]==signatures and all(k in options for k in keys) and signature(options,keys)==sig[2] and (include_restricted or not any(k.startswith("network_") for k in keys)):
+            r=saved_bayes["result"]
+            facts.append({"id":"backtest_bayesian","source":"Snam Jarvis · Bayes I.G.O.R.","url":JARVIS,"horizon":sig[1],"from":r["start"],"to":r["end"],"n":r["n"],"scores":r["scores"],"groups":r["groups"],"candidate":r["candidate"],"limitation":"Unità native, G−1 provvisorio; intervalli condizionali, nessuna promozione; vintage dichiarati."})
     if include_restricted:
         from .entsog_vintages import outlook as programmes
         fact=programmes(state,asof)

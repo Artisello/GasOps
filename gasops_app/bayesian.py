@@ -77,3 +77,25 @@ def predict(
         paths = np.expm1(paths) * exposure
     estimate, lower, upper = paths.clip(min=0)
     return estimate, lower, upper
+
+
+
+def posterior_regression(train, point, columns, *, target="actual", offset=0., residual=False):
+    """Empirical-Bayes regression; scaling and noise estimated on training only.
+
+    Conditional predictive interval, including observation noise and coefficient
+    uncertainty. Does not propagate uncertainty of exogenous input forecasts.
+    """
+    from sklearn.preprocessing import StandardScaler
+    scaler=StandardScaler()
+    x=scaler.fit_transform(train[columns])
+    z=scaler.transform(point[columns])
+    y=train[target].to_numpy(dtype=float)
+    if residual:y=y-train["demand"].to_numpy(dtype=float)
+    model=BayesianRidge().fit(x,y)
+    mean,sd=model.predict(z,return_std=True)
+    estimate=float(mean[0]+offset)
+    radius=float(QUANTILE_90*sd[0])
+    if not np.isfinite([estimate,radius]).all():
+        raise ValueError("Posterior non finito.")
+    return {"estimate":max(0.,estimate),"low":max(0.,estimate-radius),"high":max(0.,estimate+radius)}

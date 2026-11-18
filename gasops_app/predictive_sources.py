@@ -32,7 +32,29 @@ def session_features(state):
             if rows:
                 result["terna_"+metric]=Covariate(label,series_from_rows(rows,"gas_day","gwh"),"GWh elettrici","Italia",PORTAL,
                     "Agg. gas day sperimentale, timestamp assunto inizio intervallo · "+power["acquired"])
-    return result
+    # Use the versioned historical catalog rather than only the last 14-day
+    # download. Observed values only, no forward programmes in this lab.
+    from .data_analyst import catalog
+    from .models import utc_now
+    items,_=catalog(state,utc_now())
+    for key in ("terna_Thermal","terna_Wind","terna_Photovoltaic","terna_load","terna_residual_wind_solar"):
+        item=items.get(key)
+        if item is not None:
+            values=item.values.copy()
+            values.index=pd.to_datetime(values.index)
+            result[key]=Covariate(item.label,values,item.unit,item.scope,item.url,item.status+" · "+item.origin)
+    # Archived ENTSOG flows and capacity are distinct point/direction series.
+    from .entsog_vintages import STATE,SELECT,records
+    from .entsog_network import NAMES
+    batches=state.get(STATE,[])
+    point=state.get(SELECT)
+    if point:
+        for ind in ("Physical Flow","Allocation","Firm Technical","Firm Booked","Firm Available"):
+            rows=records(batches,point,ind,utc_now(),strict=True)
+            if rows:
+                result["entsog_"+ind]=Covariate(NAMES[ind]+" "+point,series_from_rows(rows,"day","gwh"),
+                    "GWh/d",point,ENTSOG,"Ultimo vintage acquisito; analisi retrospettiva")
+    return {k:v for k,v in result.items() if not v.values.dropna().empty}
 
 
 def historical_weather(store,frame,now,*,snapshot=None):
