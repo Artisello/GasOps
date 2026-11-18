@@ -103,3 +103,103 @@ def evaluate(versions,day,metric,now):
         scores={"n":len(a),"mae_raw":float(a[:,0].mean()),"mae_corrected":float(a[:,1].mean()),"coverage_80":float(100*a[:,2].mean())}
     return {**out,"n":len(pairs),"issued":issued.isoformat(),"first":str(pairs[0]["day"]),"last":str(pairs[-1]["day"]),
             "published":float(value),"scores":scores,"remaining_hours":(gas_end(day)-issued).total_seconds()/3600}
+
+
+# Study gates, not operating thresholds or Snam-approved acceptance criteria.
+MIN_IMPROVEMENT = .05
+MIN_COVERAGE = 70.
+
+
+def replay_times(versions, day, now):
+    """Only admissible SAS publications for an explicitly historical replay."""
+    if now.tzinfo is None:
+        raise ValueError("Timestamp senza offset.")
+    end=gas_end(day)
+    if end>now:
+        return []
+    f=versions.loc[versions.gas_day==day,["published_at","sas_gwh"]].copy()
+    f["published_at"]=pd.to_datetime(f.published_at,utc=True)
+    values=pd.to_numeric(f.sas_gwh,errors="coerce")
+    valid=f[np.isfinite(values)&(f.published_at<end-timedelta(minutes=90))&
+            (f.published_at>=gas_end(day-timedelta(days=1)))]
+    return sorted(set(t.to_pydatetime() for t in valid.published_at),reverse=True)
+
+
+def _sign_distribution(value,errors):
+    outcomes=np.asarray(errors,dtype=float)+value
+    return dict(negative=float(np.mean(outcomes<0)),
+                zero=float(np.mean(outcomes==0)),
+                positive=float(np.mean(outcomes>0)))
+
+
+def decision_support(versions,day,now,*,as_of=None):
+    """Decision support for the closing SAS publication, NOT realised imbalance.
+
+    The benchmark is the declared source SAS available at the issuance time.
+    Historical replay never uses later publications of the selected gas day.
+    """
+    if now.tzinfo is None or (as_of is not None and as_of.tzinfo is None):
+        raise ValueError("Timestamp senza offset.")
+    end=gas_end(day)
+    start=gas_end(day-timedelta(days=1))
+    historical=end<=now
+    if as_of is not None and (as_of>now or not historical or not start<=as_of<end):
+        raise ValueError("Replay consentito solo sul giorno gas concluso.")
+    cutoff=as_of if as_of is not None else now
+    result={"historical":historical,"status":"missing","ends_at":end.isoformat(),
+            "hours_to_close":max(0.,(end-cutoff).total_seconds()/3600)}
+    if not historical and not start<=now<end:
+        return result
+    if historical and as_of is None:
+        result["status"]="replay_required"
+        return result
+    f=versions.loc[versions.gas_day==day,["published_at","sas_gwh"]].copy()
+    f["published_at"]=pd.to_datetime(f.published_at,utc=True)
+    f=f[(f.published_at<=cutoff)&(f.published_at>=start)&(f.published_at<end)].sort_values("published_at")
+    if f.empty:return result
+    row=f.iloc[-1]
+    value=pd.to_numeric(row.sas_gwh,errors="coerce")
+    if not np.isfinite(value):return result
+    issued=row.published_at.to_pydatetime()
+    value=float(value)
+    result.update(published=value,issued=issued.isoformat(),age_hours=(cutoff-issued).total_seconds()/3600)
+    if cutoff-issued>timedelta(hours=3):
+        result["status"]="stale"
+        return result
+    if end-cutoff<=timedelta(minutes=90) or end-issued<=timedelta(minutes=90):
+        result["status"]="near_close"
+        return result
+    pairs=_pairs(versions,"sas_gwh",day,issued,cutoff)
+    result.update(n=len(pairs),required=MIN_TRAIN)
+    if len(pairs)<MIN_TRAIN:
+        result["status"]="insufficient"
+        return result
+    errors=[p["error"] for p in pairs]
+    candidate=_estimate(value,errors,"sas_gwh")
+    distribution=_sign_distribution(value,errors)
+    diagnostics=[]
+    for i in range(MIN_TRAIN,len(pairs)):
+        p=pairs[i]
+        training=errors[:i]
+        estimate=_estimate(p["base"],training,"sas_gwh")
+        probs=_sign_distribution(p["base"],training)
+        actual=p["closing"]
+        observed=(actual<0,actual==0,actual>0)
+        baseline=(p["base"]<0,p["base"]==0,p["base"]>0)
+        brier=sum((prob-float(obs))**2 for prob,obs in zip(probs.values(),observed))
+        raw_brier=sum((float(prob)-float(obs))**2 for prob,obs in zip(baseline,observed))
+        diagnostics.append((abs(p["error"]),abs(estimate["estimate"]-actual),
+                            estimate["low"]<=actual<=estimate["high"],brier,raw_brier))
+    result.update(candidate=candidate,distribution=distribution,first=str(pairs[0]["day"]),
+                  last=str(pairs[-1]["day"]),scores=None,status="unvalidated")
+    if len(diagnostics)<MIN_TEST:
+        return result
+    a=np.asarray(diagnostics,dtype=float)
+    raw,corrected,covered,brier,raw_brier=map(float,a.mean(axis=0))
+    improvement=(raw-corrected)/raw if raw>0 else None
+    result["scores"]={"n":len(a),"mae_raw":raw,"mae_corrected":corrected,
+                      "coverage_80":100*covered,"improvement":improvement,
+                      "brier":brier,"brier_raw":raw_brier}
+    result["status"]=("candidate" if improvement is not None and improvement>=MIN_IMPROVEMENT
+                      and 100*covered>=MIN_COVERAGE and brier<=raw_brier+1e-12 else "benchmark")
+    return result

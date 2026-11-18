@@ -62,3 +62,50 @@ def test_network_and_calendar_panels_empty_without_demo():
     assert len(app.metric)==0
     assert len(app.dataframe)==1
     assert len(app.dataframe[0].value)==6
+
+
+def _sas_history(day, issued, count=65, error=5.):
+    rows=[]
+    for i in range(count,0,-1):
+        d=day-timedelta(days=i)
+        end=gas_end(d)
+        rows.extend([{"gas_day":d,"published_at":end-(gas_end(day)-issued),"sas_gwh":20.},
+                     {"gas_day":d,"published_at":end-timedelta(minutes=30),"sas_gwh":20.+error}])
+    rows.append({"gas_day":day,"published_at":issued,"sas_gwh":-2.})
+    return pd.DataFrame(rows)
+
+
+def test_decision_support_candidate_and_distribution():
+    from gasops_app.intraday import decision_support
+    f=_sas_history(NOW.date(),NOW)
+    r=decision_support(f,NOW.date(),NOW)
+    assert r["status"]=="candidate"
+    assert r["candidate"]["estimate"]==3.
+    assert r["distribution"]=={"negative":0.,"zero":0.,"positive":1.}
+    assert r["scores"]["mae_raw"]==5 and r["scores"]["mae_corrected"]==0
+    assert r["scores"]["coverage_80"]==100 and r["scores"]["n"]==35
+
+
+def test_decision_support_conservative_gates():
+    from gasops_app.intraday import decision_support
+    d=NOW.date()
+    assert decision_support(_sas_history(d,NOW,20),d,NOW)["status"]=="insufficient"
+    assert decision_support(_sas_history(d,NOW,35),d,NOW)["status"]=="unvalidated"
+    assert decision_support(_sas_history(d,NOW,error=0),d,NOW)["status"]=="benchmark"
+    assert decision_support(_sas_history(d,NOW),d,NOW+timedelta(hours=4))["status"]=="stale"
+    near=gas_end(d)-timedelta(minutes=60)
+    assert decision_support(_sas_history(d,near),d,near)["status"]=="near_close"
+
+
+def test_decision_support_replay_no_future():
+    from gasops_app.intraday import decision_support,replay_times
+    d=NOW.date()
+    frame=_sas_history(d,NOW)
+    future=pd.DataFrame([{"gas_day":d,"published_at":gas_end(d)-timedelta(minutes=20),"sas_gwh":9999.}])
+    frame=pd.concat([frame,future],ignore_index=True)
+    tomorrow=gas_end(d)+timedelta(hours=1)
+    assert replay_times(frame,d,tomorrow)==[NOW]
+    assert decision_support(frame,d,tomorrow)["status"]=="replay_required"
+    r=decision_support(frame,d,tomorrow,as_of=NOW)
+    assert r["historical"] and r["published"]==-2. and r["candidate"]["estimate"]==3.
+    with pytest.raises(ValueError):decision_support(frame,d,NOW,as_of=NOW)

@@ -122,6 +122,9 @@ def _jarvis_panel(prefix="supply"):
         change=" · Δ "+numero(value-prior,1,signed=True)+" GWh dalla versione precedente" if value is not None and prior is not None else ""
         cards.append((label,value,"GWh",detail+change,1,""))
     kpi_grid([c for c in cards if c[1] is not None])
+    if prefix=="balancing":
+        from .intraday_page import decision_panel
+        decision_panel(versions,selected,now,prefix)
     st.caption("Evoluzione infragiornaliera (GWh)")
     frame=history.copy()
     frame["Pubblicazione"]=pd.to_datetime(frame["published_at"],utc=True).dt.tz_convert(ROME)
