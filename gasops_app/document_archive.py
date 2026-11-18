@@ -24,6 +24,7 @@ class ArchiveConfig:
     url: str
     publishable_key: str
     admin_id: str = ""
+    contributor_ids: tuple[str,...] = ()
 
     def __post_init__(self):
         if not re.fullmatch(r"https://[a-z0-9]+\.supabase\.co",self.url):
@@ -32,6 +33,8 @@ class ArchiveConfig:
             raise ValueError("Usa una chiave publishable, non una chiave segreta.")
         if self.admin_id:
             UUID(self.admin_id)
+        for user_id in self.contributor_ids:
+            UUID(user_id)
 
 
 @dataclass(frozen=True)
@@ -41,7 +44,10 @@ class AdminSession:
     user_id: str
 
     def valid(self,config):
-        return bool(self.token and self.user_id==config.admin_id and self.expires>time()+15)
+        return bool(self.token and self.user_id and (self.user_id==config.admin_id or self.user_id in config.contributor_ids) and self.expires>time()+15)
+
+    def is_admin(self,config):
+        return self.valid(config) and self.user_id==config.admin_id
 
 
 def object_name(name,data):
@@ -64,7 +70,7 @@ class Archive:
         headers={"apikey":self.config.publishable_key,**kwargs.pop("headers",{})}
         if session is not None:
             if not session.valid(self.config):
-                raise ArchiveError("Sessione amministratore scaduta. Accedi nuovamente.")
+                raise ArchiveError("Sessione scaduta. Accedi nuovamente.")
             headers["Authorization"]="Bearer "+session.token
         try:
             response=requests.request(method,self.config.url+path,headers=headers,
@@ -77,8 +83,8 @@ class Archive:
             raise ArchiveError("Archivio remoto temporaneamente non raggiungibile.") from None
 
     def login(self,email,password):
-        if not self.config.admin_id:
-            raise ArchiveError("Gestione amministratore non configurata.")
+        if not (self.config.admin_id or self.config.contributor_ids):
+            raise ArchiveError("Pubblicazione non configurata.")
         try:
             with self._request("POST","/auth/v1/token",params={"grant_type":"password"},
                                json={"email":email,"password":password}) as response:
@@ -90,7 +96,7 @@ class Archive:
                 raise ValueError("not administrator")
             return result
         except (ArchiveError,ValueError,KeyError,TypeError):
-            raise ArchiveError("Accesso amministratore non riuscito.") from None
+            raise ArchiveError("Accesso all’archivio non riuscito.") from None
 
     def list_keys(self,session=None):
         try:
@@ -141,7 +147,7 @@ class Archive:
 
     def publish(self,session,additions,local=()):
         if not session.valid(self.config):
-            raise ArchiveError("Accesso amministratore richiesto.")
+            raise ArchiveError("Account autorizzato richiesto.")
         current=self.read(session)
         existing=tuple((display_name(k),v) for k,v in current)
         retained,library,notices=extend_uploads(existing,additions,local)
@@ -162,7 +168,7 @@ class Archive:
         return count,notices+library.errors
 
     def remove(self,session,key):
-        if not session.valid(self.config):
+        if not session.is_admin(self.config):
             raise ArchiveError("Accesso amministratore richiesto.")
         if key not in self.list_keys(session):
             raise ArchiveError("Documento non più presente.")
