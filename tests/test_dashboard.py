@@ -327,7 +327,7 @@ def test_balancing_page_simple_and_complete(monkeypatch,tmp_path):
     monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
     app=AppTest.from_string("from gasops_app.workbench import balancing\nbalancing()",default_timeout=30).run()
     assert not app.exception
-    assert [tab.label for tab in app.tabs]==["Stato sistema","Controllo giornaliero","Sbilanciamento del partecipante","Scenario di mercato"]
+    assert [tab.label for tab in app.tabs]==["Scenario di mercato","Sbilanciamento del partecipante","Stato sistema","Controllo giornaliero"]
     assert any("Saldo energetico" in e.proto.body for e in app.get("html"))
     app.radio(key="balancing_mode").set_value("Completo").run()
     assert not app.exception
