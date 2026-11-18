@@ -117,3 +117,5 @@ class Run(BaseModel):
     summary: str = ""
     interpretation: str | None = None
     interpretation_sources: list[Agent] = Field(default_factory=list)
+    ai_sections: list[dict[str, JsonValue]] = Field(default_factory=list)
+    ai_usage: dict[str, int] = Field(default_factory=dict)
