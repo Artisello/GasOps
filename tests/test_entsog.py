@@ -55,3 +55,20 @@ def test_gas_day_dst_and_windows():
     assert _last_completed(NOW)==date(2026,11,17)
     assert _last_completed(NOW.replace(hour=2))==date(2026,11,16)
     assert list(month_windows(DAY,2))==[(date(2026,11,1),DAY),(date(2026,10,1),date(2026,10,31))]
+
+
+def test_request_uses_documented_point_keys_and_bounded_window(monkeypatch):
+    import gasops_app.entsog as en
+    calls=[]
+    def fake(store,**kwargs):
+        calls.append(kwargs)
+        raise en.SourceUnavailable("ENTSOG: tempo di risposta superato.")
+    monkeypatch.setattr(en,"retrieve",fake)
+    with pytest.raises(en.SourceUnavailable,match="tempo di risposta superato"):
+        en.load(None,now=NOW)
+    assert len(calls)==2
+    assert calls[0]["params"]["pointDirection"] == (
+        "IT-TSO-0001DIS-00005exit,IT-TSO-0001FNC-00006exit,IT-TSO-0001FNC-00005exit")
+    assert calls[0]["params"]["to"]=="2026-11-17"
+    assert calls[0]["timeout"]==(5,20)
+    assert calls[0]["diagnostics"] is True

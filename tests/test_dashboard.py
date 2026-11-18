@@ -41,3 +41,20 @@ def test_unavailable_public_feed_can_open_the_real_offline_archive(monkeypatch, 
     assert not app.exception
     assert app.selectbox(key="overview_dataset").value == ARCHIVE
     assert app.session_state["active_bundle"].origin.archive
+
+
+def test_operational_sources_visible_when_entsog_unavailable(monkeypatch,tmp_path):
+    from gasops_app.session import DAILY
+    monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
+    monkeypatch.delenv("GASOPS_GIE_API_KEY",raising=False)
+    monkeypatch.delenv("GASOPS_AGSI_API_KEY",raising=False)
+    def unavailable(*args,**kwargs):
+        raise SourceUnavailable("ENTSOG non disponibile")
+    monkeypatch.setattr("gasops_app.session.load_daily",unavailable)
+    app=AppTest.from_string("from gasops_app.dashboard import market\nmarket()",default_timeout=30)
+    app.session_state["selected_source"]=DAILY
+    app.run()
+    assert not app.exception
+    assert app.error[0].value=="ENTSOG non disponibile"
+    assert any(e.label=="Dati operativi e stoccaggi · facoltativo" for e in app.expander)
+    assert {"Jarvis","AGSI+","ALSI","IIP"} <= {tab.label for tab in app.tabs}

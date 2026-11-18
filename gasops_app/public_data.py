@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from datetime import datetime, timedelta
 import logging
+import json
 from typing import TypeVar
 
 import requests
@@ -31,6 +32,8 @@ def retrieve(
     refresh: bool = False,
     attempts: int = 2,
     headers: dict | None = None,
+    timeout: tuple[float, float] = (3, 5),
+    diagnostics: bool = False,
 ) -> T:
     now = utc_now()
     existing = store.cached(key)
@@ -42,11 +45,12 @@ def retrieve(
         except VALIDATION_ERRORS:
             LOG.warning("Cache non valida per %s", name)
 
+    reason = "nessun dato verificato"
     for attempt in range(attempts):
         try:
             # Never forward API credentials to a redirect target.
             secure = {"headers": headers, "allow_redirects": False} if headers else {}
-            with requests.get(url, params=params, timeout=(3, 5), stream=True, **secure) as response:
+            with requests.get(url, params=params, timeout=timeout, stream=True, **secure) as response:
                 if headers and 300 <= response.status_code < 400:
                     raise ValueError("Redirect autenticato non consentito")
                 response.raise_for_status()
@@ -58,7 +62,19 @@ def retrieve(
             text = body.decode("utf-8-sig")
             result = parse(text, now)
         except (requests.RequestException, *VALIDATION_ERRORS) as error:
-            LOG.warning("%s: tentativo %s fallito (%s)", name, attempt + 1, type(error).__name__)
+            # Do not expose URLs, response bodies, credentials, or raw exceptions.
+            if isinstance(error, requests.Timeout):
+                reason = "tempo di risposta superato"
+            elif isinstance(error, requests.HTTPError):
+                status = error.response.status_code if error.response is not None else None
+                reason = f"HTTP {status}" if status is not None else "errore HTTP"
+            elif isinstance(error, requests.RequestException):
+                reason = "errore di connessione"
+            elif isinstance(error, json.JSONDecodeError):
+                reason = "risposta non JSON"
+            else:
+                reason = "dati assenti o schema non valido"
+            LOG.warning("%s: tentativo %s fallito (%s)", name, attempt + 1, reason)
             continue
         store.cache(key, now.isoformat(), text)
         return result
@@ -69,4 +85,6 @@ def retrieve(
         except VALIDATION_ERRORS:
             LOG.warning("Nessuna cache verificata per %s", name)
 
+    if diagnostics:
+        raise SourceUnavailable(f"{name}: {reason}.")
     raise SourceUnavailable(f"{name} non disponibile. Puoi riprovare o aprire l’archivio JRC o i dati di esempio.")
