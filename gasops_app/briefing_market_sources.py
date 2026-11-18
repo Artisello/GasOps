@@ -159,6 +159,7 @@ def collect_market_sources(store,selected,now,state,*,terna=(),clock=utc_now):
         "Benchmark storici":benchmarks,
     }
     cache=dict(prior)
+    attempted=dict(prior.get("attempted",{}))
     out={}
     can_call=len(terna)==2 and all(terna)
     def terna_actual():
@@ -182,6 +183,17 @@ def collect_market_sources(store,selected,now,state,*,terna=(),clock=utc_now):
     else:out["Terna · elettricità"]=_missing("Terna · elettricità","Credenziali Terna non configurate.")
     if can_call or prior.get("forward"):tasks["Terna · outlook"]=terna_forecast
     else:out["Terna · outlook"]=_missing("Terna · outlook","Credenziali Terna non configurate.")
+    for name in ("Terna · elettricità","Terna · outlook"):
+        if name not in tasks:continue
+        at=attempted.get(name)
+        if at and timedelta(0)<=now-at<timedelta(minutes=1):
+            snapshot=prior.get("power" if name=="Terna · elettricità" else "forward")
+            if not snapshot or not fresh(snapshot):
+                tasks.pop(name)
+                out[name]=_missing(name,"Aggiornamento appena tentato; riprovare dopo un minuto.")
+        elif name in tasks:
+            attempted[name]=now
+    cache["attempted"]=attempted
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures={name:pool.submit(fn) for name,fn in tasks.items()}
         for name,future in futures.items():

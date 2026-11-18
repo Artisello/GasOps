@@ -20,7 +20,7 @@ the cited editions and raise ambiguities for human review. Do not produce tradin
 infrastructure instructions. Refer to the executed agents and their supplied evidence."""
 SUMMARY = """Return a JSON object with "interpretation" (up to 3 concise sentences in Italian), and
 "references" (a list of executed tool names). Interpret only the provided results and explicitly supplied public_operational_context. Prioritize material changes, uncertainty, and what to monitor next. Identify source names, dates and units when available, never infer missing operational data or treat a message count as lost capacity. Distinguish monthly observations from daily context and scenarios. Leave numerical
-calculation and rule resolution to the tools. For regulatory explanations, refer to the supplied
+calculation and rule resolution to the tools. Use dates, units, scopes and availability of all relevant public_operational_context sources; compare them only when comparable. Distinguish historical benchmarks and proxies from current observations and do not infer causality. For regulatory explanations, refer to the supplied
 document and PDF page. State when the evidence cannot answer the question."""
 
 

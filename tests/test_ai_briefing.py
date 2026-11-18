@@ -56,7 +56,10 @@ def test_groq_http_briefing_context_and_structured_probe(monkeypatch):
     config=LLMConfig("openai/gpt-oss-120b","https://api.groq.com/openai/v1","fixture")
     assert CompatibleReasoner(config,reserve=lambda:True).probe()
     ctx=MarketContext(synthetic(),"Seasonal regression",NOW)
-    data={"AGSI+":{"source":"Gas Infrastructure Europe (GIE) – AGSI+","values":{"stock_twh":70.}}}
+    data={"AGSI+":{"source":"Gas Infrastructure Europe (GIE) – AGSI+","values":{"stock_twh":70.}},
+          "ENTSOG · SRG":{"source":"ENTSOG","period":"2026-11-16","values":{"power_gwh":300.0}},
+          "Terna · elettricità":{"source":"Terna","values":{"Thermal":{"value":200.0,"period":"2026-11-16"}}},
+          "ACER · GNL":{"source":"ACER","values":{"eu":{"value":42.0,"period":"2026-11-16"}}}}
     run=run_workflow(ctx,Library(),Assumptions(),full=True,
                      reasoner=CompatibleReasoner(config,reserve=lambda:True),public_context=data)
     assert run.mode=="LLM-assisted" and run.interpretation and len(run.results)==6
@@ -64,6 +67,7 @@ def test_groq_http_briefing_context_and_structured_probe(monkeypatch):
     assert len(seen)==2 and seen[-1]["response_format"]=={"type":"json_object"}
     sent=seen[-1]["messages"][-1]["content"]
     assert "stock_twh" in sent and "Gas Infrastructure Europe" in sent
+    assert all(x in sent for x in ("power_gwh","Thermal","ACER","2026-11-16"))
     assert "EXECUTIVE_BRIEFING_V1" in sent and "Priorità di verifica" in sent
     assert "EXECUTIVE_BRIEFING_V1" not in seen[0]["messages"][-1]["content"]
     assert seen[-1]["max_completion_tokens"]==3072
@@ -156,3 +160,39 @@ def test_executive_readout_keeps_observed_and_forecast_separate():
     assert "indisponibilità" in priorities[0]
     run.results[Agent.FORECAST].values["forecast"]["points"][0]["period"]="2027-01-01"
     assert outlook_delta(run) is None
+
+
+def test_multi_source_acquisition_is_bounded_and_never_uses_private_session(monkeypatch):
+    from types import SimpleNamespace
+    from gasops_app import briefing_market_sources as m
+    from gasops_app.models import Kind
+    selected=SimpleNamespace(origin=SimpleNamespace(grain="monthly",kind=Kind.HISTORICAL,archive=False))
+    daily=SimpleNamespace(origin=SimpleNamespace(grain="daily"))
+    calls=[]
+    def fetch_daily(store,*,now,months):
+        calls.append(months)
+        return daily,None
+    monkeypatch.setattr(m,"load_daily",fetch_daily)
+    monkeypatch.setattr(m,"load_monthly",lambda *_: (_ for _ in ()).throw(AssertionError("selected source must be reused")))
+    monkeypatch.setattr(m,"market_context",lambda bundle,now:{"source":bundle.origin.grain,"status":"available","values":{"demand_gwh":100}})
+    monkeypatch.setattr(m,"load_lng",lambda store:SimpleNamespace(rows=[{"date":"2026-11-16","eu":42}],failed=False,acquired=NOW))
+    monkeypatch.setattr(m,"benchmarks",lambda:{"source":"historical","status":"available","kind":"historical benchmark"})
+    state={"private_pdf":"SECRET_FIXTURE","jarvis_native_v1":{"frame":"PRIVATE_FIXTURE"}}
+    result=m.collect_market_sources(None,selected,NOW,state,clock=lambda:NOW)
+    assert calls==[2]
+    assert result["ENTSOG · SRG"]["values"]["demand_gwh"]==100
+    assert result["ACER · GNL"]["values"]["eu"]["value"]==42
+    assert result["Terna · outlook"]["status"]=="unavailable"
+    assert "SECRET_FIXTURE" not in json.dumps(result) and "PRIVATE_FIXTURE" not in json.dumps(result)
+    assert m.collect_market_sources(None,synthetic(),NOW,{},clock=lambda:NOW)=={}
+
+
+def test_terna_context_only_uses_complete_non_conflicting_observations():
+    from gasops_app.briefing_market_sources import power_context
+    rows=[{"gas_day":"2026-11-16","metric":"Thermal","gwh":123,"valid_slots":24,"expected_slots":24},
+          {"gas_day":"2026-11-16","metric":"load","gwh":999,"valid_slots":23,"expected_slots":24},
+          {"gas_day":"2026-11-16","metric":"Wind","gwh":20,"valid_slots":24,"expected_slots":24},
+          {"gas_day":"2026-11-16","metric":"Wind","gwh":30,"valid_slots":24,"expected_slots":24}]
+    data=power_context({"acquired":NOW.isoformat(),"rows":rows},NOW)
+    assert data["values"]=={"Thermal":{"period":"2026-11-16","value":123.0}}
+    assert data["status"]=="available" and "elettrici" in data["unit"]

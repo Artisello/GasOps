@@ -123,7 +123,7 @@ def _report(report:Run,selection):
             if public:
                 st.markdown("**Fonti operative aggiuntive**")
                 for name,source in public.items():
-                    st.text(str(name)+" · "+str(source.get("status","non indicato"))+" · "+str(source.get("gas_day") or source.get("acquired") or "data non indicata"))
+                    st.text(str(name)+" · "+str(source.get("status","non indicato"))+" · "+str(source.get("gas_day") or source.get("period") or source.get("acquired") or "data non indicata"))
                 st.json(public,expanded=False)
     reviewed=_review(report)
     with st.expander("Traccia tecnica e ipotesi"):
