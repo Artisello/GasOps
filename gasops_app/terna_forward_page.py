@@ -59,7 +59,7 @@ def panel():
         st.line_chart(f,y_label="GWh elettrici/giorno gas")
         st.dataframe(f, width="stretch")
     elif batches:
-        st.caption("Nessuna coppia previsionale recente completa. Consulta le acquisizioni storiche nell’archivio.")
+        st.caption("Nessuna previsione recente completa per singola metrica. Consulta le acquisizioni storiche nell’archivio.")
         with st.expander("Ultima acquisizione"):
             st.dataframe(batches[-1]["rows"],hide_index=True,width="stretch")
     else:st.caption("Acquisisci le previsioni per alimentare l’archivio e il modello Snam.")

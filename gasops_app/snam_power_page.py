@@ -55,5 +55,5 @@ def panel(annual,horizon):
         for c in ["Consuntivo provvisorio",*LABELS.values()]:chart[c]/=1000
         st.line_chart(chart,x="target",y=["Consuntivo provvisorio",*LABELS.values()],y_label="Migliaia di unità native")
         st.dataframe([{"Modello":LABELS[k],**{m:v/1000 if m!="wape" and v is not None else v for m,v in r["scores"][k].items()}} for k in MODELS],hide_index=True,width="stretch")
-        st.warning("Consuntivo G−1 provvisorio; unità native e versione Snam non certificate. Terna orari assunti inizio intervallo; Thermal include tutti i combustibili. Timestamp di importazione dichiarati, non autenticati. Nessun uso operativo automatico.")
+        st.caption("Consuntivo G−1 provvisorio; unità native e versione Snam non certificate. Terna orari assunti inizio intervallo. Timestamp di importazione dichiarati, non autenticati. Nessun uso operativo automatico.")
         st.download_button("CSV confronto Power–Gas",f.assign(horizon=horizon,strict=strict,include_load=load,power_lag=0 if use_forward else LAG,signal="MSD1 forecast" if use_forward else "lagged observed").to_csv(index=False),"igor-power-gas-backtest.csv","text/csv",key="power_forecast_export")

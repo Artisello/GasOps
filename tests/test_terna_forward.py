@@ -42,3 +42,10 @@ def test_forward_cutoff_and_no_backfill_leakage():
     late={**b,"acquired":"2026-11-18T15:01:00+00:00"}
     result,cols=join_forward(d,[late],pd.Timestamp("2026-11-20"))
     assert result[cols].isna().all(axis=None)
+
+
+def test_partial_outlook_remains_visible_without_proxy():
+    b={"acquired":NOW.isoformat(),"first":str(DAY),"last":str(DAY),"session":"MSD1","rows":parse(payload("load"),"load",DAY,DAY,NOW)}
+    fact=outlook({STATE:[b]},NOW)
+    assert fact["points"]==[{"day":str(DAY),"load":168.0}]
+    assert paired(b)==[]

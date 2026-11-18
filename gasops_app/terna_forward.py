@@ -46,6 +46,7 @@ def parse(payload,kind,first,last,acquired):
     start,end=_start(first),_start(last+timedelta(days=1))
     invalid=set()
     for row in raw:
+        if not isinstance(row,dict):continue
         if row.get("date_tz")!="Europe/Rome" or row.get("session_type")!=SESSION:
             continue
         zone=ZONES.get(re.sub(r"[^a-z]","",str(row.get("zone","")).lower()))
@@ -152,11 +153,14 @@ def outlook(state,now):
     # Latest acquisition containing forward data. Do not silently use earlier run.
     if not eligible:return None
     b=eligible[-1]
-    points=[r for r in paired(b) if r["day"]>=today]
+    by={}
+    for r in b["rows"]:
+        if r["day"]>=today:by.setdefault(r["day"],{})[r["metric"]]=r["gwh"]
+    points=[{"day":d,**v,**({"load_minus_wind_gwh":v["load"]-v["wind"]} if set(v)==set(DOCS) else {})} for d,v in sorted(by.items())]
     if not points:return None
     return {"id":"terna_forward","source":"Terna · MSD1","url":PORTAL,"horizon":2,
         "from":points[0]["day"],"to":points[-1]["day"],"n":len(points),"acquired":b["acquired"],"points":points,
-        "limitation":"Carico meno eolico previsto, non residual load completo; niente fotovoltaico, import o altre fonti. Dati zonali completi, timestamp assunti inizio intervallo; versioni all'acquisizione."}
+        "limitation":"Carico meno eolico previsto, non residual load completo; niente fotovoltaico, import o altre fonti. Metriche disponibili anche separatamente; proxy soltanto su coppie complete. Dati zonali completi, timestamp assunti inizio intervallo; versioni all'acquisizione."}
 
 
 def join_forward(samples,batches,asof):
