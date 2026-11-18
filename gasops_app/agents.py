@@ -18,12 +18,14 @@ from .models import Agent, Citation, Finding, Kind, Result
 from .quality import Inspection, inspect
 from .regulatory import Library, REGISTER, SETTLEMENT_NOTE
 from .supervisor import Arguments, Tool
+from .risk import RiskSettings, simulate
 
 
 class Assumptions(BaseModel):
     model: ModelChoice = AUTOMATIC
     settlement: SettlementInput = Field(default_factory=SettlementInput)
     stress: ScenarioInput = Field(default_factory=ScenarioInput)
+    risk: RiskSettings = Field(default_factory=RiskSettings)
     cancellation_notice_days: int = Field(default=7, ge=0, le=366)
 
 
@@ -229,7 +231,7 @@ def _unique_citations(citations: list[Citation]) -> list[Citation]:
     return list({(c.document, c.page, c.evidence): c for c in citations}.values())
 
 
-def _scenario(context: MarketContext, assumptions: ScenarioInput, args: ScenarioArguments) -> Result:
+def _scenario(context: MarketContext, assumptions: ScenarioInput, args: ScenarioArguments, risk: RiskSettings | None = None) -> Result:
     changes = ScenarioInput.model_validate({
         **assumptions.model_dump(), **args.model_dump(exclude_none=True),
     })
@@ -253,13 +255,19 @@ def _scenario(context: MarketContext, assumptions: ScenarioInput, args: Scenario
     summary += f" e la copertura è {numero(stress.coverage_pct)}%." if stress.coverage_pct is not None else "."
     if delta is not None:
         summary += f" Variazione indicativa del valore del saldo {numero(delta, 0, signed=True)} €."
+    probabilistic = simulate(float(stress.demand_gwh), float(stress.supply_gwh),
+                            None if stress.price_eur_mwh is None else float(stress.price_eur_mwh), risk).summary
+    summary += f" Monte Carlo illustrativo: probabilità di deficit {numero(100*probabilistic['probability_deficit'],2)}%."
+    tails = probabilistic["gross_cost_tail_eur"]
+    if tails is not None:
+        summary += f" CVaR 95% del costo lordo teorico: {numero(tails['95']['cvar'],0)} €; non è settlement."
     return Result(agent=Agent.SCENARIO, summary=summary, evidence=_sources(context, price=delta is not None),
                   values={"kind": Kind.SIMULATION.value, "inputs": case.model_dump(mode="json"),
                           "baseline_kind": context.bundle.origin.kind.value, "baseline_period": facts["period"],
                           "baseline_grain": context.bundle.origin.grain,
                           "changes": changes.model_dump(mode="json"), "base": base.model_dump(mode="json"),
                           "stress": stress.model_dump(mode="json"),
-                          "gap_value_delta_eur": str(delta) if delta is not None else None})
+                          "gap_value_delta_eur": str(delta) if delta is not None else None, "monte_carlo": probabilistic})
 
 
 def catalog(context: MarketContext, library: Library, assumptions: Assumptions) -> dict[Agent, Tool]:
@@ -276,6 +284,6 @@ def catalog(context: MarketContext, library: Library, assumptions: Assumptions) 
                                RegulationArguments,
                                lambda args: regulation_result(library, args, assumptions.cancellation_notice_days)),
         Agent.SCENARIO: Tool("Simula domanda, offerta, stoccaggio e variazioni del prezzo. "
-                             "Usa gli scostamenti indicati nella richiesta o le ipotesi salvate.",
-                             ScenarioArguments, lambda args: _scenario(context, assumptions.stress, args)),
+                             "Calcola inoltre rischio Monte Carlo, VaR e CVaR 95/99. Usa gli scostamenti indicati nella richiesta o le ipotesi salvate.",
+                             ScenarioArguments, lambda args: _scenario(context, assumptions.stress, args, assumptions.risk)),
     }

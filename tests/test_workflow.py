@@ -42,6 +42,10 @@ def test_complete_offline_workflow_is_traceable(context, monkeypatch, tmp_path):
     assert run.results[Agent.SETTLEMENT].values["cash_flow_eur"] == "-50400.00"
     stress = run.results[Agent.SCENARIO].values["stress"]
     assert float(stress["coverage_pct"]) == pytest.approx(87.82, abs=0.02)
+    mc = run.results[Agent.SCENARIO].values["monte_carlo"]
+    assert mc["settings"]["simulations"] == 10000
+    assert 0 <= mc["probability_deficit"] <= 1
+    assert mc["gross_cost_tail_eur"]["95"]["cvar"] >= mc["gross_cost_tail_eur"]["95"]["var"]
 
     store = Store(tmp_path / "state.sqlite3")
     store.save(run)
@@ -134,3 +138,8 @@ def test_llm_tool_protocol_routes_and_retrieves_in_bounded_rounds(context):
     assert run.results[Agent.SCENARIO].values["changes"]["demand_pct"] == "12"
     assert run.interpretation_sources == [Agent.SCENARIO, Agent.REGULATORY]
     assert Agent.MARKET not in run.results
+
+
+def test_cvar_routes_to_scenario(context):
+    run = run_workflow(context, Library(), Assumptions(), "Calcola CVaR e Monte Carlo")
+    assert "monte_carlo" in run.results[Agent.SCENARIO].values

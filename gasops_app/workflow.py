@@ -20,7 +20,7 @@ INTENTS = {
     Agent.SETTLEMENT: r"settlement|regolazione|exposure|esposizione|cash.flow|flusso di cassa|fattura|buy.*sell",
     Agent.REGULATORY: r"regolament|regulatory|network code|codice|piombino|panigaglia|discarica|coefficient"
                       r"|cancellation|inconsisten|incongruenz|density|densità|denominat|normativ",
-    Agent.SCENARIO: r"what if|what happens|scenario|stress|simula|se la domanda|aumento|aumenta|increases by|decreases by|\d ?%",
+    Agent.SCENARIO: r"what if|what happens|scenario|stress|monte carlo|cvar|\\bvar\\b|expected shortfall|probabilità di deficit|simula|se la domanda|aumento|aumenta|increases by|decreases by|\d ?%",
 }
 
 
@@ -44,7 +44,7 @@ def plan(question: str, full: bool) -> list[Call]:
     }
     if not briefing and Agent.REGULATORY in targets and re.search(r"define|defini[sz]|meaning", question, re.I):
         targets.discard(Agent.FORECAST)
-    if Agent.SETTLEMENT in targets and not briefing and not re.search(r"\d+\s*%|demand|domanda|storage|stoccaggio", question, re.I):
+    if Agent.SETTLEMENT in targets and not briefing and not re.search(r"\d+\s*%|demand|domanda|storage|stoccaggio|monte carlo|cvar|\\bvar\\b|expected shortfall", question, re.I):
         targets.discard(Agent.SCENARIO)
     if not targets:
         targets = {Agent.MARKET}
