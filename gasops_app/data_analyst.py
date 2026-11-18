@@ -264,7 +264,7 @@ def forecast_facts(state):
 
 
 def evidence_ids(payload):
-    return {x["id"] for key in ("series","correlations","benchmarks","forecasts") for x in payload.get(key,[])}
+    return {x["id"] for key in ("series","correlations","benchmarks","forecasts","statistics") for x in payload.get(key,[])}
 
 
 def can_share(items,keys):

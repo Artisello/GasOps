@@ -23,6 +23,13 @@ def panel():
     if not items:
         st.info("Nessuna serie disponibile.")
         return
+    model=reasoner()
+    if model:
+        mode=st.radio("Selezione fonti e strumenti",["Automatica (AI)","Manuale"],horizontal=True,key="analyst_strategy")
+        if mode=="Automatica (AI)":
+            from .autonomous_analyst_page import panel as autonomous_panel
+            autonomous_panel(items,model,now)
+            return
     defaults=[k for k in ("snam_demand","terna_Thermal","terna_load","jarvis_withdrawal_definitivo") if k in items]
     if not defaults:defaults=["jrc_demand_gwh"] if "jrc_demand_gwh" in items else [next(iter(items))]
     keys=st.multiselect("Serie da interrogare",list(items),default=defaults,
@@ -36,7 +43,6 @@ def panel():
     first=a.date_input("Dal",value=date(2000,1,1),min_value=date(1990,1,1),max_value=now.astimezone(ROME).date(),key="analyst_from")
     last=b.date_input("Al",value=now.astimezone(ROME).date(),min_value=date(1990,1,1),max_value=now.astimezone(ROME).date(),key="analyst_to")
     include=st.checkbox("Includi benchmark pubblici e ultimi backtest compatibili",value=True,key="analyst_context")
-    model=reasoner()
     if model:
         st.caption("AI attiva · "+model.config.model)
     else:

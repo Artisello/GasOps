@@ -289,3 +289,7 @@ Norme e documenti → Compliance: collegamenti a evidenze letterali dei PDF pubb
 ## Analista dati integrato
 
 Assistente AI → Analista dati: confronta serie pubbliche caricate, statistiche, correlazioni, benchmark e backtest con risposta AI opzionale. [Metodo e limiti](docs/DATA_ANALYST.md).
+
+### Pianificazione analitica AI
+
+Assistente AI → Analista dati → Automatica (AI): il modello seleziona fonti, date e strumenti tra quelli consentiti; Python verifica il piano, calcola le evidenze e le rende consultabili. [Metodo e limiti](docs/AUTONOMOUS_ANALYST.md).
