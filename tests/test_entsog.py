@@ -72,3 +72,26 @@ def test_request_uses_documented_point_keys_and_bounded_window(monkeypatch):
     assert calls[0]["params"]["to"]=="2026-11-17"
     assert calls[0]["timeout"]==(5,20)
     assert calls[0]["diagnostics"] is True
+
+
+def test_live_style_metadata_off_by_one_flagged_without_filling_missing():
+    rows=[record(p) for p in POINTS]
+    next_day=DAY+timedelta(days=1)
+    rows.append(record(next(iter(POINTS)),next_day))
+    meta={"count":4,"total":5,"offset":0,"limit":500}
+    month=parse_month({"meta":meta,"operationalData":rows},DAY,next_day,NOW)
+    bundle=combine([month],DAY,next_day)
+    assert inspect(bundle,NOW).usable["demand_gwh"].isna().sum()==1
+    assert "metadati_totale_discordante" in bundle.rows.iloc[0]["source_flag"]
+    for bad in ({"count":4,"total":20,"offset":0},{"count":3,"total":5,"offset":0},
+                {"count":4,"total":5,"offset":1},{"total":5}):
+        with pytest.raises(ValueError):
+            parse_month({"meta":bad,"operationalData":rows},DAY,next_day,NOW)
+
+
+def test_controlled_diagnostics_distinguish_empty_from_incomplete():
+    from gasops_app.public_data import SourceSchemaError
+    with pytest.raises(SourceSchemaError,match="Nessun record"):
+        parse_month({"operationalData":[]},DAY,DAY,NOW)
+    with pytest.raises(SourceSchemaError,match="campi obbligatori"):
+        parse_month({"operationalData":[{}]},DAY,DAY,NOW)

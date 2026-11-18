@@ -14,7 +14,7 @@ import pandas as pd
 
 from .data import ROME, Bundle, frame_bundle, utc_starts
 from .models import Kind, Origin, utc_now
-from .public_data import SourceUnavailable, retrieve
+from .public_data import SourceUnavailable, SourceSchemaError, retrieve
 from .store import Store
 
 URL = "https://transparency.entsog.eu/api/v1/operationaldatas"
@@ -45,11 +45,16 @@ def _start(day):
 
 
 def gas_timestamp(value):
-    stamp = datetime.fromisoformat(value.replace("Z","+00:00"))
+    try:
+        if not isinstance(value,str):
+            raise ValueError("not a timestamp")
+        stamp = datetime.fromisoformat(value.replace("Z","+00:00"))
+    except ValueError as exc:
+        raise SourceSchemaError("Timestamp ENTSOG non riconosciuto") from exc
     if stamp.tzinfo is not None:
         local = stamp.astimezone(ROME)
         if local.time() != time(6):
-            raise ValueError("Intervallo ENTSOG non allineato al giorno gas italiano.")
+            raise SourceSchemaError("Intervallo ENTSOG non allineato al giorno gas italiano.")
         return local.date(), stamp.astimezone(timezone.utc), False
     # A naive timestamp is accepted only if the 06:00 local or equivalent UTC
     # convention uniquely matches the Italian gas-day boundary. Preserve a flag.
@@ -57,30 +62,54 @@ def gas_timestamp(value):
     expected = _start(day)
     if stamp.time() == time(6) or stamp == expected.replace(tzinfo=None):
         return day, expected, True
-    raise ValueError("Timestamp senza offset ENTSOG non riconducibile alle 06:00.")
+    raise SourceSchemaError("Timestamp senza offset ENTSOG non riconducibile alle 06:00.")
 
 
 def parse_month(payload: dict, first: date, last: date, retrieved_at: datetime,
                 *, cached=False, failed=False) -> Month:
     if not isinstance(payload,dict):
-        raise ValueError("Risposta ENTSOG non valida.")
+        raise SourceSchemaError("Risposta ENTSOG non valida.")
     items = payload.get("operationalData",payload.get("operationaldatas"))
-    if not isinstance(items,list) or not items or len(items)>=500:
-        raise ValueError("Risposta ENTSOG vuota o potenzialmente troncata.")
+    if not isinstance(items,list):
+        raise SourceSchemaError("Array operationalData assente")
+    if not items:
+        raise SourceSchemaError("Nessun record restituito")
+    if len(items)>=500:
+        raise SourceSchemaError("Limite risposta raggiunto (500 record)")
     meta=payload.get("meta") or {}
-    if isinstance(meta,dict) and meta.get("total") is not None and int(meta["total"])>len(items):
-        raise ValueError("Risposta ENTSOG incompleta.")
+    if not isinstance(meta,dict):
+        raise SourceSchemaError("Metadati ENTSOG non validi")
+    metadata_warning=False
+    try:
+        count=int(meta["count"]) if meta.get("count") is not None else None
+        total=int(meta["total"]) if meta.get("total") is not None else None
+        offset=int(meta.get("offset",0))
+    except (ValueError,TypeError,OverflowError) as exc:
+        raise SourceSchemaError("Conteggi ENTSOG non validi") from exc
+    if offset!=0 or (count is not None and count!=len(items)):
+        raise SourceSchemaError("Conteggio o offset di pagina incoerente")
+    if total is not None and total!=len(items):
+        # Observed API example: count 7, total 8 despite a nonbinding limit.
+        # Only accept the one-record discrepancy with an exact count and
+        # offset=0; flag every accepted day. Never invent the missing record.
+        if total==len(items)+1 and count==len(items):
+            metadata_warning=True
+        else:
+            raise SourceSchemaError("Risposta ENTSOG incompleta: conteggio totale incoerente")
     grouped, notes = {}, {}
     for item in items:
+        required={"operatorKey","pointKey","directionKey","indicator","periodType","unit","periodFrom","periodTo"}
+        if not isinstance(item,dict) or not required<=item.keys():
+            raise SourceSchemaError("Record ENTSOG privo di uno o più campi obbligatori")
         point = (str(item["operatorKey"])+str(item["pointKey"])+str(item["directionKey"])).lower()
         if point not in POINTS or item["indicator"]!="Physical Flow" or str(item["periodType"]).lower()!="day":
-            raise ValueError("Punto, indicatore o granularità ENTSOG inattesi.")
+            raise SourceSchemaError("Punto, indicatore o granularità ENTSOG inattesi.")
         if str(item["unit"]).strip().lower()!="kwh/d":
-            raise ValueError("Unità ENTSOG non riconosciuta; atteso kWh/d.")
+            raise SourceSchemaError("Unità ENTSOG non riconosciuta; atteso kWh/d.")
         day,start,naive=gas_timestamp(item["periodFrom"])
         end_day,end,end_naive=gas_timestamp(item["periodTo"])
         if end_day!=day+timedelta(days=1) or end!=_start(end_day) or start!=_start(day):
-            raise ValueError("Intervallo ENTSOG non giornaliero.")
+            raise SourceSchemaError("Intervallo ENTSOG non giornaliero.")
         if not first<=day<=last:
             continue
         key=(day,POINTS[point])
@@ -90,14 +119,19 @@ def parse_month(payload: dict, first: date, last: date, retrieved_at: datetime,
             number=None
         else:
             if isinstance(value,bool):
-                raise ValueError("Valore ENTSOG non numerico.")
-            number=float(value)
+                raise SourceSchemaError("Valore ENTSOG non numerico.")
+            try:
+                number=float(value)
+            except (ValueError,TypeError,OverflowError) as exc:
+                raise SourceSchemaError("Valore di flusso ENTSOG non numerico") from exc
             if not math.isfinite(number) or number<0:
-                raise ValueError("Flusso ENTSOG non valido.")
+                raise SourceSchemaError("Flusso ENTSOG non valido.")
             number/=1_000_000
         # Conflicting releases remain missing, never pick an arbitrary version.
         grouped.setdefault(key,set()).add(number)
         flag=notes.setdefault(day,set())
+        if metadata_warning:
+            flag.add("metadati_totale_discordante")
         status=str(item.get("flowStatus") or "status_non_indicato")
         flag.add(status.replace(" ","_")[:80])
         if naive or end_naive:
@@ -111,7 +145,7 @@ def parse_month(payload: dict, first: date, last: date, retrieved_at: datetime,
             notes[key[0]].add("versioni_in_conflitto")
     if not any(all(values.get((day,field)) is not None for field in FIELDS)
                for day in notes):
-        raise ValueError("Nessun giorno con i tre aggregati ENTSOG completi.")
+        raise SourceSchemaError("Nessun giorno con i tre aggregati ENTSOG completi.")
     return Month(values,notes,retrieved_at,cached,failed)
 
 
@@ -123,7 +157,7 @@ def _last_completed(now: datetime) -> date:
 
 def month_windows(last: date, months: int=MAX_MONTHS):
     if not 1<=months<=MAX_MONTHS:
-        raise ValueError("Numero di mesi fuori limite.")
+        raise SourceSchemaError("Numero di mesi fuori limite.")
     start=last.replace(day=1)
     for _ in range(months):
         end=min(last,start.replace(day=monthrange(start.year,start.month)[1]))
@@ -170,6 +204,12 @@ def combine(months: list[Month], first: date, last: date) -> Bundle:
     ))
 
 
+def query_params(first: date, last: date):
+    return {"pointDirection":",".join(QUERY_POINTS),"from":first.isoformat(),
+            "to":last.isoformat(),"indicator":"Physical Flow","periodType":"day",
+            "timeZone":"CET","limit":500}
+
+
 def load(store: Store, *, refresh=False, now: datetime|None=None) -> tuple[Bundle,str|None]:
     """Fetch bounded monthly windows sequentially; cache completed older months.
 
@@ -184,12 +224,10 @@ def load(store: Store, *, refresh=False, now: datetime|None=None) -> tuple[Bundl
         def parse(text,when,**kwargs):
             return parse_month(json.loads(text),first,end,when,**kwargs)
         try:
-            month=retrieve(store,key=f"entsog-srg-three-v2-{first:%Y-%m}",name="ENTSOG",
+            month=retrieve(store,key=f"entsog-srg-three-v3-{first:%Y-%m}",name="ENTSOG",
                 url=URL,parse=parse,ttl=timedelta(hours=12 if i<2 else 24*30),
                 refresh=refresh and i<2,attempts=1,timeout=(5,20),diagnostics=True,
-                params={"pointDirection":",".join(QUERY_POINTS),"from":first.isoformat(),
-                        "to":end.isoformat(),"indicator":"Physical Flow",
-                        "periodType":"day","timeZone":"CET","limit":500})
+                params=query_params(first,end))
         except SourceUnavailable as exc:
             warnings.append(f"{first:%m/%Y}: {exc}")
             # Early-month publication lag is possible; try the preceding month once.
@@ -203,6 +241,8 @@ def load(store: Store, *, refresh=False, now: datetime|None=None) -> tuple[Bundl
     bundle=combine(loaded,earliest,last)
     if len(loaded)<MAX_MONTHS:
         warnings.append("Storico parziale: nessuna sostituzione con dati di esempio.")
+    if any("metadati_totale_discordante" in str(flag) for flag in bundle.rows["source_flag"]):
+        warnings.append("ENTSOG: metadati del totale discordanti di un record; conservati solo i giorni con tre aggregati validi. Verificare la fonte.")
     if bundle.origin.refresh_failed:
         warnings.append("Una o più finestre usano l’ultima cache valida.")
     if (last-date.fromisoformat(bundle.origin.latest_period)).days>2:

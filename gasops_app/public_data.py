@@ -13,7 +13,11 @@ from .store import Store
 
 T = TypeVar("T")
 LOG = logging.getLogger(__name__)
-VALIDATION_ERRORS = (ValueError, TypeError, KeyError, IndexError)
+VALIDATION_ERRORS = (ValueError, TypeError, KeyError, IndexError, OverflowError)
+
+
+class SourceSchemaError(ValueError):
+    """Controlled validation detail; messages must be static and contain no raw data."""
 
 
 class SourceUnavailable(RuntimeError):
@@ -72,6 +76,8 @@ def retrieve(
                 reason = "errore di connessione"
             elif isinstance(error, json.JSONDecodeError):
                 reason = "risposta non JSON"
+            elif isinstance(error, SourceSchemaError):
+                reason = str(error).rstrip(".")
             else:
                 reason = "dati assenti o schema non valido"
             LOG.warning("%s: tentativo %s fallito (%s)", name, attempt + 1, reason)
