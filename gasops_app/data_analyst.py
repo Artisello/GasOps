@@ -277,9 +277,21 @@ def forecast_facts(state,now=None):
                 "limitation":"Campione comune; G−3 elettrico; consuntivo G−1 provvisorio. Modalità retrospettiva non certifica disponibilità ex ante."})
     from .weather_source import outlook
     from .models import utc_now
-    weather=outlook(state,now or utc_now())
+    asof=now or utc_now()
+    weather=outlook(state,asof)
     if weather:
         facts.append({"id":"weather_outlook","horizon":7,**weather})
+        saved=state.get("weather_gas_result",{})
+        daily=state.get("live_public_bundles_v1",{}).get("daily") or state.get("active_bundle")
+        r=saved.get("result")
+        if daily is not None and r and saved.get("fingerprint")==daily.fingerprint and not saved.get("error"):
+            from .briefing_context import weather_context
+            sector=weather_context(r,asof)
+            if sector["status"]=="available" and sector.get("points") and sector["acquired"]==weather["acquired"]:
+                facts.append({"id":"weather_srg","source":"Open-Meteo + ENTSOG · scenario settoriale","url":weather["url"],
+                    "horizon":7,"from":sector["points"][0]["period"],"to":sector["points"][-1]["period"],
+                    "n":len(sector["points"]),"acquired":sector["acquired"],"evaluation":sector["evaluation"],
+                    "mae":sector["mae"],"holdout":sector["holdout"],"points":sector["points"],"limitation":sector["limitation"]})
     return facts
 
 

@@ -168,7 +168,7 @@ def analyse_gas_day(store,demand,now=None,*,refresh=False,snapshots=None):
     last=min(last,now.astimezone(ROME).date()-timedelta(days=7))
     def get(kind,a,b):
         item=(snapshots or {}).get(kind)
-        if item and not refresh and not item["failed"] and now-item["acquired"]<=timedelta(hours=12 if kind=="forecast" else 24):
+        if item and not refresh and not item["failed"] and timedelta(0)<=now-item["acquired"]<=timedelta(hours=12 if kind=="forecast" else 24):
             frame=item["frame"].loc[str(a):str(b)]
             if frame.index.equals(pd.date_range(a,b,freq="D")):
                 return frame,item["acquired"],item["cached"],item["failed"]

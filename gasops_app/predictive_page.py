@@ -53,6 +53,7 @@ def panel():
         st.caption("AGSI+ Italia, ENTSOG interconnessioni e Terna si caricano nelle viste dedicate. Finestre brevi possono non bastare al backtest.")
     from .weather_source import enabled,refresh as refresh_weather,archive as weather_archive
     weather=st.checkbox("HDD Open-Meteo · demo non commerciale",value=bool(use_recent and enabled(st.session_state)),disabled=not enabled(st.session_state),key="predictive_weather_"+("recent" if use_recent else "archive"))
+    weather=weather and enabled(st.session_state)
     horizon=st.selectbox("Orizzonte",HORIZONS,format_func=lambda h:f"{h} giorno" if h==1 else f"{h} giorni",
                          key="predictive_horizon")
     st.caption(f"Training minimo {MIN_TRAIN} giorni comuni per origine; verifica ultimi 28 giorni di riferimento, almeno {MIN_TEST} coppie. Ritardi assunti: gas 2 giorni, covariate 7 giorni. Non sono SLA né vintage storici verificati.")

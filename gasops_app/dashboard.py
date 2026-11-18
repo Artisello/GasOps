@@ -512,11 +512,12 @@ def market() -> None:
             if facts.get("weekend_vs_weekday_pct") is None and not facts.get("peak_month"):
                 st.caption("Dati insufficienti per descrivere le abitudini di consumo.")
     with weather:
-        from .weather_page import weather_panel
-        if origin.grain=="daily" and origin.kind==Kind.HISTORICAL and not origin.archive and origin.name.startswith("ENTSOG"):
-            weather_panel(context)
+        from .weather_page import weather_panel,outlook_panel
+        if origin.kind in (Kind.HISTORICAL,Kind.LIVE) and not origin.archive:
+            if origin.grain=="daily" and origin.name.startswith("ENTSOG"):weather_panel(context)
+            else:outlook_panel()
         else:
-            st.info("Per analizzare il meteo, seleziona Rete SRG · prelievi giornalieri (ENTSOG) nella fonte dati.")
+            st.caption("Meteo disponibile per le fonti reali correnti.")
     with methods:
         if st.checkbox("Confronta i modelli previsionali",key="market_show_models"):
             _model_comparison(context)
