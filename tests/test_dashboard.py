@@ -643,6 +643,7 @@ def test_jarvis_snapshot_reused_between_panels():
 
 
 def test_briefing_period_prefers_observed_and_fallback_is_not_monolithic(monkeypatch):
+    from datetime import date
     from gasops_app import dashboard, session
     from gasops_app.models import Agent, Result, Run, Finding
     from gasops_app.data import synthetic

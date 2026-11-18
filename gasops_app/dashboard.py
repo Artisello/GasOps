@@ -221,7 +221,7 @@ def _briefing_highlights(run):
     estimate_label="Stima da dati storici" if historical else "Prossima previsione"
     if run.source.kind==Kind.SYNTHETIC:
         estimate_label="Previsione di esempio"
-    comparison=facts.get("comparison","")
+    comparison=facts.get("comparison") or ""
     def change(field):
         value=facts.get(field)
         return (numero(value,signed=True)+"% "+comparison).strip() if value is not None else scope
@@ -285,12 +285,13 @@ def _briefing_panel(selection) -> None:
             for finding in issues:
                 if finding.severity=="high":
                     st.warning(finding.title+" — "+finding.detail)
-            if issues:
-                with st.expander(f"Rilievi da verificare · {len(issues)}",expanded=True):
-                    for finding in issues:
+            other_issues=[finding for finding in issues if finding.severity!="high"]
+            if other_issues:
+                with st.expander(f"Rilievi da verificare · {len(other_issues)}",expanded=True):
+                    for finding in other_issues:
                         st.markdown("**"+finding.title+"**")
                         st.text(finding.detail)
-            else:
+            elif not issues:
                 st.caption("Nessun rilievo nei controlli eseguiti.")
             public=run.assumptions.get("public_operational_context") or {}
             if public:
