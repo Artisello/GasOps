@@ -24,34 +24,71 @@ def compact_context(context):
     return {key:compact(value) for key,value in context.items() if isinstance(value,dict)}
 
 
-def parse_sections(raw, ids, agents, sources, limit):
-    def fail():
-        raise ModelUnavailable("Struttura o riferimenti della sintesi AI non validi.")
+class InvalidSynthesis(ModelUnavailable):
+    """Recoverable format failure; never include raw model output."""
+
+
+def reference_index(agents, public):
+    # Short identifiers reduce copying mistakes and output tokens. Canonical
+    # identifiers remain stable in exports and stored runs.
+    codes={f"A{i}":ref for i,ref in enumerate(agents,1)}
+    codes.update({f"S{i}":"src:"+key for i,key in enumerate(public,1)})
+    aliases={}
+    def add(label,ref):
+        if isinstance(label,str) and label.strip():
+            aliases.setdefault(label.strip().casefold(),set()).add(ref)
+    for code,ref in codes.items():
+        add(code,ref);add(ref,ref)
+    for key,value in public.items():
+        ref="src:"+key
+        add(key,ref)
+        add(value.get("source"),ref)
+    return codes,{key:next(iter(refs)) for key,refs in aliases.items() if len(refs)==1}
+
+
+def normalize_references(raw, aliases):
+    if isinstance(raw,str):
+        raw=[raw]
+    if not isinstance(raw,list) or not 1<=len(raw)<=64:
+        raise InvalidSynthesis("Riferimenti della sintesi AI mancanti o non validi.")
+    refs=[]
+    for ref in raw:
+        resolved=aliases.get(ref.strip().casefold()) if isinstance(ref,str) else None
+        if resolved is None:
+            raise InvalidSynthesis("La sintesi contiene riferimenti non verificabili.")
+        if resolved not in refs:refs.append(resolved)
+    return refs
+
+
+def parse_sections(raw, ids, agents, sources, limit, *, aliases=None):
+    if aliases is None:
+        aliases={ref.casefold():ref for ref in (*agents,*sources)}
     if not isinstance(raw,list) or not 1<=len(raw)<=len(ids):
-        fail()
-    allowed=set(agents)|set(sources)
-    sections=[];refs=[];previous=-1;size=0
+        raise InvalidSynthesis("Numero o formato delle sezioni AI non valido.")
+    names={key.casefold():key for key in ids}
+    names.update({SECTION_TITLES[key].casefold():key for key in ids})
+    sections=[];seen=set();size=0
     for item in raw:
         if not isinstance(item,dict):
-            fail()
-        key=item.get("id");content=item.get("text");references=item.get("references")
-        if not isinstance(key,str) or key not in ids or ids.index(key)<=previous:
-            fail()
-        if not sections and key!=ids[0]:
-            fail()
+            raise InvalidSynthesis("Formato della sezione AI non valido.")
+        label=item.get("id")
+        key=names.get(label.strip().casefold()) if isinstance(label,str) else None
+        content=item.get("text")
+        if key is None or key in seen:
+            raise InvalidSynthesis("Sezione AI sconosciuta o duplicata.")
         if not isinstance(content,str) or not content.strip():
-            fail()
+            raise InvalidSynthesis("Testo della sezione AI mancante.")
         size+=len(content.strip())
-        if size>limit or not isinstance(references,list) or not references or len(references)>len(allowed):
-            fail()
-        if any(not isinstance(ref,str) or ref not in allowed for ref in references):
-            fail()
-        previous=ids.index(key)
-        references=list(dict.fromkeys(references))
-        refs.extend(ref for ref in references if ref not in refs)
-        sections.append({"id":key,"text":content.strip(),"references":references})
-    if not any(ref in agents for ref in refs):
-        fail()
+        if size>limit:
+            raise InvalidSynthesis("Sintesi AI troppo lunga.")
+        refs=normalize_references(item.get("references"),aliases)
+        seen.add(key)
+        sections.append({"id":key,"text":content.strip(),"references":refs})
+    # Accept formatting differences without altering the interpretation.
+    # In particular, source-only sections and a missing optional introduction
+    # do not justify discarding otherwise attributable content.
+    sections.sort(key=lambda item:ids.index(item["id"]))
+    refs=list(dict.fromkeys(ref for item in sections for ref in item["references"]))
     return sections,refs
 
 

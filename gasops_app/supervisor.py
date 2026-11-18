@@ -91,7 +91,8 @@ def _fallback(run: Run, stage: str, error: Exception) -> None:
     LOGGER.warning("Model %s failed (%s)", stage, type(error).__name__)
     run.mode = "Deterministic fallback"
     detail = " "+str(error) if isinstance(error,ModelUnavailable) else ""
-    run.warnings.append(f"Modello non disponibile nella fase di {stage}.{detail} Il rapporto usa i risultati validati.")
+    run.warnings.append(f"Sintesi AI non utilizzabile.{detail} Il rapporto usa i risultati validati." if stage=="sintesi" else
+                        f"Modello non disponibile nella fase di {stage}.{detail} Il rapporto usa i risultati validati.")
 
 
 def _gated_batch(run: Run, calls: dict[Agent, Call], tools: Mapping[Agent, Tool],
@@ -153,10 +154,14 @@ def execute(
     if reasoner and run.mode == "LLM-assisted":
         try:
             narrative, references = reasoner.summarize(run)
-            if not isinstance(narrative,str) or not narrative.strip() or not references:
+            public=run.assumptions.get("public_operational_context") or {}
+            source_refs=[ref for section in run.ai_sections for ref in section.get("references",[])
+                         if isinstance(ref,str) and ref.startswith("src:") and ref[4:] in public]
+            if not isinstance(narrative,str) or not narrative.strip() or not (references or source_refs):
                 raise ValueError("No grounded AI answer")
             run.interpretation, run.interpretation_sources = narrative, references
         except Exception as error:
+            run.ai_sections=[]
             _fallback(run, "sintesi", error)
 
     if reasoner and callable(getattr(reasoner,"usage_summary",None)):

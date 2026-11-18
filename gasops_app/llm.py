@@ -10,7 +10,8 @@ import requests
 
 from .models import Agent, Result, Run, Citation
 from .supervisor import Call, Tool, ModelUnavailable
-from .ai_response import compact_context, parse_sections, SECTION_TITLES
+from .ai_response import (compact_context, parse_sections, SECTION_TITLES, reference_index,
+                          normalize_references, InvalidSynthesis)
 
 SYSTEM = """You are the I.G.O.R. supervisor for read-only analytical screening. Write explanations in Italian. Select only tools
 needed for the request and only use scenario adjustments expressly given by the operator. The tools
@@ -104,6 +105,7 @@ class CompatibleReasoner:
         self.usage_reports = []
         self.request_bytes = 0
         self.last_sections = []
+        self.format_retries = 0
         self.summary_only_full = True
         self.label = config.model
         self.messages: list[dict] = [{"role": "system", "content": SYSTEM}]
@@ -176,7 +178,8 @@ class CompatibleReasoner:
         return message
 
     def usage_summary(self):
-        out={"calls":self.calls,"reported_calls":len(self.usage_reports),"request_bytes":self.request_bytes}
+        out={"calls":self.calls,"reported_calls":len(self.usage_reports),"request_bytes":self.request_bytes,
+             "format_retries":self.format_retries}
         if self.usage_reports:
             for key in ("prompt_tokens","completion_tokens","total_tokens"):
                 out[key]=sum(r[key] for r in self.usage_reports)
@@ -242,29 +245,37 @@ class CompatibleReasoner:
                               "Select any additional dependency needed. Leave tool calls empty if sufficient."})
         return self._tool_calls(self._chat(self.messages, remaining), remaining)
 
-    def interpret(self, question: str, results: Mapping[Agent, Result], *, context=None, executive=False) -> tuple[str | None, list[Agent]]:
+    def interpret(self, question: str, results: Mapping[Agent, Result], *, context=None, executive=False, repair=False) -> tuple[str | None, list[Agent]]:
         # Synthesis is standalone: executed evidence already contains the tool results.
         # Do not resend routing history, tool schemas, or duplicate tool messages.
         self.last_sections=[]
         allowed=_evidence(results,external=not self.config.local)
-        if not allowed:
-            raise ModelUnavailable("Nessun risultato condivisibile con il modello esterno.")
         public=compact_context(context or {})
-        evidence = json.dumps({"question": question, "verified_tool_results": allowed, "public_operational_context": public},ensure_ascii=False,separators=(",",":"),allow_nan=False)
-        valid_ids = [agent.value for agent, result in results.items()
-                     if agent.value in allowed and result.evidence]
-        if not valid_ids:
+        valid_ids=[agent.value for agent,result in results.items()
+                   if agent.value in allowed and result.evidence and result.status in ("completed","review")]
+        if not valid_ids and not public:
             raise ModelUnavailable("Nessuna evidenza citabile per la sintesi AI.")
-        limit = 2000 if executive else 1400
-        template = "EXECUTIVE_BRIEFING_V1\n"+EXECUTIVE_BRIEFING if executive else SUMMARY
-        ids=("summary","market","supply","balancing","risk","priorities") if executive else ("answer","evidence","limits","next")
         source_ids=["src:"+key for key in public]
-        instruction = (template + "\nJSON: {\"sections\":[{\"id\":\""+ids[0]+"\",\"text\":\"...\",\"references\":[\"...\"]}]}."
-                       " Prima sezione obbligatoria; altre solo se utili, in ordine: "+", ".join(ids)+
-                       f". Testo complessivo max {limit} caratteri. Plain text; nessun titolo nel testo. "
-                       "Ogni sezione deve citare almeno un ID valido; almeno un agente nell'intera risposta. "
-                       "ID agenti: "+", ".join(valid_ids)+". ID fonti: "+", ".join(source_ids)+
-                       ". Le fonti con dati assenti possono supportare soltanto un limite. Non inventare ID.")
+        codes,aliases=reference_index(valid_ids,public)
+        # Bind each identifier to its actual evidence in the input. Keep
+        # canonical names accepted for older providers, without fuzzy matching.
+        evidence=json.dumps({"question":question,"verified_tool_results":allowed,
+                             "public_operational_context":public,"reference_ids":codes},
+                            ensure_ascii=False,separators=(",",":"),allow_nan=False)
+        target=1700 if executive else 1000
+        limit=2600 if executive else 1800
+        template="EXECUTIVE_BRIEFING_V1\n"+EXECUTIVE_BRIEFING if executive else SUMMARY
+        ids=("summary","market","supply","balancing","risk","priorities") if executive else ("answer","evidence","limits","next")
+        instruction=(template+"\nRispondi in JSON: {\"sections\":[{\"id\":\""+ids[0]+"\",\"text\":\"...\",\"references\":[\""+next(iter(codes))+"\"]}]}."
+                     " Sezioni pertinenti (preferisci questo ordine): "+", ".join(ids)+
+                     f". Obiettivo {target} caratteri di testo; massimo {limit}. Titoli separati dal testo. "
+                     "Ogni sezione cita almeno un codice esatto presente in reference_ids (A1, S1 ecc.). "
+                     "Le fonti mancanti supportano solo limiti o verifiche. Niente riferimenti inventati.")
+        if repair:
+            instruction=(template+"\nRecupero formato: restituisci solo JSON valido con chiavi interpretation (testo italiano), "
+                         "references (lista di codici da reference_ids). "
+                         f"Massimo {target} caratteri. Usa brevi paragrafi e massimo tre verifiche; "
+                         "nessun riferimento inventato, nessun dato mancante trasformato in zero.")
         try:
             response = self._chat([{"role":"system","content":SYSTEM}, {"role": "user", "content": f"{instruction}\n{evidence}"}])
         except requests.Timeout:
@@ -273,30 +284,31 @@ class CompatibleReasoner:
             raise ModelUnavailable("Connessione al provider non riuscita.") from None
         content = response.get("content") or ""
         if not isinstance(content, str) or not content.strip():
-            raise ModelUnavailable("Il modello non ha restituito una sintesi testuale.")
+            raise InvalidSynthesis("Il modello non ha restituito una sintesi testuale.")
         content = content.strip()
         if content.startswith("```json") and content.endswith("```"):
             content = content[7:-3].strip()
         try:
             parsed = json.loads(content)
         except ValueError:
-            raise ModelUnavailable("La sintesi non rispetta il formato JSON previsto.") from None
+            raise InvalidSynthesis("La sintesi non rispetta il formato JSON previsto.") from None
         if not isinstance(parsed, dict):
-            raise ModelUnavailable("Formato della sintesi non valido.")
+            raise InvalidSynthesis("Formato della sintesi non valido.")
         if "sections" in parsed:
-            sections,refs=parse_sections(parsed["sections"],ids,valid_ids,source_ids,limit)
+            sections,refs=parse_sections(parsed["sections"],ids,valid_ids,source_ids,limit,aliases=aliases)
             self.last_sections=sections
             narrative="\n\n".join(SECTION_TITLES[section["id"]]+": "+section["text"] for section in sections)
             return narrative,[Agent(ref) for ref in refs if ref in valid_ids]
         # Compatibility with older OpenAI-compatible models returning flat JSON.
-        narrative = parsed.get("interpretation")
-        references = parsed.get("references")
-        if not isinstance(narrative, str) or not 1 <= len(narrative.strip()) <= limit or not isinstance(references, list):
-            raise ModelUnavailable("Formato o lunghezza della sintesi non validi.")
-        if not references or any(not isinstance(ref, str) or ref not in valid_ids for ref in references):
-            raise ModelUnavailable("La sintesi contiene riferimenti non verificabili.")
-        cited = list(dict.fromkeys(Agent(ref) for ref in references))
-        return narrative.strip(), cited
+        narrative=parsed.get("interpretation")
+        if not isinstance(narrative,str) or not 1<=len(narrative.strip())<=limit:
+            raise InvalidSynthesis("Formato o lunghezza della sintesi non validi.")
+        refs=normalize_references(parsed.get("references"),aliases)
+        cited=[Agent(ref) for ref in refs if ref in valid_ids]
+        # Preserve public source references in the compatibility format too.
+        if repair or any(ref in source_ids for ref in refs):
+            self.last_sections=[{"id":ids[0],"text":narrative.strip(),"references":refs}]
+        return narrative.strip(),cited
 
     def plan_dataset(self, question, manifest):
         """Select only advertised tools and IDs. Validation/execution are local."""
@@ -353,7 +365,16 @@ class CompatibleReasoner:
         return answer.strip(),list(dict.fromkeys(refs))
 
     def summarize(self, run: Run) -> tuple[str | None, list[Agent]]:
-        answer=self.interpret(run.question, run.results, context=run.assumptions.get("public_operational_context"),
-                              executive=bool(run.assumptions.get("full_briefing")))
+        args={"context":run.assumptions.get("public_operational_context"),
+              "executive":bool(run.assumptions.get("full_briefing"))}
+        try:
+            answer=self.interpret(run.question,run.results,**args)
+        except InvalidSynthesis:
+            if not args["executive"] or self.calls>=3:
+                raise
+            # Retry only the synthesis, once, with simpler JSON. No raw
+            # rejected answer or additional source/tool calls are sent.
+            self.format_retries+=1
+            answer=self.interpret(run.question,run.results,repair=True,**args)
         run.ai_sections=self.last_sections
         return answer
