@@ -305,6 +305,7 @@ def overview() -> None:
     with top:
         header("Panoramica del mercato","")
         st.markdown("**"+area+"** · "+perimeter)
+    context=None
     if selection.bundle:
         context=preview_market(selection)
         st.subheader("Il mercato in breve")
@@ -344,7 +345,7 @@ def overview() -> None:
             _source_panel(context)
     if selection.name in (PUBLIC,DAILY):
         from .overview_indicators import panel
-        panel()
+        panel(context)
     _briefing_panel(selection)
     st.markdown("[Mercato e previsioni](/market) · [Stoccaggi e forniture](/security-of-supply) · [Bilanciamento](/balancing) · [Fatture e garanzie](/ledger)")
 

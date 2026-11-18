@@ -1,14 +1,13 @@
 """Independent, dated public indicators; no acquisition until requested."""
-from datetime import datetime,timedelta
+from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor
-from math import isfinite
 
 import pandas as pd
 import streamlit as st
 
 from .data import ROME,period_text
 from .italiano import data_it,numero
-from .mensile import ARERA_URL,load_arera
+from .mensile import ARERA_URL,Prices,load_arera
 from .models import utc_now
 from .operational_sources import GIE_CREDIT,GIE_LINKS,GIE_TERMS,load_agsi,load_alsi
 from .operational_sources_page import configured_key
@@ -92,7 +91,30 @@ def current_rows(snapshot,now,*,gie_enabled):
     return rows
 
 
-def panel():
+def reuse_indicators(snapshot,context,visited,now):
+    """Reuse validated public data from existing pages without network calls."""
+    merged=dict(snapshot)
+    if "price" not in merged and context is not None and context.bundle.origin.grain=="monthly":
+        companion=next((f for f in context.bundle.origin.companions if "price_eur_mwh" in f.fields),None)
+        values=context.inspection.usable["price_eur_mwh"].dropna()
+        if companion and not values.empty:
+            period=values.index[-1].date().isoformat()
+            merged["price"]=price_snapshot(Prices({period:values.iloc[-1]},companion),now)
+    for name,platform in (("storage","AGSI+"),("lng","ALSI")):
+        if name in merged:
+            continue
+        saved=visited.get(platform+"_IT",{})
+        if saved.get("result") is not None:
+            try:
+                item=supply_snapshot(saved["result"],now,platform)
+                item["stale"]=item["stale"] or bool(saved.get("error"))
+                merged[name]=item
+            except (ValueError,KeyError,TypeError):
+                merged[name]={"error":True}
+    return merged
+
+
+def panel(context=None):
     with st.container(border=True,key="panel_overview_indicators"):
         left,right=st.columns([2,1],vertical_alignment="center")
         with left:
@@ -112,7 +134,8 @@ def panel():
                     values=acquire_indicators(database(),key,now,refresh=bool(last))
                 previous={"attempted":now,"values":values}
                 st.session_state[STATE]=previous
-        kpi_grid(current_rows(previous.get("values",{}),now,gie_enabled=bool(key)))
+        snapshots=reuse_indicators(previous.get("values",{}),context,st.session_state,now)
+        kpi_grid(current_rows(snapshots,now,gie_enabled=bool(key)))
         st.markdown("[ARERA · CMEM,m]("+ARERA_URL+") · ["
                     +GIE_CREDIT["AGSI+"]+"]("+GIE_LINKS["AGSI+"]+") · ["
                     +GIE_CREDIT["ALSI"]+"]("+GIE_LINKS["ALSI+"]+") · [Condizioni GIE]("+GIE_TERMS+")")

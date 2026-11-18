@@ -35,3 +35,16 @@ def test_indicators_no_network_on_ordinary_rerun(monkeypatch):
     assert not app.exception and calls==[1]
     app.button(key="overview_public_refresh").click().run()
     assert not app.exception and calls==[1]
+
+
+
+def test_reuse_only_validated_monthly_price_and_italian_supply():
+    from gasops_app.overview_indicators import reuse_indicators
+    now=datetime(2026,11,18,12,tzinfo=timezone.utc)
+    source=SimpleNamespace(fields=("price_eur_mwh",),refresh_failed=False,retrieved_at=now)
+    origin=SimpleNamespace(grain="monthly",companions=(source,))
+    ctx=SimpleNamespace(bundle=SimpleNamespace(origin=origin),
+        inspection=SimpleNamespace(usable=pd.DataFrame({"price_eur_mwh":[35.,None]},index=pd.to_datetime(["2026-09-01","2026-10-01"]))))
+    values=reuse_indicators({},ctx,{},now)
+    assert values["price"]["value"]==35 and values["price"]["period"]=="Settembre 2026"
+    assert reuse_indicators({"price":{"error":True}},ctx,{},now)=={"price":{"error":True}}
