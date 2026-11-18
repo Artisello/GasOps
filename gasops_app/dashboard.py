@@ -270,11 +270,11 @@ def market() -> None:
     _metrics(context)
     with st.container(border=True, key="panel_market_chart"):
         visible = _charts(context, selection.periods, "market", height=348)
+    from .weather_page import weather_panel
+    weather_panel(context)
     _supporting_charts(context, visible, "market")
     if st.checkbox("Mostra confronto dei modelli e backtest", key="market_show_models"):
         _model_comparison(context)
-    from .weather_page import weather_panel
-    weather_panel(context)
     sources, quality = st.columns([1.3, 1], gap="medium")
     with sources:
         with st.container(border=True, key="panel_market_notes"):
