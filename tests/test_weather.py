@@ -30,7 +30,7 @@ def test_weather_signal_and_no_signal():
     hdd=np.random.default_rng(9).uniform(0,15,len(dates))
     history=pd.DataFrame({"hdd":hdd},index=dates)
     future=pd.DataFrame({"hdd":np.arange(7)+1.,"temperature_c":np.arange(7)+8.},
-                        index=pd.date_range(dates[-1]+pd.Timedelta(days=1),periods=7,freq="D"))
+                        index=pd.date_range(dates[-1]+pd.Timedelta(1, unit="D"),periods=7,freq="D"))
     r=conditional_scenario(pd.Series(800+60*hdd,index=dates),history,future)
     assert r["improved"] and len(r["points"])==7
     assert r["mae"]["weather"]<r["mae"]["calendar"]

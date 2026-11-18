@@ -174,7 +174,7 @@ def join_forward(samples,batches,asof):
         for r in paired(b):
             grouped.setdefault(r["day"],[]).append((at,digest(b),r))
     for target,r in samples.iterrows():
-        cutoff=r.origin+pd.Timedelta(hours=15)
+        cutoff=r.origin+pd.Timedelta(15, unit="h")
         eligible=[x for x in grouped.get(target.date().isoformat(),[]) if x[0]<=cutoff]
         if not eligible:continue
         newest=max(x[0] for x in eligible)

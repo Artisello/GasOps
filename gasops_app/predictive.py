@@ -66,12 +66,12 @@ def origin_frame(frame,external,horizon,reference=None):
     last=gas["demand_gwh"].last_valid_index()
     if last is None:
         raise ValueError("Domanda non disponibile.")
-    ref=pd.Timestamp(reference) if reference is not None else last+pd.Timedelta(days=GAS_LAG)
-    if ref.tz is not None or ref!=ref.normalize() or ref>last+pd.Timedelta(days=GAS_LAG) or ref<gas.index.min():
+    ref=pd.Timestamp(reference) if reference is not None else last+pd.Timedelta(GAS_LAG, unit="D")
+    if ref.tz is not None or ref!=ref.normalize() or ref>last+pd.Timedelta(GAS_LAG, unit="D") or ref<gas.index.min():
         raise ValueError("Data di riferimento incompatibile con lo storico.")
-    idx=pd.date_range(gas.index.min(),max(gas.index.max(),ref)+pd.Timedelta(days=horizon),freq="D")
+    idx=pd.date_range(gas.index.min(),max(gas.index.max(),ref)+pd.Timedelta(horizon, unit="D"),freq="D")
     gas=gas.reindex(idx)
-    target=idx+pd.Timedelta(days=horizon)
+    target=idx+pd.Timedelta(horizon, unit="D")
     result=pd.DataFrame(index=idx)
     result["actual"]=gas["demand_gwh"].shift(-horizon)
     # Use the most recent same-weekday target lag that is available by R-2.
@@ -134,19 +134,19 @@ def evaluate(frame,external=(),horizon=1,reference=None):
     # Identical train and test samples for both Ridge models and weekly naive.
     columns=["actual","weekly",*multi]
     eligible=features.dropna(subset=columns)
-    end=min(last,ref-pd.Timedelta(days=GAS_LAG))-pd.Timedelta(days=horizon)
-    start=end-pd.Timedelta(days=HOLDOUT-1)
+    end=min(last,ref-pd.Timedelta(GAS_LAG, unit="D"))-pd.Timedelta(horizon, unit="D")
+    start=end-pd.Timedelta(HOLDOUT-1, unit="D")
     records=[]
     for origin in pd.date_range(start,end,freq="D"):
         if origin not in eligible.index:
             continue
-        limit=origin-pd.Timedelta(days=horizon+GAS_LAG)
+        limit=origin-pd.Timedelta(horizon+GAS_LAG, unit="D")
         train=eligible.loc[eligible.index<=limit]
         if len(train)<MIN_TRAIN:
             continue
         point=eligible.loc[[origin]]
-        r={"origin":origin.date().isoformat(),"target":(origin+pd.Timedelta(days=horizon)).date().isoformat(),
-           "train_target_end":(train.index.max()+pd.Timedelta(days=horizon)).date().isoformat(),
+        r={"origin":origin.date().isoformat(),"target":(origin+pd.Timedelta(horizon, unit="D")).date().isoformat(),
+           "train_target_end":(train.index.max()+pd.Timedelta(horizon, unit="D")).date().isoformat(),
            "train_n":len(train),"actual":float(point["actual"].iloc[0]),"weekly":float(point["weekly"].iloc[0]),
            "autoregressive":_fit(train,point,ar),"multivariate":_fit(train,point,multi)}
         r.update(_bayes(train,point,ar,multi))
@@ -154,13 +154,13 @@ def evaluate(frame,external=(),horizon=1,reference=None):
     if len(records)<MIN_TEST:
         raise ValueError(f"Solo {len(records)}/{HOLDOUT} date valutabili; servono almeno {MIN_TEST} e {MIN_TRAIN} coppie di training per origine. Riduci le variabili o amplia lo storico.")
     scores=_scores(records)
-    limit=ref-pd.Timedelta(days=horizon+GAS_LAG)
+    limit=ref-pd.Timedelta(horizon+GAS_LAG, unit="D")
     train=eligible.loc[eligible.index<=limit]
     point=features.loc[[ref]]
     forecast=None
     if len(train)>=MIN_TRAIN and point[["weekly",*multi]].notna().all(axis=None):
-        forecast={"origin":ref.date().isoformat(),"target":(ref+pd.Timedelta(days=horizon)).date().isoformat(),
-                  "train_target_end":(train.index.max()+pd.Timedelta(days=horizon)).date().isoformat(),
+        forecast={"origin":ref.date().isoformat(),"target":(ref+pd.Timedelta(horizon, unit="D")).date().isoformat(),
+                  "train_target_end":(train.index.max()+pd.Timedelta(horizon, unit="D")).date().isoformat(),
                   "weekly":float(point["weekly"].iloc[0]),"autoregressive":_fit(train,point,ar),
                   "multivariate":_fit(train,point,multi)}
         forecast.update(_bayes(train,point,ar,multi))

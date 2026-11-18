@@ -31,8 +31,8 @@ def join_power(d,batches,asof,*,strict,load):
     rows=[]
     for target,row in d.iterrows():
         origin=row.origin
-        day=(origin-pd.Timedelta(days=LAG)).date().isoformat()
-        cutoff=origin+pd.Timedelta(hours=15)
+        day=(origin-pd.Timedelta(LAG, unit="D")).date().isoformat()
+        cutoff=origin+pd.Timedelta(15, unit="h")
         candidates=[x for x in grouped.get(day,[]) if not strict or x[0]<=cutoff]
         if not candidates:continue
         newest=max(x[0] for x in candidates)
@@ -68,15 +68,15 @@ def evaluate(vintages,batches,horizon,asof,*,strict=True,load=True,forward=False
     else:original,cols=join_power(d,batches,asof,strict=strict,load=load)
     base=d.dropna(subset=[*base_features,"weekly","actual","actual_published","weekly_published"])
     base=base[(base.label_cutoff<=asof)&(base.actual_published<=asof)&
-              (base.weekly_published<=base.origin+pd.Timedelta(hours=15))]
+              (base.weekly_published<=base.origin+pd.Timedelta(15, unit="h"))]
     if base.empty:raise ValueError("Nessun consuntivo maturo Jarvis.")
     end=base.index.max()
-    start=end-pd.Timedelta(days=HOLDOUT-1)
+    start=end-pd.Timedelta(HOLDOUT-1, unit="D")
     complete=original.loc[base.index].dropna(subset=cols)
     features=[*base_features,*cols]
     records=[]
     for target,row in complete.loc[start:end].iterrows():
-        cutoff=row.origin+pd.Timedelta(hours=15)
+        cutoff=row.origin+pd.Timedelta(15, unit="h")
         train=complete[(complete.label_cutoff<=cutoff)&(complete.actual_published<=cutoff)]
         if len(train)<MIN_TRAIN:continue
         records.append({"target":target.date().isoformat(),"origin":row.origin.date().isoformat(),

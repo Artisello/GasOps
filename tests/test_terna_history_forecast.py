@@ -59,7 +59,7 @@ def fixture():
 def test_join_never_uses_target_or_future_acquisition():
     v,bs,asof=fixture()
     d=samples(v,2).tail(1)
-    day=(d.iloc[0].origin-pd.Timedelta(days=3)).date()
+    day=(d.iloc[0].origin-pd.Timedelta(3, unit="D")).date()
     late=fixture_batch(day,datetime(2025,12,31,10,tzinfo=UTC),900)
     strict,_=join_power(d,[late],asof,strict=True,load=True)
     assert strict.power_Thermal.isna().all()
@@ -73,6 +73,6 @@ def test_power_common_sample():
     r=evaluate(v,bs,2,asof,strict=True,load=True)
     assert r["n"]==90
     assert r["scores"]["power"]["mae"]<r["scores"]["extended"]["mae"]
-    assert all(pd.Timestamp(x["power_day"])==pd.Timestamp(x["origin"])-pd.Timedelta(days=3) for x in r["records"])
+    assert all(pd.Timestamp(x["power_day"])==pd.Timestamp(x["origin"])-pd.Timedelta(3, unit="D") for x in r["records"])
     with pytest.raises(ValueError,match="giorni con dati comuni"):
         evaluate(v,bs[:14],2,asof,strict=True,load=True)
