@@ -51,8 +51,7 @@ def _metrics(context: MarketContext) -> None:
             ("Copertura della domanda", "coverage_pct", "%", "Offerta ÷ domanda", 1, "blue"),
             ("Prezzo di esempio", "price_eur_mwh", "€/MWh", _change(facts, "price_eur_mwh"), 2, ""),
         ]
-    kpi_grid([(title,facts.get(field),units,description if facts.get(field) is not None else "Dato non disponibile",
-               decimals,tone) for title,field,units,description,decimals,tone in specs])
+    kpi_grid([(title,facts[field],units,description,decimals,tone) for title,field,units,description,decimals,tone in specs if facts.get(field) is not None])
 
 
 def _plain_market(context: MarketContext) -> str:
@@ -279,14 +278,14 @@ def _overview_mix(context):
                 st.markdown(f"**{label}** · {numero(value,1)} GWh ({numero(100*value/total,1)}%)")
                 st.progress(float(value/total))
         else:
-            rows([(label,numero(facts.get(field),1)) for label,field in fields])
+            rows([(label,numero(facts[field],1)) for label,field in fields if facts.get(field) is not None])
             st.caption("Quote non calcolate: componenti incomplete o non riconciliate.")
     elif origin.grain=="monthly":
         st.subheader("Bilancio nazionale")
         st.caption(facts.get("label","Periodo non disponibile")+" · GWh/mese")
         rows([(label,numero(facts.get(field),1)) for label,field in (
             ("Importazioni nette","net_imports_gwh"),("Produzione interna","production_gwh"),
-            ("Variazione delle scorte","stock_change_gwh"),("Disponibilità contabile","supply_gwh"))])
+            ("Variazione delle scorte","stock_change_gwh"),("Disponibilità contabile","supply_gwh")) if facts.get(field) is not None])
         info("Bilancio","Disponibilità statistica, non misura della capacità di rete.")
     else:
         st.subheader("Scenario di esempio")
@@ -305,7 +304,7 @@ def overview() -> None:
     with top:
         header("Panoramica del mercato","")
         st.markdown("**"+area+"** · "+perimeter)
-        st.markdown("[Cabina di controllo BSO e Executive demo](/kpi)")
+        st.markdown("[Cabina di controllo BSO · aggiorna tutte le fonti reali](/kpi)")
     context=None
     if selection.bundle:
         context=preview_market(selection)
@@ -313,8 +312,10 @@ def overview() -> None:
         _market_headlines(context)
         findings=[f for f in context.inspection.findings if f.severity!="info"]
         stale=[f for f in findings if f.id=="stale" or f.id.startswith("public-cache")]
-        for f in stale:
-            st.warning(f.title+" — "+f.detail)
+        if stale:
+            st.caption("Ultimo dato valido · aggiornamento da verificare")
+            with st.expander("Stato aggiornamento"):
+                for f in stale:st.caption(f.title+" — "+f.detail)
         if not context.facts:
             st.warning("Nessuna osservazione utilizzabile. Consulta i controlli qualità.")
         with st.container(key="overview_split"):
@@ -355,7 +356,7 @@ def _model_comparison(context: MarketContext) -> None:
                 "WAPE (%)": round(scores[name].wape, 1) if name in scores and scores[name].wape is not None else None,
                 "Bias (GWh)": round(scores[name].bias, 1) if name in scores else None,
                 "In uso": "Sì" if name == projection.model else "",
-            } for name in (*ordered, *(model for model in MODELS if model not in scores))],
+            } for name in ordered],
                 hide_index=True, width="stretch")
         else:
             st.caption("Servono almeno 12 osservazioni confrontabili per confrontare gli errori dei modelli.")
@@ -390,12 +391,13 @@ def _market_headlines(context: MarketContext):
     comparison=("Ultimi 7 giorni vs 7 precedenti" if origin.grain=="daily" else "Rispetto al mese precedente")
     stale=any(f.id=="stale" for f in context.inspection.findings)
     next_label="Stima da dati non recenti" if stale else "Stima successiva" if origin.archive or origin.kind==Kind.SYNTHETIC else "Consumo previsto"
-    kpi_grid([
+    cards=[
         (label,facts.get("demand_gwh"),unit,facts.get("label","Dato non disponibile"),1,"teal"),
         ("Variazione dei consumi",facts.get("demand_gwh_change_pct"),"%",comparison,1,""),
         (next_label,point.estimate if point else None,unit,
          period_text(pd.Timestamp(point.period),origin.grain) if point else "Previsione non disponibile",1,"blue")
-    ])
+    ]
+    kpi_grid([r for r in cards if r[1] is not None])
     info("Lettura dei dati",_plain_market(context))
     if point and facts.get("period"):
         lead=(pd.Timestamp(point.period)-pd.Timestamp(facts["period"])).days

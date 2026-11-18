@@ -163,8 +163,10 @@ def _load_once(state,button,loader,key,*args,primary=False):
                 st.session_state[state]={"attempted":now,"error":reason,"result":saved}
     snapshot=st.session_state.get(state,{})
     if snapshot.get("error"):
-        st.error(snapshot["error"])
-        st.caption("Verifica il portale ufficiale e l’abilitazione della chiave. Nessun dato di esempio sostitutivo.")
+        st.caption("Aggiornamento non disponibile · ultimo dato valido conservato, se presente.")
+        with st.expander("Dettagli connessione"):
+            st.text(snapshot["error"])
+            st.caption("Verifica il portale ufficiale e l’abilitazione della chiave.")
     return snapshot.get("result")
 
 
@@ -189,7 +191,7 @@ def _inventory_panel(platform,loader,key):
     age=(utc_now().astimezone(ROME).date()-recent["gas_day"]).days
     state=st.session_state.get(platform+"_"+scope,{})
     if age>2 or age<0 or result["failed"] or state.get("error"):
-        st.warning("Dato non recente o aggiornamento non riuscito: verifica la fonte.")
+        st.caption("Ultima pubblicazione disponibile · aggiornamento da verificare.")
     status={"C":"Confermato","E":"Stimato","N":"Assente"}.get(recent["status"],recent["status"])
     st.markdown("**"+scope_label(scope)+"**")
     st.caption(f"Ultimo dato: {data_it(recent['gas_day'])} · {status} · acquisito {local_time(result['acquired'])}"+
@@ -202,7 +204,8 @@ def _inventory_panel(platform,loader,key):
     if is_storage:
         fill=finite(recent["fill_pct"])
         capacity=finite(recent["capacity_twh"])
-        with st.container(border=True,key="panel_storage_fill"):
+        if fill is not None:
+          with st.container(border=True,key="panel_storage_fill"):
             st.caption("Riempimento degli stoccaggi")
             st.markdown("### "+(numero(fill,1)+"%" if fill is not None else "Non disponibile"))
             if fill is not None and 0<=fill<=100:
@@ -210,13 +213,13 @@ def _inventory_panel(platform,loader,key):
             elif fill is not None:
                 st.caption("Valore pubblicato fuori dall’intervallo 0–100%; barra non mostrata.")
             st.caption(delta("fill_pct","punti percentuali"))
-            st.caption("Capacità dichiarata: "+(numero(capacity,1)+" TWh" if capacity is not None else "non disponibile")+
-                       " · riempimento fisico, non disponibilità commerciale.")
-        kpi_grid([
+            if capacity is not None:st.caption("Capacità dichiarata: "+numero(capacity,1)+" TWh · riempimento fisico, non disponibilità commerciale.")
+        cards=[
             ("Giacenza",finite(recent["stock_twh"]),"TWh",delta("stock_twh","TWh"),2,"teal"),
             ("Gas prelevato",finite(recent["withdrawal_gwh_d"]),"GWh/giorno","Uscita dagli stoccaggi",1,""),
             ("Gas immagazzinato",finite(recent["injection_gwh_d"]),"GWh/giorno","Ingresso negli stoccaggi",1,"blue"),
-        ])
+        ]
+        kpi_grid([r for r in cards if r[1] is not None])
         labels={"fill_pct":("Riempimento","%"),"stock_twh":("Giacenza","TWh"),
                 "withdrawal_gwh_d":("Gas prelevato","GWh/giorno"),"injection_gwh_d":("Gas immagazzinato","GWh/giorno")}
         preferred="fill_pct"
@@ -224,11 +227,12 @@ def _inventory_panel(platform,loader,key):
         # Keep liquid volume and energy separate; show only a published unit.
         stock_field="inventory_1000m3_lng" if finite(recent["inventory_1000m3_lng"]) is not None else "inventory_gwh"
         stock_unit="migliaia di m³ GNL" if stock_field=="inventory_1000m3_lng" else "GWh"
-        kpi_grid([
+        cards=[
             ("Gas immesso in rete",finite(recent["sendout_gwh_d"]),"GWh/giorno",delta("sendout_gwh_d","GWh/giorno"),1,"teal"),
             ("Gas liquefatto nei terminali",finite(recent[stock_field]),stock_unit,"Inventario pubblicato",2,""),
             ("Immissione / riferimento",finite(recent["sendout_reference_pct"]),"%","Rapporto sul riferimento dichiarato",1,"blue"),
-        ])
+        ]
+        kpi_grid([r for r in cards if r[1] is not None])
         labels={"sendout_gwh_d":("Gas immesso in rete","GWh/giorno"),
                 "inventory_1000m3_lng":("Inventario GNL","migliaia di m³ GNL"),
                 "inventory_gwh":("Inventario GNL","GWh"),
@@ -237,6 +241,9 @@ def _inventory_panel(platform,loader,key):
     with st.container(border=True,key="panel_supply_history"):
         st.subheader("Andamento nel tempo")
         available=[f for f in labels if frame[f].notna().any()]
+        if not available:
+            st.caption("Nessuna serie numerica validata; consulta la fonte.")
+            return
         left,right=st.columns([2,1])
         with left:
             col=st.selectbox("Indicatore",available,index=available.index(preferred) if preferred in available else 0,

@@ -191,7 +191,7 @@ def page():
         from .advanced_kpi_page import panel
         panel()
         return
-    selection=st.radio("Modalità dati",["Demo","Dati importati"],horizontal=True,key="bso_mode")
+    selection=st.radio("Modalità dati",["Dati importati","Demo"],horizontal=True,key="bso_mode")
     demo=selection=="Demo"
     now=DEMO_NOW if demo else utc_now().astimezone(ROME)
     st.caption(("Demo sintetica · " if demo else "Dati di sessione · ")+stamp(now)+" · calcolato alla visualizzazione")

@@ -25,12 +25,13 @@ def manifest(items,benchmarks,forecasts,question,today,*,remote):
     def rank(k):
         v=eligible[k]
         words=set(re.findall(r"\w+",(v.label+" "+v.source+" "+v.scope+" "+k).casefold()))
-        return (-sum(len(w) for w in terms&words if len(w)>2), k.startswith("jarvis_coef_"),k)
+        return (-sum(len(w) for w in terms&words if len(w)>2), -date.fromisoformat(v.values.index[-1]).toordinal(), k.startswith("jarvis_coef_"),k)
     keys=sorted(eligible,key=rank)[:MAX_CATALOG]
     return {
         "today":today.isoformat(),"tools":TOOLS,
         "series":[{"id":k,"label":eligible[k].label[:120],"source":eligible[k].source[:80],
                    "scope":eligible[k].scope[:120],"unit":eligible[k].unit[:70],"grain":eligible[k].grain,
+                   "status":eligible[k].status[:180],
                    "first":eligible[k].values.index[0],"last":eligible[k].values.index[-1],
                    "n":len(eligible[k].values)} for k in keys],
         "benchmarks":[{k:r[k] for k in ("id","label","period","unit","source")} for r in benchmarks],

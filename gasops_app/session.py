@@ -317,13 +317,20 @@ def source_filters(page: str, *, lookback: bool = True) -> Selection:
                 with st.expander("Nota tecnica ENTSOG"):
                     st.caption(note)
         except SourceUnavailable as error:
-            st.error(str(error))
+            st.caption("Fonte temporaneamente indisponibile. Riprova con Aggiorna dati.")
+            with st.expander("Dettagli della fonte"):
+                st.text(str(error))
             if name == DAILY:
                 st.button("Apri Eurostat + ARERA", on_click=_choose_source, args=(page, PUBLIC), key=f"{page}_monthly")
             left, right = st.columns(2)
             left.button("Apri archivio pubblico JRC", on_click=_choose_source, args=(page, ARCHIVE), key=f"{page}_archive")
-            right.button("Usa dati di esempio", on_click=_choose_source, args=(page, DEMO), key=f"{page}_demo")
-            bundle = None
+            # Simulation remains an explicit selection in the source menu.
+            from .live_sources import BUNDLES
+            bundle=st.session_state.get(BUNDLES,{}).get("daily" if name==DAILY else "monthly")
+            if bundle is not None:st.caption("Ultima acquisizione valida della stessa fonte.")
+    if bundle is not None and name in (PUBLIC,DAILY):
+        from .live_sources import remember_bundle
+        remember_bundle(st.session_state,bundle,utc_now())
     st.session_state["active_bundle"] = bundle
     return Selection(name, model, periods, bundle)
 

@@ -1,4 +1,4 @@
-"""Public-first BSO overview. No network calls or demo fallback."""
+"""Live-first BSO overview. Explicit refresh only; no demo fallback."""
 from datetime import date
 import streamlit as st
 
@@ -10,14 +10,14 @@ from .advanced_kpis import (operations_scores,balancing_scores,archive_scores,pa
     latest_power_scores,native_balance_scores)
 
 HIGHLIGHTS=("baf_imbalance_share","baf_net_adjusted_neutrality","baf_tso_buy_share","terna_gas","mase_prod","lng")
-RECENT=("native_provisional","native_final","native_revision","stock","fill","terna_thermal_day","terna_load_day","flow","util","ren_gap","power_corr")
+RECENT=("srg_withdrawals","srg_power","srg_industry","national_demand","psv","lng","native_provisional","native_final","native_revision","stock","fill","terna_thermal_day","terna_load_day","flow","util","ren_gap","power_corr")
 PRECISION={"baf_net_adjusted_neutrality":2,"mase_prod":2,"power_corr":2,"lng":2,"lng_spread":2,"overdue":0}
 
 
 def _cards(metrics,limit=3):
     for start in range(0,len(metrics),limit):
         group=metrics[start:start+limit]
-        cols=st.columns(limit)
+        cols=st.columns(len(group))
         for col,r in zip(cols,group):
             with col:
                 st.metric(r.label,numero(r.value,PRECISION.get(r.code,1))+(f" {r.unit}" if r.unit else ""),help=r.definition)
@@ -27,16 +27,29 @@ def _cards(metrics,limit=3):
 def panel():
     now=utc_now().astimezone(ROME)
     state=st.session_state
-    st.caption("Italia · contesto pubblico e controlli BSO")
+    st.caption("Italia · ultimi dati pubblicati e controlli BSO")
+    from .live_sources_page import controls
+    from .live_sources import market_scores
+    controls("bso")
     context=network_scores(state.get("entsog_network_result_v1"),now)+storage_scores(state.get("AGSI+_IT"),now)+power_scores(state.get("terna_power_v1"))
+    context+=market_scores(state,now)
     context+=latest_power_scores(state.get("terna_power_v1"),now)+native_balance_scores(state.get("jarvis_native_v1"),now)
     for getter in (lambda:historical_scores(state.get("acer_lng_result_v1"),now),benchmark_scores):
         try:
             context+=getter()
         except (OSError,ValueError,KeyError,StopIteration):
-            st.warning("Un archivio pubblico non è disponibile o validabile.")
+            with st.expander("Copertura archivio"):
+                st.caption("Un archivio pubblico non è disponibile o validabile.")
     context_by={r.code:r for r in context}
-    recent=[context_by[k] for k in RECENT if k in context_by and context_by[k].value is not None]
+    def current(r):
+        try:
+            period=date.fromisoformat(r.period if len(r.period)==10 else r.period+"-01")
+        except ValueError:
+            return False
+        age=(now.date()-period).days
+        return 0<=age<=(93 if len(r.period)==7 else 4) and not any(x in r.status.lower() for x in ("storico","verificare","sospeso","aggiornare"))
+    recent=[context_by[k] for k in RECENT if k in context_by and context_by[k].value is not None and current(context_by[k])]
+    dated=[context_by[k] for k in RECENT if k in context_by and context_by[k].value is not None and context_by[k] not in recent and k not in HIGHLIGHTS]
     if recent:
         st.markdown("**Ultimi dati caricati**")
         _cards(recent[:6])
@@ -44,16 +57,19 @@ def panel():
             with st.expander("Altri dati caricati"):
                 _cards(recent[6:])
         st.caption("Periodi e perimetri distinti: non necessariamente dati di oggi.")
-    st.markdown("**Indicatori pubblici di riferimento**")
-    public=[context_by[k] for k in HIGHLIGHTS if k in context_by and context_by[k].value is not None]
-    if public:
-        _cards(public)
     else:
-        st.caption("Nessun indicatore pubblico validabile nell'archivio.")
-    st.caption("Benchmark ACER e dati annuali MASE/Terna; la quotazione GNL mostra la data effettiva. Non KPI interni del team.")
+        st.caption("Aggiorna le fonti per visualizzare gli ultimi dati disponibili.")
+    if dated:
+        with st.expander("Ultimi dati validi · periodi precedenti o da verificare"):
+            _cards(dated)
+    public=[context_by[k] for k in HIGHLIGHTS if k in context_by and context_by[k].value is not None and context_by[k] not in recent]
+    if public:
+        with st.expander("Benchmark storici e statistiche annuali"):
+            _cards(public)
+            st.caption("Periodi espliciti · non dati odierni né KPI interni.")
     with st.expander("Come aggiornare i dati"):
         st.markdown("[Rete Snam · importazione nativa e stime Jarvis](/security-of-supply) · [Terna e ACER](/market)")
-        st.caption("Carica dati nelle viste dedicate nella stessa sessione dell’app. La panoramica li riutilizza senza nuove chiamate API; gli archivi storici restano visibili senza credenziali.")
+        st.caption("I dati acquisiti nelle viste dedicate o con Aggiorna fonti reali sono riutilizzati nella stessa sessione. Gli archivi storici restano consultabili senza credenziali.")
     st.divider()
     st.markdown("**Controlli operativi interni**")
     chosen=st.date_input("Mese delle attività e dei bilanci",value=now.date().replace(day=1),
