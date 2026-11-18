@@ -8,3 +8,4 @@ python-dotenv>=1.0,<2
 requests>=2.32,<3
 tzdata>=2025.1
 pytest>=8,<10
+numpy>=1.26,<3
