@@ -143,3 +143,26 @@ def test_llm_tool_protocol_routes_and_retrieves_in_bounded_rounds(context):
 def test_cvar_routes_to_scenario(context):
     run = run_workflow(context, Library(), Assumptions(), "Calcola CVaR e Monte Carlo")
     assert "monte_carlo" in run.results[Agent.SCENARIO].values
+
+
+
+def test_planned_assistant_shortcut_keeps_local_tools_and_single_model_call(context):
+    class SummaryOnly:
+        label="mock"
+        calls=0
+        def route(self,*args):
+            pytest.fail("Shortcut must not call the model for routing")
+        def review(self,*args):
+            pytest.fail("Shortcut must not call the model for review")
+        def summarize(self,run):
+            self.calls+=1
+            assert Agent.SCENARIO in run.results
+            return "Sintesi dello scenario.",[Agent.SCENARIO]
+    reasoner=SummaryOnly()
+    run=run_workflow(context,Library(),Assumptions(),
+                     "Simula uno scenario in cui la domanda aumenta del 10%.",
+                     reasoner=reasoner,planned_only=True)
+    assert reasoner.calls==1
+    assert run.mode=="LLM-assisted"
+    assert run.interpretation=="Sintesi dello scenario."
+    assert run.results[Agent.SCENARIO].values["changes"]["demand_pct"]=="10"

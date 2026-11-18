@@ -122,6 +122,7 @@ def run_workflow(
     notify: Callable[[Run], None] | None = None,
     reasoner: Reasoner | None = None,
     public_context: dict | None = None,
+    planned_only: bool = False,
 ) -> Run:
     question = question.strip()[:600] or DAILY_BRIEFING
     defaults = plan(question, full)
@@ -134,7 +135,7 @@ def run_workflow(
     required = set(Agent) if full else {call.agent for call in defaults} if len(defaults) == len(Agent) else set()
     report = execute(
         run, catalog(context, library, assumptions), defaults, required,
-        lambda report: validate(report, context, assumptions), notify or (lambda _: None), reasoner,
+        lambda report: validate(report, context, assumptions), notify or (lambda _: None), reasoner, planned_only=planned_only,
     )
     if Agent.QUALITY in report.results:
         report.assumptions["source_period"] = context.facts.get("period")
