@@ -251,9 +251,7 @@ def market() -> None:
         selection = source_filters("market")
     with top:
         header("Mercato e previsioni", selection.meta)
-    # Operational sources are independent of the selected demand dataset.
-    from .operational_sources_page import operational_context
-    operational_context()
+    st.markdown("[Security of supply — AGSI+, ALSI, IIP e Jarvis](/security-of-supply)")
     if not selection.bundle:
         return
 

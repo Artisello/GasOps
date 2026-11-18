@@ -56,5 +56,37 @@ def test_operational_sources_visible_when_entsog_unavailable(monkeypatch,tmp_pat
     app.run()
     assert not app.exception
     assert app.error[0].value=="ENTSOG non disponibile"
-    assert any(e.label=="Dati operativi e stoccaggi · facoltativo" for e in app.expander)
-    assert {"Jarvis","AGSI+","ALSI","IIP"} <= {tab.label for tab in app.tabs}
+    assert any("Security of supply" in el.value for el in app.markdown)
+    sources=AppTest.from_string("from gasops_app.operational_sources_page import operational_context\noperational_context()",default_timeout=30).run()
+    assert not sources.exception
+    assert sources.radio(key="operational_platform").value=="AGSI+"
+
+
+def test_agsi_is_default_and_loads_independently(monkeypatch,tmp_path):
+    from datetime import timedelta
+    import json
+    from gasops_app.models import utc_now
+    from gasops_app.data import ROME
+    from gasops_app.operational_sources import parse_agsi
+    from gasops_app import operational_sources_page as op
+    monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
+    monkeypatch.setenv("GASOPS_GIE_API_KEY","fixture-key")
+    monkeypatch.setattr(op,"configured_key",lambda:"fixture-key")
+    calls=[]
+    def fake(store,key,scope,**kwargs):
+        calls.append(scope)
+        now=utc_now()
+        day=now.astimezone(ROME).date()-timedelta(days=1)
+        payload={"last_page":1,"total":1,"data":[{"code":scope,"gasDayStart":day.isoformat(),
+                 "gasInStorage":"90,5","workingGasVolume":"100","full":"90,5","withdrawal":"40","status":"C"}]}
+        return parse_agsi(json.dumps(payload),now,scope=scope)
+    monkeypatch.setattr(op,"load_agsi",fake)
+    app=AppTest.from_string("from gasops_app.operational_sources_page import operational_context\noperational_context()",default_timeout=30).run()
+    assert not app.exception
+    assert calls==["IT"] and app.radio(key="operational_platform").value=="AGSI+"
+    assert any(m.label=="Giacenza" for m in app.metric)
+    assert any("Gas Infrastructure Europe" in el.value for el in app.markdown)
+    app.run()
+    assert calls==["IT"] and not app.exception
+    app.selectbox(key="AGSI+_scope").select("EU").run()
+    assert calls==["IT","EU"] and not app.exception

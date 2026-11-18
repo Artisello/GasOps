@@ -27,7 +27,8 @@ def test_storage_missing_and_country_and_conflicts():
 def test_agsi_bounded_call(monkeypatch):
     import gasops_app.operational_sources as op
     def fake(store,**kwargs):
-        assert kwargs["headers"]=={"x-key":"test-key"}
+        assert kwargs["headers"]["x-key"]=="test-key"
+        assert kwargs["headers"]["Accept"]=="application/json"
         assert kwargs["params"]["country"]=="IT"
         assert kwargs["params"]["size"]==100
         assert kwargs["attempts"]==1
@@ -103,3 +104,30 @@ def test_shared_gie_key(monkeypatch):
     assert gie_key()=="old"
     monkeypatch.setenv("GASOPS_GIE_API_KEY","new")
     assert gie_key()=="new"
+
+
+def test_gie_real_document_decimal_formats_and_single_record():
+    from gasops_app.operational_sources import number
+    data=arow(stock="63,9469")
+    data.update({"workingGasVolume":"243,4311","injection":"563,62","withdrawal":"591,99","full":"26.27"})
+    result=parse_agsi(json.dumps({"last_page":1,"total":1,"data":data}),NOW,scope="IT")
+    assert result["frame"].iloc[0]["stock_twh"]==pytest.approx(63.9469)
+    assert result["frame"].iloc[0]["injection_gwh_d"]==pytest.approx(563.62)
+    with pytest.raises(ValueError):
+        number("1.234,56")
+    with pytest.raises(ValueError,match="Accesso GIE negato"):
+        parse_agsi(json.dumps({"last_page":0,"error":"access denied","message":"Invalid or missing API key"}),NOW,scope="IT")
+
+
+def test_optional_capacity_can_be_missing():
+    data=arow()
+    data["workingGasVolume"]=None
+    data["full"]=None
+    result=parse_agsi(json.dumps({"last_page":1,"data":[data]}),NOW,scope="IT")
+    assert result["frame"]["capacity_twh"].isna().all()
+
+
+def test_gie_secret_can_be_read_before_env_export(monkeypatch):
+    from gasops_app.operational_sources import gie_key
+    monkeypatch.delenv("GASOPS_GIE_API_KEY",raising=False)
+    assert gie_key({"GASOPS_GIE_API_KEY":"  secret  "})=="secret"
