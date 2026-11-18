@@ -16,11 +16,12 @@ st.set_page_config(
 load_dotenv(ROOT / ".env", override=False)
 st.html(ROOT / "gasops_app" / "theme.css")
 
-from gasops_app import dashboard, session, workbench, operations_page, risk_page
+from gasops_app import dashboard, session, workbench, operations_page, risk_page, operational_sources_page
 
 pages = [
     st.Page(dashboard.overview, title="Panoramica", icon=":material/grid_view:", default=True),
     st.Page(dashboard.market, title="Mercato e previsioni", icon=":material/monitoring:", url_path="market"),
+    st.Page(operational_sources_page.operational_context, title="Security of supply", icon=":material/shield:", url_path="security-of-supply"),
     st.Page(workbench.balancing, title="Bilanciamento", icon=":material/balance:", url_path="balancing"),
     st.Page(operations_page.operations_ledger, title="Registro operativo", icon=":material/receipt_long:", url_path="ledger"),
     st.Page(risk_page.risk_page, title="Rischio probabilistico", icon=":material/query_stats:", url_path="risk"),

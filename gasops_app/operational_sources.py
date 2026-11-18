@@ -6,12 +6,13 @@ from io import StringIO
 import json
 import math
 import os
+import re
 
 import pandas as pd
 
 from .data import ROME
 from .models import utc_now
-from .public_data import retrieve
+from .public_data import SourceSchemaError, retrieve
 
 AGSI_URL = "https://agsi.gie.eu/api"
 AGSI_SOURCE = "https://agsi.gie.eu/"
@@ -24,10 +25,16 @@ GIE_CREDIT = {"AGSI+": "Gas Infrastructure Europe (GIE) – AGSI+",
 GIE_LINKS = {"AGSI+": AGSI_SOURCE, "ALSI": ALSI_SOURCE, "IIP": IIP_SOURCE}
 
 
-def gie_key():
-    """Single optional secret; retain the previous variable as fallback."""
-    return (os.getenv("GASOPS_GIE_API_KEY", "").strip() or
-            os.getenv("GASOPS_AGSI_API_KEY", "").strip())
+def gie_key(secrets=None):
+    """Read the canonical key or legacy alias, without logging or exposing either."""
+    for name in ("GASOPS_GIE_API_KEY","GASOPS_AGSI_API_KEY"):
+        value=secrets.get(name,"") if secrets is not None else ""
+        if isinstance(value,str) and value.strip():
+            return value.strip()
+        value=os.getenv(name,"")
+        if value.strip():
+            return value.strip()
+    return ""
 
 
 def attribution(platform):
@@ -50,52 +57,85 @@ def number(value, *, signed=False):
     if value is None or str(value).strip() in ("", "-", "N/A", "n/a"):
         return None
     if isinstance(value,bool):
-        raise ValueError("Valore numerico non valido.")
+        raise SourceSchemaError("Valore numerico non valido.")
+    if isinstance(value,str):
+        value=value.strip()
+        # Official GIE v007 examples use decimal commas as well as dots.
+        # Do not guess thousands separators or mixed-locale formats.
+        if re.fullmatch(r"[+-]?\\d+,\\d+",value):
+            value=value.replace(",",".")
     try:
         v=float(value)
     except (ValueError,TypeError):
-        raise ValueError("Valore numerico non valido.") from None
+        raise SourceSchemaError("Valore numerico non valido.") from None
     if not math.isfinite(v) or (not signed and v<0):
-        raise ValueError("Valore numerico non valido.")
+        raise SourceSchemaError("Valore numerico non valido.")
     return v
 
 
-def parse_agsi(text, acquired, *, scope, cached=False, failed=False):
+def _gie_payload(text):
     payload=json.loads(text)
-    if not isinstance(payload,dict) or int(payload.get("last_page",0))!=1:
-        raise ValueError("Risposta AGSI incompleta o paginata.")
+    if not isinstance(payload,dict):
+        raise SourceSchemaError("Risposta GIE non riconosciuta")
+    if payload.get("error"):
+        error=str(payload.get("error","")).lower()+" "+str(payload.get("message","")).lower()
+        if "access denied" in error or "api key" in error or "unauthor" in error:
+            raise SourceSchemaError("Accesso GIE negato: verifica chiave e abilitazioni")
+        if "too many" in error or "rate limit" in error:
+            raise SourceSchemaError("Limite richieste GIE raggiunto")
+        raise SourceSchemaError("Il servizio GIE ha segnalato un errore")
+    return payload
+
+
+def _inventory_rows(text, platform):
+    payload=_gie_payload(text)
     data=payload.get("data")
-    if not isinstance(data,list) or not 1<=len(data)<=92:
-        raise ValueError("Numero di record AGSI non valido.")
+    if isinstance(data,dict):
+        data=[data]
+    if not isinstance(data,list) or not data:
+        raise SourceSchemaError("Nessun record "+platform)
+    if int(payload.get("last_page",0))!=1:
+        raise SourceSchemaError("Risposta "+platform+" paginata o incompleta")
+    if len(data)>92 or any(not isinstance(row,dict) for row in data):
+        raise SourceSchemaError("Record "+platform+" non validi")
+    if payload.get("total") is not None and int(payload["total"])!=len(data):
+        raise SourceSchemaError("Conteggio record "+platform+" incoerente")
+    return data
+
+
+def parse_agsi(text, acquired, *, scope, cached=False, failed=False):
+    data=_inventory_rows(text,"AGSI")
     today=acquired.astimezone(ROME).date()
     rows={}
     for item in data:
         if str(item["code"]).upper()!=scope:
-            raise ValueError("Perimetro AGSI non riconosciuto.")
+            raise SourceSchemaError("Perimetro AGSI non riconosciuto.")
         day=date.fromisoformat(item["gasDayStart"])
         if not today-timedelta(days=91)<=day<today:
-            raise ValueError("Giorno-gas AGSI fuori intervallo.")
+            raise SourceSchemaError("Giorno-gas AGSI fuori intervallo.")
         status=item["status"]
         if status not in ("C","E","N"):
-            raise ValueError("Stato AGSI non riconosciuto.")
+            raise SourceSchemaError("Stato AGSI non riconosciuto.")
         row={"gas_day":day, "status":status}
         for source,target in STORAGE_COLUMNS.items():
             row[target]=None if status=="N" else number(item.get(source))
         if day in rows and rows[day]!=row:
-            raise ValueError("Pubblicazioni AGSI in conflitto.")
+            raise SourceSchemaError("Pubblicazioni AGSI in conflitto.")
         rows[day]=row
     frame=pd.DataFrame(list(rows.values())).sort_values("gas_day").reset_index(drop=True)
     if not frame["stock_twh"].notna().any():
-        raise ValueError("Giacenze AGSI non disponibili.")
+        raise SourceSchemaError("Giacenze AGSI non disponibili.")
     # Keep source percentages as published (including values above 100%).
     # Show a mismatch rather than overwriting the publisher's fields.
+    frame[list(STORAGE_COLUMNS.values())]=frame[list(STORAGE_COLUMNS.values())].astype(float)
+    capacity=frame["capacity_twh"].where(frame["capacity_twh"]>0)
     frame["review"]=((frame["capacity_twh"]<=0) |
-        ((frame["stock_twh"]/frame["capacity_twh"]*100-frame["fill_pct"]).abs()>0.5))
+        ((frame["stock_twh"]/capacity*100-frame["fill_pct"]).abs()>0.5))
     return {"frame":frame,"scope":scope,"acquired":acquired,"cached":cached,"failed":failed,
             "platform":"AGSI+",**attribution("AGSI+")}
 
 
-def load_agsi(store,api_key,scope="IT",*,now=None):
+def load_agsi(store,api_key,scope="IT",*,now=None,refresh=False):
     if scope not in ("IT","EU") or not api_key or not api_key.strip():
         raise ValueError("Chiave AGSI o perimetro non valido.")
     now=now or utc_now()
@@ -105,9 +145,10 @@ def load_agsi(store,api_key,scope="IT",*,now=None):
     params.update({"country":"IT"} if scope=="IT" else {"type":"eu"})
     def parse(text,acquired,**kwargs):
         return parse_agsi(text,acquired,scope=scope,**kwargs)
-    return retrieve(store,key="agsi-public-v1-"+scope,name="GIE AGSI+",url=AGSI_URL,
+    return retrieve(store,key="agsi-public-v2-"+scope,name="GIE AGSI+",url=AGSI_URL,
                     parse=parse,ttl=timedelta(hours=24),params=params,
-                    attempts=1,headers={"x-key":api_key.strip()})
+                    attempts=1,headers={"x-key":api_key.strip(),"Accept":"application/json"},
+                    timeout=(5,20),diagnostics=True,refresh=refresh)
 
 
 def jarvis_template():
@@ -164,23 +205,18 @@ def parse_jarvis(content:bytes, *, now=None):
 
 def parse_alsi(text, acquired, *, scope, cached=False, failed=False):
     """LNG liquid volume remains separate from energy; no assumed conversion factor."""
-    payload=json.loads(text)
-    if not isinstance(payload,dict) or payload.get("error") or int(payload.get("last_page",0))!=1:
-        raise ValueError("Risposta ALSI non valida o paginata.")
-    data=payload.get("data")
-    if not isinstance(data,list) or not 1<=len(data)<=92:
-        raise ValueError("Numero di record ALSI non valido.")
+    data=_inventory_rows(text,"ALSI")
     today=acquired.astimezone(ROME).date()
     rows={}
     for item in data:
         if str(item["code"]).upper()!=scope:
-            raise ValueError("Perimetro ALSI non riconosciuto.")
+            raise SourceSchemaError("Perimetro ALSI non riconosciuto.")
         day=date.fromisoformat(item["gasDayStart"])
         if not today-timedelta(days=91)<=day<today:
-            raise ValueError("Giorno-gas ALSI fuori intervallo.")
+            raise SourceSchemaError("Giorno-gas ALSI fuori intervallo.")
         status=item.get("status")
         if status not in (None,"C","E","N"):
-            raise ValueError("Stato ALSI non riconosciuto.")
+            raise SourceSchemaError("Stato ALSI non riconosciuto.")
         stock=item.get("inventory")
         # v007 documents scalar inventory in 10^3 m3 LNG; newer responses
         # may separate liquid volume (lng) and energy (gwh).
@@ -195,18 +231,20 @@ def parse_alsi(text, acquired, *, scope, cached=False, failed=False):
                            "dtrs_gwh_d":item.get("dtrs")}.items():
             row[name]=None if status=="N" else number(value)
         if day in rows and rows[day]!=row:
-            raise ValueError("Pubblicazioni ALSI in conflitto.")
+            raise SourceSchemaError("Pubblicazioni ALSI in conflitto.")
         rows[day]=row
     frame=pd.DataFrame(list(rows.values())).sort_values("gas_day").reset_index(drop=True)
-    if not frame["sendout_gwh_d"].notna().any() and not frame["inventory_1000m3_lng"].notna().any():
-        raise ValueError("Dati ALSI non disponibili.")
+    measure_columns=[c for c in frame.columns if c not in ("gas_day","status")]
+    frame[measure_columns]=frame[measure_columns].astype(float)
+    if not frame[["sendout_gwh_d","inventory_1000m3_lng","inventory_gwh"]].notna().any().any():
+        raise SourceSchemaError("Dati ALSI non disponibili.")
     denominator=frame["dtrs_gwh_d"].where(frame["dtrs_gwh_d"]>0)
     frame["sendout_reference_pct"]=100*frame["sendout_gwh_d"]/denominator
     return {"frame":frame,"scope":scope,"acquired":acquired,"cached":cached,"failed":failed,
             "platform":"ALSI",**attribution("ALSI")}
 
 
-def load_alsi(store,api_key,scope="IT",*,now=None):
+def load_alsi(store,api_key,scope="IT",*,now=None,refresh=False):
     if scope not in ("IT","EU") or not api_key or not api_key.strip():
         raise ValueError("Chiave ALSI o perimetro non valido.")
     now=now or utc_now()
@@ -215,31 +253,30 @@ def load_alsi(store,api_key,scope="IT",*,now=None):
     params.update({"country":"IT"} if scope=="IT" else {"type":"eu"})
     def parse(text,acquired,**kwargs):
         return parse_alsi(text,acquired,scope=scope,**kwargs)
-    return retrieve(store,key="alsi-public-v1-"+scope,name=GIE_CREDIT["ALSI"],url=ALSI_SOURCE+"api",
+    return retrieve(store,key="alsi-public-v2-"+scope,name=GIE_CREDIT["ALSI"],url=ALSI_SOURCE+"api",
                     parse=parse,ttl=timedelta(hours=24),params=params,
-                    attempts=1,headers={"x-key":api_key.strip()})
+                    attempts=1,headers={"x-key":api_key.strip(),"Accept":"application/json"},
+                    timeout=(5,20),diagnostics=True,refresh=refresh)
 
 
 def parse_iip(text,acquired,*,cached=False,failed=False):
     """Preserve publisher messages without guessing fields, event units or revision semantics."""
-    payload=json.loads(text)
-    if not isinstance(payload,dict) or payload.get("error"):
-        raise ValueError("Risposta IIP non valida.")
+    payload=_gie_payload(text)
     data=payload.get("data")
     pages=int(payload["last_page"])
     if not isinstance(data,list) or pages<0 or len(data)>100 or any(not isinstance(r,dict) for r in data):
-        raise ValueError("Formato IIP non valido.")
+        raise SourceSchemaError("Formato IIP non valido.")
     if (pages==0 and data) or (pages>1 and not data):
-        raise ValueError("Paginazione IIP incoerente.")
+        raise SourceSchemaError("Paginazione IIP incoerente.")
     if not data and pages==0 and payload.get("message"):
         # Do not interpret an unrecognised API error as absence of outages.
-        raise ValueError("Risposta IIP vuota con messaggio: verifica la fonte.")
+        raise SourceSchemaError("Risposta IIP vuota con messaggio: verifica la fonte.")
     return {"messages":data,"pages":pages,"partial":pages>1,
             "acquired":acquired,"cached":cached,"failed":failed,
             "platform":"IIP",**attribution("IIP")}
 
 
-def load_iip(store,api_key,*,now=None):
+def load_iip(store,api_key,*,now=None,refresh=False):
     if not api_key or not api_key.strip():
         raise ValueError("Chiave IIP non valida.")
     now=now or utc_now()
@@ -250,7 +287,8 @@ def load_iip(store,api_key,*,now=None):
             "status":"active","size":100,"page":1}
     return retrieve(store,key="iip-active-v1-"+today.isoformat(),name=GIE_CREDIT["IIP"],
                     url=IIP_SOURCE+"api",parse=parse_iip,ttl=timedelta(hours=2),
-                    params=params,attempts=1,headers={"x-key":api_key.strip()})
+                    params=params,attempts=1,headers={"x-key":api_key.strip(),"Accept":"application/json"},
+                    timeout=(5,20),diagnostics=True,refresh=refresh)
 
 
 def attributed_iip_json(result):
