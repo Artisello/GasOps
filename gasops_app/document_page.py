@@ -8,7 +8,7 @@ import streamlit as st
 
 from .data import ROOT
 from .document_desk import build, identity, search, searchable_pages, bookmark, page_text, extend_uploads, MAX_RESULTS, MAX_TOTAL_BYTES
-from .regulatory import read_local_pdfs, MAX_DOCUMENTS, MAX_PDF_BYTES
+from .regulatory import read_local_pdfs, MAX_DOCUMENTS, MAX_PDF_BYTES, REGISTER, registered_case, matching_edition
 from .visuals import info
 from .session import reasoner
 from .document_rag import answer, MAX_PASSAGES
@@ -523,6 +523,35 @@ def _review_documents(cached):
 
 
 
+def _historical_register(cached):
+    """Read-only prepared cases, distinct from AI-generated session hypotheses."""
+    st.subheader("Rilievi documentali")
+    st.caption("Edizioni esaminate · non rappresentano incidenti operativi del giorno.")
+    cases={case.finding.id:case for case in REGISTER}
+    selected=st.selectbox("Rilievo",list(cases),format_func=lambda key:cases[key].finding.title,
+                          key="desk_historical_case")
+    case=cases[selected]
+    item=case.finding
+    with st.container(border=True):
+        st.markdown("**"+item.title+"**")
+        st.caption(item.category+" · "+case.review)
+        st.text(item.detail)
+        st.caption("Vigenza e applicabilità alla singola operazione non certificate.")
+        st.markdown("**Documenti e passaggi di riferimento**")
+        for index,cite in enumerate(item.citations):
+            st.text(f"{cite.document} · {cite.section} · PDF p. {cite.page}")
+            st.text(cite.evidence)
+            pdf=matching_edition(cached["docs"],cite)
+            if pdf is None:
+                st.caption("Copia esatta dell’edizione non disponibile nell’archivio selezionato. Riferimento storico, non estratto verificato in questa sessione.")
+                continue
+            key=f"desk_historical_preview_{item.id}_{index}"
+            if st.checkbox("Mostra pagina originale",key=key):
+                _preview(pdf,cite.page,"historical")
+    if st.session_state.get(SCOPE)!="Archivio pubblico":
+        st.caption("Puoi consultare le copie pubbliche scegliendo Archivio pubblico.")
+
+
 def _review_register(cached):
     docs=cached["docs"]
     cases=valid_cases(cached.get(REVIEW_KEY,[]),docs)
@@ -613,14 +642,20 @@ def document_page():
     st.title("Norme e documenti")
     info("Info archivio","La ricerca mostra testo estratto dalle pagine dei PDF presenti, non note precompilate. Le corrispondenze per parole chiave non sono un parere legale.",
          "Usa solo copie pubbliche o autorizzate. I PDF autorizzati pubblicati nel repository o in Storage sono condivisi tra tutti i visitatori e conservati indipendentemente dalla sessione Streamlit. Chiunque può caricare PDF nel proprio spazio di sessione senza account. Solo gli account I.G.O.R. autorizzati possono pubblicare nell’archivio condiviso; la rimozione dei documenti condivisi è riservata all’amministratore. Non caricare dati riservati. I PDF non entrano nel bollettino; la ricerca è sul server. Con Chiedi all’AI, soltanto la domanda e gli estratti sono inviati al modello selezionato, previo consenso per provider remoti. Non caricare documenti riservati su un deployment pubblico. Nessun OCR. La vigenza delle edizioni non è verificata.")
+    target=st.session_state.pop("desk_finding_target",None)
+    if isinstance(target,str) and registered_case(target):
+        st.session_state[SCOPE]="Archivio pubblico"
+        st.session_state["desk_mode"]="Registro rilievi"
+        st.session_state["desk_register_origin"]="Edizioni esaminate"
+        st.session_state["desk_historical_case"]=target
     cached=_archive()
-    if not cached["docs"].documents:
-        st.info("Aggiungi almeno un PDF per iniziare a cercare.")
-        return
     action=st.radio("Strumento",["Cerca","Chiedi all’AI","Leggi PDF","Confronta","Revisore","Registro rilievi","Riferimenti salvati","Compliance"],
                     horizontal=True,label_visibility="collapsed",key="desk_mode",
                     format_func={"Cerca":"Cerca","Chiedi all’AI":"Chiedi AI","Leggi PDF":"Leggi","Confronta":"Confronta",
                                  "Revisore":"Verifica","Registro rilievi":"Rilievi","Riferimenti salvati":"Salvati","Compliance":"Compliance"}.__getitem__)
+    if not cached["docs"].documents and action!="Registro rilievi":
+        st.info("Aggiungi almeno un PDF per iniziare a cercare.")
+        return
     if action=="Cerca":
         _search(cached)
     elif action=="Chiedi all’AI":
@@ -632,7 +667,12 @@ def document_page():
     elif action=="Revisore":
         _review_documents(cached)
     elif action=="Registro rilievi":
-        _review_register(cached)
+        origin=st.radio("Origine dei rilievi",["Edizioni esaminate","Rilievi di sessione"],horizontal=True,
+                        key="desk_register_origin",label_visibility="collapsed")
+        if origin=="Edizioni esaminate":
+            _historical_register(cached)
+        else:
+            _review_register(cached)
     elif action=="Compliance":
         from .compliance_page import panel as compliance_panel
         compliance_panel(cached,public=st.session_state.get(SCOPE)=="Archivio pubblico")

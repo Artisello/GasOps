@@ -421,7 +421,7 @@ def test_document_desk_empty_state_has_no_precompiled_findings(monkeypatch,tmp_p
     app=AppTest.from_string("from gasops_app.document_page import document_page\ndocument_page()").run()
     assert not app.exception
     assert any("Aggiungi almeno un PDF" in e.value for e in app.info)
-    assert not any("Preavviso di esattamente sette giorni" in e.value for e in app.markdown)
+    assert not any("Piombino · Mancata discarica" in e.value for e in app.markdown)
 
 
 def test_document_desk_pdf_search_and_rag_without_model(monkeypatch,tmp_path):
@@ -691,3 +691,50 @@ def test_unverified_iip_not_shown_as_kpi():
         assert not app.exception
         assert not any("Record UMM ricevuti" in e.proto.body for e in app.get("html"))
         assert any("Copertura incompleta" in e.value and "IIP" in e.value for e in app.caption)
+
+
+def test_briefing_regulatory_finding_cta_selects_exact_case(monkeypatch):
+    from gasops_app import dashboard
+    from gasops_app.regulatory import registered_case
+    opened=[]
+    monkeypatch.setattr(dashboard.st,"switch_page",lambda page:opened.append(page.url_path))
+    app=AppTest.from_string("from gasops_app.dashboard import _registered_finding\nfrom gasops_app.regulatory import registered_case\n_registered_finding(registered_case('notice-7').finding)").run()
+    assert not app.exception
+    assert any("Piombino" in m.value and "7 giorni" in m.value for m in app.markdown)
+    assert any("PDF p. 103" in c.value for c in app.caption)
+    assert any("PDF p. 104" in c.value for c in app.caption)
+    app.button(key="overview_finding_notice-7").click().run()
+    assert not app.exception
+    assert opened==["regulatory"]
+    assert app.session_state["desk_finding_target"]=="notice-7"
+
+
+def test_regulatory_cta_opens_historical_register_even_without_pdf(monkeypatch,tmp_path):
+    from gasops_app import document_page
+    monkeypatch.setenv("GASOPS_PDF_DIR",str(tmp_path))
+    monkeypatch.setattr(document_page,"_archive_config",lambda:None)
+    app=AppTest.from_string("from gasops_app.document_page import document_page\ndocument_page()")
+    app.session_state["desk_finding_target"]="notice-7"
+    app.session_state["document_archive_scope"]="I miei PDF"
+    app.run()
+    assert not app.exception
+    assert app.radio(key="desk_mode").value=="Registro rilievi"
+    assert app.radio(key="desk_register_origin").value=="Edizioni esaminate"
+    assert app.radio(key="document_archive_scope").value=="Archivio pubblico"
+    assert app.selectbox(key="desk_historical_case").value=="notice-7"
+    assert any("Copia esatta dell’edizione non disponibile" in c.value for c in app.caption)
+    assert not any(c.label=="Mostra pagina originale" for c in app.checkbox)
+    app.radio(key="desk_register_origin").set_value("Rilievi di sessione").run()
+    assert not app.exception
+    assert any("Nessun rilievo nel registro" in e.value for e in app.info)
+
+
+def test_registered_citation_resolves_by_revision_digest_not_filename():
+    from types import SimpleNamespace
+    from gasops_app.regulatory import EDITIONS, PIOMBINO, matching_edition, registered_case
+    cite=registered_case("notice-7").finding.citations[0]
+    fake=SimpleNamespace(digest="wrong-edition",pages=200)
+    digest=next(key for key,name in EDITIONS.items() if name==PIOMBINO)
+    exact=SimpleNamespace(digest=digest,pages=200)
+    assert matching_edition(SimpleNamespace(documents={PIOMBINO:fake}),cite) is None
+    assert matching_edition(SimpleNamespace(documents={"renamed.pdf":exact}),cite) is exact

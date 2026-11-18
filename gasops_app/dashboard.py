@@ -14,9 +14,32 @@ from .italiano import GRAVITA, MODALITA, MODELLI, data_it, numero
 from .models import AGENT_LABELS, Agent, Kind, Provider
 from .session import analysis_label, briefing_run, launch, preview_market, source_filters, market_scope, PUBLIC, DAILY
 from .reports import markdown
+from .regulatory import registered_case
 from .executive_briefing import management_readout, outlook_delta
 from .visuals import AMBER, BLUE, ROSE, TEAL, breakdown_chart, chip, demand_chart, error_chart, ai_readout
 from .visuals import forecast_readout, heading, header, info, kind_tag, kpi_grid, local_time, mini_chart, plot, rows, steps
+
+
+def _open_registered_finding(finding_id):
+    from .workbench import regulatory
+    st.session_state["desk_finding_target"]=finding_id
+    st.switch_page(st.Page(regulatory,title="Norme e documenti",icon=":material/menu_book:",url_path="regulatory"))
+
+
+def _registered_finding(finding):
+    case=registered_case(finding.id)
+    if case is None:
+        return False
+    item=case.finding
+    st.markdown("**"+item.title+"**")
+    st.caption("Rilievo documentale storico · vigenza e applicabilità da verificare")
+    st.text(item.detail)
+    for cite in item.citations:
+        st.caption(f"{cite.document} · {cite.section} · PDF p. {cite.page}")
+    if st.button("Apri rilievo",key="overview_finding_"+item.id,icon=":material/arrow_forward:",width="stretch",
+                 help="Apri Norme e documenti → Rilievi, con il caso già selezionato"):
+        _open_registered_finding(item.id)
+    return True
 
 
 def _change(facts: dict, field: str) -> str:
@@ -348,16 +371,15 @@ def _briefing_panel(selection) -> None:
             completed=sum(r.status in ("completed","review") for r in run.results.values())
             st.caption(f"Analisi eseguite: {completed}/{len(run.steps)} · Da verificare: {len(issues)}")
             for finding in issues:
-                if finding.severity=="high" and finding.id!="notice-7":
+                if finding.severity=="high" and registered_case(finding.id) is None:
                     st.warning(finding.title+" — "+finding.detail)
-            other_issues=[finding for finding in issues if finding.severity!="high" or finding.id=="notice-7"]
+            other_issues=[finding for finding in issues if finding.severity!="high" or registered_case(finding.id) is not None]
             if other_issues:
-                with st.expander(f"Rilievi da verificare · {len(other_issues)}",expanded=any(f.id!="notice-7" for f in other_issues)):
+                with st.expander(f"Rilievi da verificare · {len(other_issues)}",expanded=any(registered_case(f.id) is None for f in other_issues)):
                     for finding in other_issues:
-                        st.markdown("**"+finding.title+"**")
-                        if finding.id=="notice-7":
-                            st.caption("Registro storico · applicabilità da verificare")
-                        st.text(finding.detail)
+                        if not _registered_finding(finding):
+                            st.markdown("**"+finding.title+"**")
+                            st.text(finding.detail)
             elif not issues:
                 st.caption("Nessun rilievo nei controlli eseguiti.")
             with st.expander("Esposizione e stress test · simulazioni"):
