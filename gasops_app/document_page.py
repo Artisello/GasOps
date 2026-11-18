@@ -616,7 +616,7 @@ def document_page():
     if not cached["docs"].documents:
         st.info("Aggiungi almeno un PDF per iniziare. Usa Carica PDF oppure consulta l’archivio pubblico. Non vengono mostrati rilievi o citazioni in assenza di documenti.")
         return
-    action=st.radio("Strumento",["Cerca","Chiedi all’AI","Leggi PDF","Confronta","Revisore","Registro rilievi","Riferimenti salvati"],
+    action=st.radio("Strumento",["Cerca","Chiedi all’AI","Leggi PDF","Confronta","Revisore","Registro rilievi","Riferimenti salvati","Compliance"],
                     horizontal=True,label_visibility="collapsed",key="desk_mode")
     if action=="Cerca":
         _search(cached)
@@ -630,5 +630,8 @@ def document_page():
         _review_documents(cached)
     elif action=="Registro rilievi":
         _review_register(cached)
+    elif action=="Compliance":
+        from .compliance_page import panel as compliance_panel
+        compliance_panel(cached,public=st.session_state.get(SCOPE)=="Archivio pubblico")
     else:
         _references(cached)

@@ -283,3 +283,7 @@ Menu Operazioni > KPI operativi. Priorità all’agenda: puntualità = attività
 ## Centro operativo BSO
 
 KPI operativi → Centro operativo: controlli deterministici, coda di revisione umana e passaggio di consegne in JSON. [Perimetro operativo e limiti](docs/AGENTIC_OPERATIONS.md).
+
+## Compliance operativa
+
+Norme e documenti → Compliance: collegamenti a evidenze letterali dei PDF pubblici, versione SHA-256, pagina, valutazione di pertinenza e tracciabilità dei rilievi BSO. [Perimetro e limiti](docs/REGULATORY_COMPLIANCE.md).
