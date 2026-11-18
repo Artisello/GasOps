@@ -153,8 +153,9 @@ def decide(case,status,note,now):
     return {**case,"status":status,"history":[*case["history"],event]}
 
 
-def handover(cases,current_ids,checks,mode,scan_at):
+def handover(cases,current_ids,checks,mode,scan_at,*,regulatory=()):
     # JSON only: notes are untrusted user annotations, never rendered as HTML.
     return json.dumps({"schema":1,"mode":mode,"scan_at":scan_at,"checks":checks,
         "notice":"Proposte di revisione e annotazioni di sessione; nessuna azione esterna eseguita o certificata.",
-        "cases":[{**r,"in_latest_scan":r["id"] in current_ids} for r in cases]},ensure_ascii=False,indent=2)
+        "cases":[{**r,"in_latest_scan":r["id"] in current_ids} for r in cases],
+        "regulatory_references":list(regulatory) if mode=="session" else []},ensure_ascii=False,indent=2)

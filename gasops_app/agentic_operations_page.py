@@ -87,6 +87,9 @@ def panel():
         st.caption(case["source"])
         st.markdown("**Azione proposta (da eseguire fuori da I.G.O.R.)**")
         st.text(case["action"])
+        if mode=="session":
+            from .compliance_page import references_panel
+            references_panel(case)
         with st.form("agentic_decision_"+mode+"_"+case["id"],clear_on_submit=True):
             decision=st.selectbox("Decisione",TRANSITIONS[case["status"]])
             note=st.text_area("Motivazione · non inserire dati riservati",max_chars=400)
@@ -103,7 +106,13 @@ def panel():
                 st.dataframe(case["history"],hide_index=True,width="stretch")
     else:
         st.caption("Nessuna proposta per il perimetro; controlla la copertura prima di interpretare il risultato.")
-    st.download_button("Esporta passaggio di consegne JSON",handover(cases,current,saved["checks"],mode,saved["at"]),
+    regulatory=[]
+    if mode=="session":
+        from .compliance import STATE as COMPLIANCE_STATE,case_links
+        from .compliance_page import public_docs
+        docs=public_docs(state)
+        regulatory=[link for case in cases for link in case_links(state.get(COMPLIANCE_STATE,[]),case["id"],docs)]
+    st.download_button("Esporta passaggio di consegne JSON",handover(cases,current,saved["checks"],mode,saved["at"],regulatory=regulatory),
         "igor-bso-handover-"+mode+".json","application/json",key="agentic_export_"+mode)
     st.caption("Registro solo di sessione con storico limitato; non autenticato. Una proposta non più presente nella scansione non è automaticamente risolta.")
     with st.expander("Gestione registro"):
