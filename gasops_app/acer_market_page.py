@@ -93,24 +93,5 @@ def _lng():
 
 
 def _balancing():
-    st.caption("Anno gas 2023/2024 · report ACER 2025 · confronto tra zone, non performance individuale.")
-    frame=pd.DataFrame(balancing_rows())
-    frame["value"]=frame.value.astype(float)
-    a,b=st.columns(2)
-    it=frame[frame.zone=="IT"].set_index("metric")
-    a.metric("Italia · sbilanciamenti / volume",f"{it.loc['imbalance_share','value']:.1f}%")
-    b.metric("Italia · neutralità netta rettificata",f"{it.loc['net_adjusted_neutrality','value']:+.2f} €/MWh")
-    metric=st.radio("Indicatore",["imbalance_share","net_adjusted_neutrality"],
-                    format_func={"imbalance_share":"Volumi di sbilanciamento / mercato","net_adjusted_neutrality":"Neutralità netta rettificata / volume"}.__getitem__,
-                    horizontal=True,key="acer_baf_metric")
-    selected=frame[frame.metric==metric].sort_values("value",ascending=False)
-    unit=selected.unit.iloc[0]
-    st.bar_chart(selected,x="zone",y="value",y_label=unit,horizontal=True)
-    st.caption("Zone con dati pubblicati: "+str(len(selected))+". Mancanti esclusi; zero è il valore arrotondato pubblicato. Un valore elevato non dimostra da solo inefficienza.")
-    st.caption("Neutralità positiva: surplus attribuibile agli utenti; negativa: costo da recuperare. Non è un profitto TSO né un costo totale di settlement.")
-    with st.expander("Dati, metodo e fonti"):
-        st.dataframe(selected,hide_index=True,width="stretch")
-        st.download_button("Esporta benchmark con fonte",selected.to_csv(index=False),"igor-acer-baf.csv","text/csv")
-        st.markdown(f"[Report 2025, pagine 16 e 19]({REPORT_2025}) · [Report 2026, anno gas 2024/2025]({REPORT_2026}) · [Dashboard ACER]({BALANCING})")
-        st.markdown(f"[CHEST – prezzi GNL]({CHEST})")
-        st.caption("Report 2026 individuato ma dati non acquisiti. Valori 2025 trascritti dalle etichette del PDF; screenshot non disponibile per verifica indipendente. ACER sulla base dei dati di TSO e autorità nazionali (ZEN).")
+    from .acer_baf_page import panel as baf_panel
+    baf_panel()
