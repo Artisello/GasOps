@@ -22,7 +22,7 @@ historical observations, simulations and accounting assumptions distinct. Scope 
 the cited editions and raise ambiguities for human review. Do not produce trading, billing, or
 infrastructure instructions. Refer to the executed agents and their supplied evidence."""
 SUMMARY = """Il quesito prevale sul perimetro selezionato: usa esclusivamente evidenze pertinenti alla geografia richiesta; se assenti, dichiaralo. Rispondi direttamente alla domanda in italiano: conclusione, evidenze, limiti e verifiche pertinenti. Non ripetere ogni indicatore. Usa esclusivamente i risultati e le fonti pubbliche fornite; indica periodo, perimetro e unità. Distingui misure, stime, simulazioni e benchmark storici. Non inferire causalità, dati riservati o dati mancanti. Per le norme cita edizione e pagina se disponibili."""
-EXECUTIVE_BRIEFING = """Briefing per il responsabile Balancing, Settlement & Market Operations. Prima la conclusione, poi soltanto i segnali materiali e le implicazioni. Integra domanda, prezzi, scorte, GNL, prelievi SRG, Terna e meteo se pertinenti e disponibili. Priorità di verifica: massimo tre, specifiche e motivate. Separa osservazioni mensili nazionali e prelievi giornalieri SRG, energia elettrica e gas combustibile, prezzi ACER GNL e PSV, simulazioni e settlement reale. Scorte non sono flussi; UMM non misura capacità persa. Non trasformare un saldo contabile in saldo fisico. Tratta fonti stale come storiche e lacune come incertezza; benchmark storici non sono prezzi correnti. Non inventare valori, soglie, causalità o esposizioni. Distingui i rilievi normativi storici dalle novità."""
+EXECUTIVE_BRIEFING = """Briefing per il responsabile Balancing, Settlement & Market Operations. Rispondi con una conclusione breve, massimo tre segnali materiali e massimo tre Priorità di verifica. Integra soltanto fonti pertinenti, riportando il periodo e il perimetro di ogni dato. Niente ripetizioni tra sezioni o titoli nel testo. Il bilancio nazionale mensile Eurostat è contabile, non prova equilibrio fisico; ENTSOG SRG misura tre aggregati di prelievi, non domanda netta o totale nazionale. ARERA CMEM,m è un riferimento mensile, non spot; ACER EU/NWE/South sono valutazioni di prezzo GNL, benchmark è differenziale GNL–TTF, non scorte né riserve. Non dedurre un trend da una singola quotazione o da benchmark storici non comparabili. AGSI+ e ALSI misurano scorte e flussi, non capacità libera. IIP conta record attivi della finestra dichiarata, non eventi, capacità persa o rischio; valuta separatamente lo stato di ogni fonte. Meteo è una previsione territoriale; Terna misura energia elettrica, non gas combustibile. La previsione della domanda non è previsione del saldo fisico. Le simulazioni e il settlement sono volutamente esclusi da questa sintesi, consultabili separatamente: non stimare probabilità di deficit, CVaR, costi di emergenza, garanzie o esposizioni reali. Non inventare causalità, soglie o valori. Non ripetere codici A1/S1 nel testo; usarli solo nei riferimenti."""
 
 @dataclass(frozen=True)
 class LLMConfig:
@@ -251,7 +251,15 @@ class CompatibleReasoner:
         # Do not resend routing history, tool schemas, or duplicate tool messages.
         self.last_sections=[]
         allowed=_evidence(results,external=not self.config.local)
+        if executive:
+            # Do not let default illustrative shocks become daily market claims.
+            # Their full results remain in the local, explicitly labelled section.
+            for agent in (Agent.SCENARIO,Agent.SETTLEMENT,Agent.REGULATORY):
+                allowed.pop(agent.value,None)
         public=compact_context(context or {})
+        if executive:
+            # Unrelated annual benchmarks invite invalid price comparisons.
+            public.pop("Benchmark storici",None)
         narrow=not executive and demand_trend_question(question) and Agent.MARKET in results
         if narrow:
             facts=results[Agent.MARKET].values
@@ -270,7 +278,7 @@ class CompatibleReasoner:
         evidence=json.dumps({"question":question,"verified_tool_results":allowed,
                              "public_operational_context":public,"reference_ids":codes},
                             ensure_ascii=False,separators=(",",":"),allow_nan=False)
-        target=1700 if executive else 450 if narrow else 1200
+        target=1350 if executive else 450 if narrow else 1200
         # The provider completion cap already bounds the response. A stricter
         # editorial target should not discard an otherwise valid answer.
         limit=6000

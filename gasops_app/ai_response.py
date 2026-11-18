@@ -12,7 +12,7 @@ SECTION_TITLES={
 # Remove redundant navigation/audit fields only; source labels, observation
 # periods, units, status, limitations and measurements stay in the payload.
 # The original full snapshot remains in Run.assumptions for traceability.
-METADATA={"url","source_url","id","provenance"}
+METADATA={"url","source_url","id","provenance","last_observed_values"}
 
 def compact_context(context):
     def compact(value):
