@@ -378,3 +378,27 @@ def test_commercial_workspace_updates_summary_and_calendar(monkeypatch,tmp_path)
     assert not app.exception
     ledger=next(d.value for d in app.dataframe if "Delta DS" in d.value.columns)
     assert len(ledger)==1
+
+
+
+def test_risk_workspace_stress_and_confidence_without_recompute(monkeypatch,tmp_path):
+    monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
+    app=AppTest.from_string("from gasops_app.risk_page import risk_page\nrisk_page()",default_timeout=30).run()
+    assert not app.exception
+    app.selectbox(key="risk_preset").set_value("Stress combinato").run()
+    assert not app.exception
+    next(b for b in app.button if b.label=="Esegui simulazione").click().run()
+    assert not app.exception
+    saved=app.session_state["risk_workspace_v2"]
+    assert saved["result"].summary["stress"]=={"demand_pct":10.,"supply_pct":-10.,"price_delta":10.}
+    assert saved["result"].summary["probability_deficit"]>=saved["base"]["probability_deficit"]
+    assert [tab.label for tab in app.tabs]==["Carenza di gas","Impatto economico","Ipotesi e metodo"]
+    assert any("Probabilità di carenza" in e.proto.body for e in app.get("html"))
+    first=saved["result"].summary["executed_at"]
+    app.radio(key="risk_confidence").set_value("99").run()
+    assert not app.exception
+    assert app.session_state["risk_workspace_v2"]["result"].summary["executed_at"]==first
+    assert any("Carenza al percentile 99" in e.proto.body for e in app.get("html"))
+    app.selectbox(key="risk_preset").set_value("Base").run()
+    assert not app.exception
+    assert any("Fonte, previsione o scenario cambiati" in e.value for e in app.warning)
