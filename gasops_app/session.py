@@ -334,8 +334,13 @@ def source_filters(page: str, *, lookback: bool = True) -> Selection:
             # Simulation remains an explicit selection in the source menu.
             from .live_sources import BUNDLES
             bundle=st.session_state.get(BUNDLES,{}).get("daily" if name==DAILY else "monthly")
-            if bundle is not None:st.caption("Ultima acquisizione valida della stessa fonte.")
-    if bundle is not None and name in (PUBLIC,DAILY):
+            if bundle is not None:
+                # Preserve original timestamp/fingerprint and propagate the failed
+                # refresh to every consumer, including forecasts/reports.
+                bundle=Bundle(bundle.rows,bundle.origin.model_copy(update={"cached":True,"refresh_failed":True}),
+                              bundle.fingerprint)
+                st.warning("Ultimo dato valido della stessa fonte · aggiornamento non riuscito.")
+    if bundle is not None and name in (PUBLIC,DAILY) and not bundle.origin.refresh_failed:
         from .live_sources import remember_bundle
         remember_bundle(st.session_state,bundle,utc_now())
     st.session_state["active_bundle"] = bundle

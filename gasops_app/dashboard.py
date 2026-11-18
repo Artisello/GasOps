@@ -304,7 +304,7 @@ def overview() -> None:
     with top:
         header("Panoramica del mercato","")
         st.markdown("**"+area+"** · "+perimeter)
-        st.markdown("[Cabina di controllo BSO · aggiorna tutte le fonti reali](/kpi)")
+        st.markdown("[KPI operativi · fonti pubbliche](/kpi)")
     context=None
     if selection.bundle:
         context=preview_market(selection)
@@ -389,7 +389,7 @@ def _market_headlines(context: MarketContext):
     label=("Prelievi sulla rete SRG" if origin.grain=="daily" and not origin.archive
            and origin.kind!=Kind.SYNTHETIC else "Gas consumato")
     comparison=("Ultimi 7 giorni vs 7 precedenti" if origin.grain=="daily" else "Rispetto al mese precedente")
-    stale=any(f.id=="stale" for f in context.inspection.findings)
+    stale=origin.refresh_failed or any(f.id=="stale" for f in context.inspection.findings)
     next_label="Stima da dati non recenti" if stale else "Stima successiva" if origin.archive or origin.kind==Kind.SYNTHETIC else "Consumo previsto"
     cards=[
         (label,facts.get("demand_gwh"),unit,facts.get("label","Dato non disponibile"),1,"teal"),
@@ -397,7 +397,7 @@ def _market_headlines(context: MarketContext):
         (next_label,point.estimate if point else None,unit,
          period_text(pd.Timestamp(point.period),origin.grain) if point else "Previsione non disponibile",1,"blue")
     ]
-    kpi_grid([r for r in cards if r[1] is not None])
+    kpi_grid(cards)
     info("Lettura dei dati",_plain_market(context))
     if point and facts.get("period"):
         lead=(pd.Timestamp(point.period)-pd.Timestamp(facts["period"])).days
@@ -408,14 +408,16 @@ def _market_headlines(context: MarketContext):
 def _market_quality_notice(context):
     findings=[f for f in context.inspection.findings if f.severity!="info"]
     if findings:
-        titles=" · ".join(f.title for f in findings if f.severity=="high")
         urgent=[f for f in findings if f.id=="stale" or f.id.startswith("public-cache")]
         for item in urgent:
             st.warning(item.title+" — "+item.detail)
-        if titles:
-            st.warning(f"{len(findings)} rilievi sui dati. "+titles+". Consulta Modelli e dati.")
-        elif len(findings)>len(urgent):
-            st.warning(f"{len(findings)} rilievi sui dati. Consulta Modelli e dati.")
+        remaining=[f for f in findings if f not in urgent]
+        if remaining:
+            critical=[f.title for f in remaining if f.severity=="high"]
+            message=f"{len(remaining)} rilievi sui dati · Modelli e dati."
+            if critical:
+                message += " " + " · ".join(critical)
+            st.warning(message)
 
 
 

@@ -196,7 +196,11 @@ def _inventory_panel(platform,loader,key):
         st.error("La fonte ha restituito un’area diversa da quella selezionata.")
         return
     frame=result["frame"]
-    recent,changes=inventory_snapshot(frame,platform)
+    try:
+        recent,changes=inventory_snapshot(frame,platform)
+    except ValueError:
+        st.warning("Nessuna osservazione utilizzabile per questa fonte e area. Aggiorna i dati.")
+        return
     age=(utc_now().astimezone(ROME).date()-recent["gas_day"]).days
     state=st.session_state.get(platform+"_"+scope,{})
     if age>2 or age<0 or result["failed"] or state.get("error"):

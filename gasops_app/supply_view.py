@@ -21,9 +21,14 @@ def inventory_snapshot(frame,platform):
     """One observation date for all headline indicators; no forward fill."""
     measures=["stock_twh"] if platform=="AGSI+" else [
         "sendout_gwh_d","inventory_1000m3_lng","inventory_gwh"]
-    valid=frame.loc[frame[measures].notna().any(axis=1)].sort_values("gas_day")
+    if frame.empty or not set(measures+["gas_day"]).issubset(frame.columns):
+        raise ValueError("Nessun dato utilizzabile per il riepilogo.")
+    valid=frame.loc[frame[measures].apply(lambda column: column.map(finite)).notna().any(axis=1)
+                    & frame["gas_day"].notna()].sort_values("gas_day")
     if valid.empty:
         raise ValueError("Nessun dato utilizzabile per il riepilogo.")
+    if valid["gas_day"].duplicated().any():
+        raise ValueError("Più osservazioni per giorno gas: verificare la fonte.")
     latest=valid.iloc[-1]
     prior=frame.loc[frame["gas_day"]==latest["gas_day"]-timedelta(days=7)]
     changes={}
