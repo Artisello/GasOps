@@ -631,4 +631,7 @@ def test_jarvis_snapshot_reused_between_panels():
     app.run()
     assert not app.exception
     assert any("SAS pubblicato" in e.proto.body for e in app.get("html"))
-    assert any("consultazione storica" in e.value for e in app.warning)
+    # Historical selection is intentionally informational, not a warning.
+    assert any("consultazione storica" in e.value.casefold() for e in app.caption)
+    assert not any("consultazione storica" in e.value.casefold() for e in app.warning)
+    assert len(app.session_state["jarvis_public_snapshot_v1"]["versions"]) == 2
