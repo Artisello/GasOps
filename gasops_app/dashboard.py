@@ -11,7 +11,7 @@ from .data import FIELDS, period_text
 from .forecast import AUTOMATIC, MODELS
 from .italiano import GRAVITA, MODALITA, MODELLI, data_it, numero
 from .models import Kind, Provider
-from .session import RUN_ANALYSIS, applicable_run, launch, preview_market, source_filters
+from .session import analysis_label, applicable_run, launch, preview_market, source_filters
 from .visuals import AMBER, BLUE, ROSE, TEAL, breakdown_chart, chip, demand_chart, error_chart
 from .visuals import forecast_readout, heading, header, kind_tag, kpi, local_time, mini_chart, plot, rows, steps
 
@@ -174,7 +174,7 @@ def overview() -> None:
     with controls:
         selection = source_filters("overview")
     with top:
-        clicked = header("Panoramica del mercato", selection.meta, RUN_ANALYSIS, disabled=selection.bundle is None)
+        clicked = header("Panoramica del mercato", selection.meta, analysis_label(), disabled=selection.bundle is None)
     st.caption("Inizia dalla fonte dati, consulta i valori e avvia il report quando ti serve.")
     with st.container():
         a,b,c=st.columns(3)
@@ -201,13 +201,17 @@ def overview() -> None:
         _quality_panel(context)
         run = applicable_run(selection)
         with st.container(border=True, key="panel_agents"):
-            heading("Analisi AI", chip("ULTIMA ANALISI", "ok") if run else chip("PRONTA"))
+            heading("Analisi di mercato", chip("ULTIMA ANALISI", "ok") if run else chip("PRONTA"))
             st.caption("Avvia il report per ottenere una sintesi delle evidenze e dei controlli.")
             with st.expander("Stato dei singoli agenti"):
                 st.html(steps(run))
     if run:
         with st.container(border=True, key="panel_overview_brief"):
             heading("Sintesi operativa", chip(MODALITA[run.mode]))
+            if run.model:
+                st.caption("Modello selezionato: "+run.model)
+            for warning in run.warnings:
+                st.warning(warning)
             for result in run.results.values():
                 st.text(result.summary)
             if run.interpretation:

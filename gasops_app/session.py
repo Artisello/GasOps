@@ -14,6 +14,7 @@ from .data import Bundle, ROOT, ROME, jrc_archive, synthetic
 from .forecast import MODEL_CHOICES, ModelChoice
 from .italiano import MODALITA, MODELLI
 from .llm import CompatibleReasoner, configuration
+from .supervisor import ModelUnavailable
 from .mensile import load_monthly
 from .entsog import load as load_daily
 from .models import Run, utc_now
@@ -87,19 +88,47 @@ def save_assumptions(assumed: Assumptions) -> None:
     st.session_state["assumptions"] = assumed.model_dump(mode="json")
 
 
+def _configuration():
+    try:
+        return configuration(st.secrets)
+    except (FileNotFoundError,KeyError):
+        return configuration()
+
+
 def sidebar() -> None:
     st.html('<div class="gas-sidebar-foot"></div>')
     config = None
     try:
-        config = configuration()
+        config = _configuration()
     except ValueError as error:
-        st.caption(str(error))
+        st.warning(str(error))
     modes = ["Deterministic", config.model] if config else ["Deterministic"]
-    mode = st.selectbox("Modalità di analisi", modes, format_func=lambda value: MODALITA.get(value, value),
-                        key="execution_mode")
-    if config and mode == config.model:
-        st.caption("Modello locale con accesso agli strumenti" if config.local else
-                   "L’endpoint configurato riceve le domande, le fonti selezionate e i risultati degli strumenti.")
+    mode = st.selectbox("Modalità di analisi", modes, index=1 if config and config.groq else 0,
+                        format_func=lambda value: MODALITA.get(value,value),key="execution_mode")
+    if config and mode==config.model:
+        st.caption("Groq Cloud · "+config.model if config.groq else
+                   "Ollama / endpoint locale" if config.local else "Endpoint remoto · possibili costi")
+        if not config.local:
+            st.caption("Solo domande e dati non riservati. L’AI riceve riepiloghi selezionati, "
+                       "non estratti normativi o dati individuali di settlement.")
+        with st.expander("Connessione e limiti AI"):
+            if not config.local:
+                try:
+                    st.caption(f"Richieste interne ultime 24 h: {database().llm_usage()}/30 · max 4/min. "
+                               "Non è il saldo della quota del provider.")
+                except (OSError,sqlite3.Error):
+                    st.caption("Contatore non disponibile: richieste AI bloccate.")
+            if st.button("Test connessione AI",key="llm_probe"):
+                try:
+                    reasoner().probe()
+                    st.session_state["llm_probe_result"]=(config.model,True,"Connessione e risposta testate.")
+                except ModelUnavailable as error:
+                    st.session_state["llm_probe_result"]=(config.model,False,str(error))
+                except Exception:
+                    st.session_state["llm_probe_result"]=(config.model,False,"Connessione o risposta non valida.")
+            probe=st.session_state.get("llm_probe_result")
+            if probe and probe[0]==config.model:
+                (st.success if probe[1] else st.warning)(probe[2])
     else:
         st.caption("Calcoli locali senza modello")
     st.html('<div class="sidebar-caption">Europe/Rome · Prototipo indipendente</div>')
@@ -107,12 +136,16 @@ def sidebar() -> None:
 
 def reasoner() -> CompatibleReasoner | None:
     try:
-        config = configuration()
+        config = _configuration()
     except ValueError:
         return None
-    if config and st.session_state.get("execution_mode") == config.model:
-        return CompatibleReasoner(config)
+    if config and st.session_state.get("execution_mode")==config.model:
+        return CompatibleReasoner(config,reserve=None if config.local else lambda: database().reserve_llm())
     return None
+
+
+def analysis_label() -> str:
+    return RUN_ANALYSIS if reasoner() else "Genera report di mercato"
 
 
 @dataclass(frozen=True)
@@ -254,6 +287,8 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
     except (OSError, RuntimeError, sqlite3.Error):
         LOG.exception("Could not persist GasOps run")
         st.warning("Esecuzione disponibile in questa sessione. Salvataggio nello storico locale non riuscito.")
+    for warning in report.warnings:
+        st.warning(warning)
     state = "error" if any(step.status == "failed" for step in report.steps.values()) else "complete"
     status.update(label=f"{MODALITA[report.mode]} · {local_time(report.finished_at)}", state=state, expanded=False)
     return report

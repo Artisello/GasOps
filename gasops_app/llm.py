@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 import requests
 
 from .models import Agent, Result, Run
-from .supervisor import Call, Tool
+from .supervisor import Call, Tool, ModelUnavailable
 
 SYSTEM = """You are the GasOps AI supervisor for read-only analytical screening. Write explanations in Italian. Select only tools
 needed for the request and only use scenario adjustments expressly given by the operator. The tools
@@ -35,28 +35,44 @@ class LLMConfig:
         return urlsplit(self.base_url).hostname in {"localhost", "127.0.0.1", "::1"}
 
     @property
+    def groq(self) -> bool:
+        parsed=urlsplit(self.base_url)
+        return parsed.scheme=="https" and parsed.hostname=="api.groq.com" and parsed.port in (None,443)
+
+    @property
     def endpoint(self) -> str:
         if self.base_url.endswith("/chat/completions"):
             return self.base_url
         return f"{self.base_url}/chat/completions"
 
 
-def configuration() -> LLMConfig | None:
-    model = os.environ.get("GASOPS_LLM_MODEL", "").strip()
+def configuration(secrets=None) -> LLMConfig | None:
+    def setting(name,default=""):
+        value=secrets.get(name) if secrets is not None else None
+        return str(value if value is not None else os.environ.get(name,default)).strip()
+    model=setting("GASOPS_LLM_MODEL")
+    url=setting("GASOPS_LLM_URL","http://127.0.0.1:11434/v1").rstrip("/")
+    key=setting("GASOPS_LLM_API_KEY")
+    groq_key=setting("GROQ_API_KEY")
+    if not model and groq_key:
+        model,url="openai/gpt-oss-120b","https://api.groq.com/openai/v1"
     if not model:
         return None
-    url = os.environ.get("GASOPS_LLM_URL", "http://127.0.0.1:11434/v1").strip().rstrip("/")
-    parsed = urlsplit(url)
-    result = LLMConfig(model, url, os.environ.get("GASOPS_LLM_API_KEY") or None)
-    if (
-        not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment
-        or (parsed.scheme != "https" and not (parsed.scheme == "http" and result.local))
-    ):
-        raise ValueError("Usa un endpoint LLM HTTPS oppure HTTP su localhost, con percorso compatibile /v1.")
-    return result
+    parsed=urlsplit(url)
+    candidate=LLMConfig(model,url,key or None)
+    if (not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment
+        or (parsed.scheme!="https" and not (parsed.scheme=="http" and candidate.local))):
+        raise ValueError("Configura un endpoint LLM HTTPS o HTTP locale compatibile /v1.")
+    if candidate.groq and not key:
+        candidate=LLMConfig(model,url,groq_key or None)
+    if not candidate.local and not candidate.api_key:
+        raise ValueError("Chiave API del modello mancante.")
+    if not candidate.local and not candidate.groq and setting("GASOPS_ALLOW_PAID_LLM").lower()!="true":
+        raise ValueError("Endpoint remoto non Groq disabilitato per evitare costi. Verifica il provider.")
+    return candidate
 
 
-def _evidence(results: Mapping[Agent, Result]) -> dict:
+def _evidence(results: Mapping[Agent, Result], *, external=False) -> dict:
     # Summaries already contain the checked quantities. Keep excerpts and context bounded.
     return {
         agent.value: {
@@ -69,18 +85,29 @@ def _evidence(results: Mapping[Agent, Result]) -> dict:
             ],
         }
         for agent, result in results.items()
+        if not external or agent not in {Agent.REGULATORY, Agent.SETTLEMENT}
     }
 
 
 class CompatibleReasoner:
-    def __init__(self, config: LLMConfig):
+    def __init__(self, config: LLMConfig, reserve=None):
         self.config = config
+        self.reserve = reserve
+        self.calls = 0
+        self.summary_only_full = not config.local
         self.label = config.model
         self.messages: list[dict] = [{"role": "system", "content": SYSTEM}]
         self.pending: list[tuple[str, Agent]] = []
 
     def _chat(self, messages: list[dict], tools: Mapping[Agent, Tool] | None = None) -> dict:
-        body = {"model": self.config.model, "messages": messages, "stream": False, "max_tokens": 450}
+        body = {"model": self.config.model, "messages": messages, "stream": False, "max_tokens": 1024}
+        if self.config.groq:
+            body.pop("max_tokens")
+            body["max_completion_tokens"]=1024
+            if self.config.model in {"openai/gpt-oss-120b","openai/gpt-oss-20b"}:
+                body["reasoning_effort"]="low"
+            if not tools and "verified_tool_results" in messages[-1].get("content",""):
+                body["response_format"]={"type":"json_object"}
         if tools:
             body["tools"] = [{
                 "type": "function",
@@ -88,12 +115,24 @@ class CompatibleReasoner:
                              "parameters": tool.arguments.model_json_schema()},
             } for agent, tool in tools.items()]
             body["tool_choice"] = "auto"
+        if len(json.dumps(body,ensure_ascii=False).encode("utf-8"))>32_000 or self.calls>=3:
+            raise ModelUnavailable("Limite interno della richiesta AI raggiunto.")
+        if self.reserve is not None:
+            try:
+                accepted=self.reserve()
+            except Exception:
+                raise ModelUnavailable("Contatore AI non disponibile: richiesta bloccata.") from None
+            if not accepted:
+                raise ModelUnavailable("Quota interna AI raggiunta. Usa il report deterministico.")
+        self.calls+=1
         headers = {"Authorization": f"Bearer {self.config.api_key}"} if self.config.api_key else {}
         with requests.post(self.config.endpoint, json=body, headers=headers, timeout=(3, 15),
                            allow_redirects=False, stream=True) as response:
-            response.raise_for_status()
             if response.status_code != 200:
-                raise ValueError("Unexpected model HTTP status")
+                reasons={401:"Chiave API non valida.",403:"Accesso al modello non autorizzato.",
+                         429:"Limite del provider raggiunto.",402:"Credito API insufficiente.",
+                         404:"Endpoint o modello non trovato.",400:"Richiesta o modello non compatibile."}
+                raise ModelUnavailable(reasons.get(response.status_code,"Provider AI non disponibile."))
             content = bytearray()
             for part in response.iter_content(chunk_size=16_384):
                 content.extend(part)
@@ -134,11 +173,17 @@ class CompatibleReasoner:
         return calls
 
     def _tool_outputs(self, results: Mapping[Agent, Result]) -> None:
-        brief = _evidence(results)
+        brief = _evidence(results,external=not self.config.local)
         for call_id, agent in self.pending:
             data = brief.get(agent.value, {"status": "unavailable"})
             self.messages.append({"role": "tool", "tool_call_id": call_id, "content": json.dumps(data)})
         self.pending = []
+
+    def probe(self):
+        response=self._chat([{"role":"user","content":"Rispondi soltanto OK."}])
+        if not isinstance(response.get("content"),str) or not response["content"].strip():
+            raise ModelUnavailable("Il modello non ha restituito testo.")
+        return True
 
     def route(self, run: Run, tools: Mapping[Agent, Tool]) -> list[Call]:
         self.messages.append({"role": "user", "content": json.dumps({
@@ -159,7 +204,10 @@ class CompatibleReasoner:
 
     def interpret(self, question: str, results: Mapping[Agent, Result]) -> tuple[str | None, list[Agent]]:
         self._tool_outputs(results)
-        evidence = json.dumps({"question": question, "verified_tool_results": _evidence(results)})
+        allowed=_evidence(results,external=not self.config.local)
+        if not allowed:
+            raise ModelUnavailable("Nessun risultato condivisibile con il modello esterno.")
+        evidence = json.dumps({"question": question, "verified_tool_results": allowed})
         response = self._chat([*self.messages, {"role": "user", "content": f"{SUMMARY}\n{evidence}"}])
         content = response.get("content") or ""
         if not isinstance(content, str):
@@ -173,7 +221,7 @@ class CompatibleReasoner:
         if not isinstance(narrative, str) or not 1 <= len(narrative.strip()) <= 950 or not isinstance(references, list):
             raise ValueError("Invalid interpretation format")
         cited = list(dict.fromkeys(Agent(ref) for ref in references))
-        if not cited or any(ref not in results or not results[ref].evidence for ref in cited):
+        if not cited or any(ref.value not in allowed or ref not in results or not results[ref].evidence for ref in cited):
             raise ValueError("Interpretation must cite executed tools with evidence")
         return narrative.strip(), cited
 

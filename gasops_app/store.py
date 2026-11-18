@@ -4,6 +4,7 @@ from contextlib import closing
 import os
 from pathlib import Path
 import sqlite3
+from datetime import timedelta
 
 from .data import ROOT
 from .models import Run, utc_now
@@ -15,6 +16,10 @@ CREATE TABLE IF NOT EXISTS source_cache (
 CREATE TABLE IF NOT EXISTS runs (
     id TEXT PRIMARY KEY, started_at TEXT NOT NULL, payload TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS llm_requests (
+    id INTEGER PRIMARY KEY, attempted_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS llm_requests_time ON llm_requests(attempted_at);
 CREATE TABLE IF NOT EXISTS reviews (
     run_id TEXT NOT NULL REFERENCES runs(id), finding_id TEXT NOT NULL, reviewed_at TEXT NOT NULL,
     PRIMARY KEY (run_id, finding_id)
@@ -44,6 +49,26 @@ class Store:
             db.execute("""INSERT INTO source_cache VALUES (?, ?, ?)
                           ON CONFLICT(name) DO UPDATE SET fetched_at=excluded.fetched_at, payload=excluded.payload
                           WHERE excluded.fetched_at >= source_cache.fetched_at""", (name, fetched_at, payload))
+
+    def reserve_llm(self, *, now=None, daily=30, minute=4) -> bool:
+        """Atomic rolling limit shared by sessions using this SQLite file."""
+        now=now or utc_now()
+        day=(now-timedelta(hours=24)).isoformat()
+        recent=(now-timedelta(minutes=1)).isoformat()
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute("DELETE FROM llm_requests WHERE attempted_at<=?",(day,))
+            count=db.execute("SELECT COUNT(*) FROM llm_requests").fetchone()[0]
+            short=db.execute("SELECT COUNT(*) FROM llm_requests WHERE attempted_at>?",(recent,)).fetchone()[0]
+            if count>=daily or short>=minute:
+                return False
+            db.execute("INSERT INTO llm_requests(attempted_at) VALUES (?)",(now.isoformat(),))
+            return True
+
+    def llm_usage(self, *, now=None) -> int:
+        cutoff=((now or utc_now())-timedelta(hours=24)).isoformat()
+        with closing(self._connect()) as db:
+            return db.execute("SELECT COUNT(*) FROM llm_requests WHERE attempted_at>?",(cutoff,)).fetchone()[0]
 
     def save(self, run: Run) -> None:
         with closing(self._connect()) as db, db:

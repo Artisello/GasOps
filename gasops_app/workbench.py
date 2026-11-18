@@ -16,7 +16,7 @@ from .italiano import ESITI, GRAVITA, MODALITA, numero
 from .models import AGENT_LABELS, Agent, Kind, Run, utc_now
 from .regulatory import MAX_DOCUMENTS, REGISTER, SETTLEMENT_NOTE
 from .reports import markdown
-from .session import RUN_ANALYSIS, assumptions, database, fixture, launch, library, reasoner, save_assumptions, source_filters
+from .session import analysis_label, assumptions, database, fixture, launch, library, reasoner, save_assumptions, source_filters
 from .visuals import chip, evidence, header, heading, kind_tag, kpi, local_time, rows, steps
 
 LOG = logging.getLogger(__name__)
@@ -204,7 +204,7 @@ def _reg_query(docs) -> None:
             result = regulation_result(docs, RegulationArguments(query=query))
             interpretation, warning = None, None
             model = reasoner()
-            if model and result.evidence:
+            if model and model.config.local and result.evidence:
                 try:
                     interpretation, _ = model.interpret(query, {Agent.REGULATORY: result})
                 except Exception as error:
@@ -311,6 +311,8 @@ def _report_panel(report: Run) -> None:
     with main, st.container(border=True, key="panel_ops_summary"):
         heading("Sintesi operativa", chip(MODALITA[report.mode], "ok" if report.mode == "LLM-assisted" else ""))
         rows([("Fonte dati", report.source.name), ("Fine analisi", local_time(report.finished_at)), ("ID analisi", report.id[:12])])
+        if report.model:
+            st.caption("Modello selezionato: "+report.model)
         for warning in report.warnings:
             st.warning(warning)
         for agent in Agent:
@@ -363,7 +365,7 @@ def operations() -> None:
     with controls:
         selection = source_filters("ops", lookback=False)
     with top:
-        started = header("Centro operativo AI", selection.meta, RUN_ANALYSIS, disabled=selection.bundle is None)
+        started = header("Centro operativo AI", selection.meta, analysis_label(), disabled=selection.bundle is None)
     flow, analyst = st.columns([1, 1.1], gap="medium")
     with flow, st.container(border=True, key="panel_ops_flow"):
         heading("Flusso del supervisore")
@@ -372,6 +374,7 @@ def operations() -> None:
         step_panel = st.empty()
     with analyst, st.container(border=True, key="panel_ops_query"):
         heading("Interroga l’analista")
+        st.caption("Usa solo domande e dati pubblici o sintetici; non inserire informazioni riservate.")
         st.selectbox("Domanda di esempio", ["Scegli un esempio", *QUESTIONS], key="ops_example", on_change=_example_question)
         with st.form("ops_question_form", border=False):
             question = st.text_area("Richiesta di analisi", height=84, key="ops_question", max_chars=600,
