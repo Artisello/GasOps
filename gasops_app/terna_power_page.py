@@ -19,10 +19,13 @@ LABELS={"Thermal":"Termoelettrico (tutti i combustibili)","Wind":"Eolico","Photo
 
 def panel():
     st.subheader("Sistema elettrico · Terna")
-    mode=st.radio("Analisi",["Giorni gas","Previsioni elettriche","Statistiche annuali"],horizontal=True,key="terna_mode")
+    mode=st.radio("Analisi",["Giorni gas","Previsioni elettriche","Capacità e industria","Statistiche annuali"],horizontal=True,key="terna_mode")
     if mode=="Previsioni elettriche":
         from .terna_forward_page import panel as forward_panel
         forward_panel()
+    elif mode=="Capacità e industria":
+        from .terna_context_page import panel as context_panel
+        context_panel()
     elif mode=="Statistiche annuali":
         _annual()
     else:

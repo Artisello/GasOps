@@ -53,6 +53,8 @@ def panel():
     h=st.selectbox("Orizzonte", [0,1,2],format_func=lambda x:"G" if x==0 else f"G+{x}",key="snam_horizon")
     from .snam_power_page import panel as power_panel
     power_panel(saved,h)
+    from .snam_context_page import panel as context_panel
+    context_panel(saved,h)
     extended=st.checkbox("Modello esteso e incertezza",key="snam_extended")
     models=(*MODELS,"extended") if extended else MODELS
     signatures=tuple((y,v["sha256"]) for y,v in sorted(saved.items()))

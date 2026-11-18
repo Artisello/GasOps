@@ -16,7 +16,7 @@ from .acer_market import load_lng
 
 BUNDLES="live_public_bundles_v1"
 STATUS="live_public_refresh_v1"
-LABELS={"monthly":"Eurostat + ARERA","daily":"ENTSOG · SRG","agsi":"GIE · AGSI+","alsi":"GIE · ALSI","terna":"Terna · consuntivi","terna_forward":"Terna · previsioni MSD1","acer":"ACER","weather":"Open-Meteo · temperature e HDD"}
+LABELS={"monthly":"Eurostat + ARERA","daily":"ENTSOG · SRG","agsi":"GIE · AGSI+","alsi":"GIE · ALSI","terna":"Terna · consuntivi","terna_forward":"Terna · previsioni MSD1","terna_capacity":"Terna · capacità disponibile","terna_industry":"Terna · IMCEI","acer":"ACER","weather":"Open-Meteo · temperature e HDD"}
 
 
 def valid_bundle(bundle,now,kind):
@@ -91,6 +91,14 @@ def refresh(state,store,now,selected,*,gie=None,terna=None,clock=utc_now):
         b,notes=acquire(*terna,today,today+timedelta(days=1),now)
         state[STATE]=merge(state.get(STATE,[]),[b],clock())
         return " · ".join(notes)
+    def context_signal(kind):
+        from .terna_context import acquire,merge,STATE as CONTEXT
+        today=now.astimezone(ROME).date()
+        first=today if kind=="capacity" else (today.replace(day=1)-timedelta(days=32)).replace(day=1)
+        last=today+timedelta(days=1) if kind=="capacity" else first
+        b=acquire(*terna,kind,first,last,now)
+        state[CONTEXT]=merge(state.get(CONTEXT,[]),[b],clock())
+        return ""
     def acer():
         key="acer_lng_attempt_v1"
         last=state.get(key)
@@ -107,9 +115,9 @@ def refresh(state,store,now,selected,*,gie=None,terna=None,clock=utc_now):
              "daily":lambda:market("daily",load_daily,"daily"),
              "agsi":lambda:inventory("agsi","AGSI+",load_agsi),
              "alsi":lambda:inventory("alsi","ALSI",load_alsi),
-             "terna":power,"terna_forward":forward,"acer":acer}
+             "terna":power,"terna_forward":forward,"terna_capacity":lambda:context_signal("capacity"),"terna_industry":lambda:context_signal("industry"),"acer":acer}
     for name in dict.fromkeys(selected):
-        if name not in actions or name in ("agsi","alsi") and not gie or name in ("terna","terna_forward") and not terna:
+        if name not in actions or name in ("agsi","alsi") and not gie or name in ("terna","terna_forward","terna_capacity","terna_industry") and not terna:
             continue
         attempt(name,actions[name])
     return True
