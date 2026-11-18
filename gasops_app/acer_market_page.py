@@ -26,17 +26,13 @@ def panel():
 
 def _lng():
     st.caption("Prezzi spot DES GNL · EUR/MWh · date di pubblicazione, non giorno gas.")
-    with st.expander("Fonti e aggiornamento"):
+    with st.expander("Fonti e aggiornamento",expanded=STATE not in st.session_state):
         st.markdown(f"[ACER TERMINAL]({TERMINAL}) · [CSV storico ufficiale]({CSV_URL}) · [Metodologia]({METHODOLOGY}) · [Condizioni]({LEGAL})")
         st.caption("Il benchmark ACER è uno spread rispetto al future TTF front-month, non il prezzo TTF né il prezzo di sbilanciamento.")
-        with st.form("acer_update"):
-            consent=st.checkbox("Ho verificato i termini di utilizzo per questo estratto.")
-            update=st.form_submit_button("Scarica CSV da ACER")
+        update=st.button("Aggiorna da ACER",key="acer_update",type="primary",icon=":material/refresh:")
         if update:
             now=utc_now()
-            if not consent:
-                st.warning("Conferma i termini della fonte.")
-            elif ATTEMPT in st.session_state and now-st.session_state[ATTEMPT]<timedelta(seconds=60):
+            if ATTEMPT in st.session_state and now-st.session_state[ATTEMPT]<timedelta(seconds=60):
                 st.warning("Una richiesta ogni 60 secondi per sessione.")
             else:
                 st.session_state[ATTEMPT]=now
@@ -47,11 +43,11 @@ def _lng():
                     st.caption("Aggiornamento ACER non disponibile; ultimo dato valido conservato, se presente.")
         with st.form("acer_upload"):
             f=st.file_uploader("Oppure importa il CSV storico scaricato dal portale",type=["csv"])
-            authorized=st.checkbox("Confermo che il file è pubblico e utilizzabile.")
+            st.caption("CSV pubblico · solo sessione.")
             submit=st.form_submit_button("Importa CSV")
         if submit:
-            if f is None or not authorized:
-                st.warning("Seleziona il CSV e conferma l'autorizzazione.")
+            if f is None:
+                st.warning("Seleziona un CSV.")
             elif f.size>MAX_BYTES:
                 st.error("CSV superiore a 2 MB.")
             else:

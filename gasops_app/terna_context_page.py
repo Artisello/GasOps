@@ -25,10 +25,10 @@ def panel():
             first=a.date_input("Dal giorno gas",value=today,max_value=today+timedelta(days=2))
             last=b.date_input("Al giorno gas",value=today+timedelta(days=1),max_value=today+timedelta(days=2))
         f=st.file_uploader("JSON documentato o CSV con intestazioni normalizzate",type=["json","csv"]) if kind=="exchange" else None
-        consent=st.checkbox("Confermo uso autorizzato; per dati orari assumo l’inizio intervallo.")
+        st.caption("Dati pubblici · timestamp orari = inizio intervallo (ipotesi sperimentale).")
         submit=st.form_submit_button("Importa scambi" if kind=="exchange" else "Aggiorna dati",disabled=not (f if kind=="exchange" else client and secret))
     if kind!="exchange" and not (client and secret):st.caption("Credenziali Terna non configurate; ripristina un archivio autorizzato.")
-    if submit and consent:
+    if submit:
         previous=state.get(ATTEMPT)
         if previous and now-previous<timedelta(minutes=1):st.caption("Aggiornamento già richiesto nell’ultimo minuto.")
         else:
@@ -41,11 +41,10 @@ def panel():
                     with st.spinner("Acquisizione Terna…"):b=acquire(client,secret,kind,first,last,now)
                 state[STATE]=merge(state.get(STATE,[]),[b],utc_now())
             except (ValueError,SourceUnavailable,KeyError,TypeError,OverflowError,IndexError):st.caption("Copertura non disponibile o import non valido; archivio precedente invariato.")
-    elif submit:st.caption("Conferma autorizzazione.")
     with st.expander("Archivio versionato"):
         f=st.file_uploader("Ripristina archivio I.G.O.R.",type=["json"],key="terna_context_archive")
-        ok=st.checkbox("Confermo uso autorizzato e timestamp dichiarati.",key="terna_context_archive_consent")
-        if st.button("Unisci archivio",disabled=f is None or not ok,key="terna_context_import"):
+        st.caption("JSON pubblico · timestamp dichiarati, non autenticati.")
+        if st.button("Unisci archivio",disabled=f is None,key="terna_context_import"):
             try:
                 if f.size>MAX_BYTES:raise ValueError("Limite")
                 obj=json.loads(f.getvalue())

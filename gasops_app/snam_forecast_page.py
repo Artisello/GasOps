@@ -20,11 +20,11 @@ def panel():
         st.markdown(f"[Dati pubblici Jarvis]({SOURCE})")
         with st.form("snam_forecast_import"):
             file=st.file_uploader("DatiOperativi_AAAA-IT.xlsx o ZIP annuale",type=["xlsx","zip"])
-            consent=st.checkbox("Confermo dati pubblici, autorizzati e non riservati.")
+            st.caption("Dati pubblici · solo sessione, senza dati riservati.")
             submit=st.form_submit_button("Carica annualità")
         if submit:
-            if file is None or not consent:
-                st.warning("Seleziona un file e conferma l'autorizzazione.")
+            if file is None:
+                st.warning("Seleziona un file.")
             else:
                 try:
                     with st.spinner("Lettura delle quattro serie di pubblicazione…"):

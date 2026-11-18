@@ -76,14 +76,11 @@ def _daily():
         a,b=st.columns(2)
         first=a.date_input("Dal giorno gas",value=last-timedelta(days=13),max_value=last)
         end=b.date_input("Al giorno gas",value=last,max_value=last)
-        consent=st.checkbox("Confermo uso autorizzato delle API Terna e ENTSOG.")
-        align=st.checkbox("Per questa analisi esplorativa tratto i timestamp Terna come inizio intervallo (convenzione da verificare).")
+        st.caption("Timestamp Terna = inizio intervallo (ipotesi sperimentale da verificare).")
         archive=st.checkbox("Aggiungi allo storico di sessione",value=True)
         submit=st.form_submit_button("Carica dati",type="primary")
     if submit:
-        if not consent or not align:
-            st.warning("Conferma autorizzazione e convenzione temporale.")
-        elif ATTEMPT in st.session_state and now-st.session_state[ATTEMPT]<timedelta(seconds=60):
+        if ATTEMPT in st.session_state and now-st.session_state[ATTEMPT]<timedelta(seconds=60):
             st.warning("Una richiesta ogni 60 secondi per sessione.")
         else:
             st.session_state[ATTEMPT]=now

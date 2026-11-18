@@ -21,13 +21,12 @@ def panel():
         a,b=st.columns(2)
         first=a.date_input("Dal giorno gas",value=today,min_value=today-timedelta(days=365),max_value=today+timedelta(days=2))
         last=b.date_input("Al giorno gas",value=today+timedelta(days=1),min_value=today-timedelta(days=365),max_value=today+timedelta(days=2))
-        consent=st.checkbox("Confermo uso autorizzato e convenzione sperimentale inizio intervallo.")
+        st.caption("Timestamp = inizio intervallo (ipotesi sperimentale).")
         clicked=st.form_submit_button("Aggiorna previsioni Terna",disabled=not bool(client and secret))
     if not client or not secret:st.caption("Configura le credenziali Terna sul server; puoi comunque ripristinare un archivio.")
     if clicked:
         previous=st.session_state.get(ATTEMPT)
-        if not consent:st.caption("Conferma le condizioni della fonte.")
-        elif previous and now-previous<timedelta(minutes=1):st.caption("Riprova dopo 60 secondi.")
+        if previous and now-previous<timedelta(minutes=1):st.caption("Riprova dopo 60 secondi.")
         else:
             st.session_state[ATTEMPT]=now
             try:
@@ -39,8 +38,8 @@ def panel():
                 st.caption("Fonte non disponibile o copertura insufficiente; archivio precedente invariato.")
     with st.expander("Archivio versionato"):
         f=st.file_uploader("Ripristina JSON dello storico previsionale",type=["json"],key="terna_forward_file")
-        confirm=st.checkbox("Confermo autorizzazione e timestamp dichiarati.",key="terna_forward_import_consent")
-        if st.button("Unisci archivio",disabled=f is None or not confirm,key="terna_forward_import"):
+        st.caption("JSON pubblico · timestamp dichiarati, non autenticati.")
+        if st.button("Unisci archivio",disabled=f is None,key="terna_forward_import"):
             try:
                 if f.size>MAX_BYTES:raise ValueError("Archivio eccessivo")
                 obj=json.loads(f.getvalue())

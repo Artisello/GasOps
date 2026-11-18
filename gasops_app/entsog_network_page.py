@@ -28,15 +28,12 @@ def panel():
         c1,c2=st.columns(2)
         from_day=c1.date_input("Da giorno gas",value=last-timedelta(days=6),max_value=last)
         to_day=c2.date_input("A giorno gas",value=last,max_value=last)
-        consent=st.checkbox("Ho letto le condizioni ENTSOG; richiedo un'estrazione limitata.")
         clicked=st.form_submit_button("Carica dati",type="primary")
     if clicked:
         point=PRESETS.get(selected,custom.strip())
         now=utc_now()
         previous=st.session_state.get(ATTEMPT)
-        if not consent:
-            st.warning("Conferma le condizioni di utilizzo.")
-        elif previous is not None and now-previous<timedelta(seconds=60):
+        if previous is not None and now-previous<timedelta(seconds=60):
             st.warning("Una richiesta per minuto per sessione.")
         else:
             try:
