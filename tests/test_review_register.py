@@ -40,3 +40,25 @@ def test_note_and_limits():
     items=[{**item,"title":str(i)} for i in range(41)]
     cases,added,omitted=register([],items,docs,theme="x",model="fixture")
     assert len(cases)==added==40 and omitted==1
+
+
+
+def test_register_ui_can_record_human_review_without_model(monkeypatch):
+    from streamlit.testing.v1 import AppTest
+    from gasops_app import document_page as desk
+    import streamlit as st
+    from gasops_app.review_register import KEY
+    docs,item=sample()
+    cases,_,_=register([], [item],docs,theme="termini",model="fixture")
+    monkeypatch.setattr(desk,"reasoner",lambda:pytest.fail("Register must not invoke AI"))
+    app=AppTest.from_string("import streamlit as st\nfrom gasops_app.document_page import _review_register\n_review_register(st.session_state['fixture_register'])")
+    app.session_state["fixture_register"]={"docs":docs,KEY:cases}
+    app.run()
+    assert not app.exception
+    next(x for x in app.selectbox if x.label=="Stato della verifica").set_value("Archiviato")
+    next(x for x in app.text_area if x.label=="Motivazione della decisione").set_value("Perimetri differenti.")
+    next(b for b in app.button if b.label=="Registra verifica").click().run()
+    assert not app.exception
+    case=app.session_state["fixture_register"][KEY][0]
+    assert case["status"]=="Archiviato"
+    assert case["history"][0]["note"]=="Perimetri differenti."
