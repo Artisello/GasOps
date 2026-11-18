@@ -19,7 +19,7 @@ def test_overview_button_completes_offline_run(monkeypatch, tmp_path):
     assert not app.exception
     assert app.title[0].value == "Panoramica del mercato"
     assert app.button(key="analysis_launch").label == "Genera bollettino di mercato"
-    assert any("Nessun bollettino generato" in e.value for e in app.info)
+    assert any("Nessun bollettino generato" in e.value for e in app.caption)
     assert app.selectbox(key="overview_model").value == AUTOMATIC
     app.button(key="analysis_launch").click().run()
     assert not app.exception
@@ -194,3 +194,18 @@ def test_briefing_keeps_previous_report_when_source_changes(monkeypatch,tmp_path
     assert any("Bollettino precedente" in e.value for e in app.warning)
     assert any("Ultimo bollettino generato" in e.value for e in app.markdown)
     assert app.session_state["last_briefing"].id==report.id
+
+
+
+def test_lean_interface_preserves_diagnostics_and_author_credit(monkeypatch,tmp_path):
+    from gasops_app import session
+    monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
+    monkeypatch.setattr(session,"_configuration",lambda:None)
+    app=AppTest.from_file(Path(__file__).resolve().parents[1]/"app.py",default_timeout=30)
+    app.session_state["selected_source"]=DEMO
+    app.run()
+    assert not app.exception
+    assert any("Prototipo per SNAM creato da Igor" in e.proto.body for e in app.get("html"))
+    assert any(e.label=="Connessione e limiti AI" for e in app.expander)
+    assert any("Dati sintetici" in e.value for e in app.caption)
+    assert app.button(key="analysis_launch").label=="Genera bollettino di mercato"

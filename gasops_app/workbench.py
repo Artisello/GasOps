@@ -17,7 +17,7 @@ from .models import AGENT_LABELS, Agent, Kind, Run, utc_now
 from .regulatory import MAX_DOCUMENTS, REGISTER, SETTLEMENT_NOTE
 from .reports import markdown
 from .session import analysis_label, assumptions, database, fixture, launch, library, reasoner, save_assumptions, source_filters
-from .visuals import chip, evidence, header, heading, kind_tag, kpi, local_time, rows, steps
+from .visuals import chip, evidence, header, heading, info, kind_tag, kpi, local_time, rows, steps
 
 LOG = logging.getLogger(__name__)
 QUESTIONS = (
@@ -38,7 +38,7 @@ def _settlement_panel() -> None:
     form, output = st.columns([1, 1.25], gap="medium")
     with form, st.container(border=True, key="panel_settlement_input"):
         heading("Dati del partecipante", kind_tag(Kind.SIMULATION))
-        st.caption("Volumi e prezzi di esempio modificabili. Per i decimali puoi usare la virgola.")
+        info("Info dati","Volumi e prezzi di esempio modificabili. Per i decimali puoi usare la virgola.")
         with st.form("settlement_form", border=False):
             unit = st.selectbox("Unità di misura", ("kWh", "MWh", "GWh"), index=("kWh", "MWh", "GWh").index(inputs.unit))
             a, b = st.columns(2)
@@ -77,8 +77,7 @@ def _settlement_panel() -> None:
               ("Energia prelevata", _readout(result.withdrawn_mwh, "MWh")),
               ("Operazione applicata", ESITI[result.side] if result.side else "Non disponibile"),
               ("Prezzo applicato", _readout(result.price_eur_mwh, "EUR/MWh"))])
-        st.caption("Flusso di cassa = sbilanciamento × prezzo applicabile. Un valore negativo indica un addebito. "
-                   "Un valore positivo indica un credito. L’importo è arrotondato al centesimo.")
+        info("Info calcolo","Flusso di cassa = sbilanciamento × prezzo applicabile. Negativo = addebito; positivo = credito. Importo arrotondato al centesimo.")
         for issue in result.problems:
             st.warning(issue)
         with st.expander("Fonte del calcolo"):
@@ -149,9 +148,7 @@ def _scenario_panel() -> None:
         st.dataframe(table, hide_index=True, width="stretch")
         if stress.gap_value_eur is not None:
             kpi("Variazione del valore del saldo", stress.gap_value_eur - base.gap_value_eur, "EUR", "Scenario − base", 0)
-        st.caption("Lo stoccaggio è già incluso nell’offerta. Il valore indicativo moltiplica il saldo in MWh "
-                   "per il prezzo di riferimento in €/MWh.")
-        st.caption("Il Centro operativo usa gli scostamenti salvati e la base della fonte selezionata.")
+        info("Info scenario","Lo stoccaggio è già incluso nell’offerta. Il valore indicativo moltiplica il saldo in MWh per il prezzo di riferimento in €/MWh.","Il Centro operativo usa gli scostamenti salvati e la base della fonte selezionata.")
 
 
 def balancing() -> None:
@@ -371,15 +368,8 @@ def operations() -> None:
         selection = source_filters("ops", lookback=False)
     with top:
         started = header("Centro operativo AI", selection.meta, analysis_label(), disabled=selection.bundle is None)
-    st.caption("Genera un bollettino completo con il pulsante in alto, oppure invia una domanda mirata. "
-               "Il risultato appare qui sotto, nello storico delle analisi.")
-    flow, analyst = st.columns([1, 1.1], gap="medium")
-    with flow, st.container(border=True, key="panel_ops_flow"):
-        heading("Flusso del supervisore")
-        st.html('<div class="gas-flow-track"><span>Qualità</span><b>→</b><span>Agenti in parallelo</span>'
-                '<b>→</b><span>Validazione</span><b>→</b><span>Report</span></div>')
-        step_panel = st.empty()
-    with analyst, st.container(border=True, key="panel_ops_query"):
+    st.caption("Bollettino completo o domanda mirata · risultati qui sotto.")
+    with st.container(border=True, key="panel_ops_query"):
         heading("Interroga l’analista")
         st.caption("Usa solo domande e dati pubblici o sintetici; non inserire informazioni riservate.")
         st.selectbox("Domanda di esempio", ["Scegli un esempio", *QUESTIONS], key="ops_example", on_change=_example_question)
@@ -410,4 +400,6 @@ def operations() -> None:
         )
         selected = entries[chosen]
         _report_panel(selected)
-    step_panel.html(steps(selected, grid=True))
+    with st.expander("Flusso del supervisore",icon=":material/info:"):
+        st.html('<div class="gas-flow-track"><span>Qualità</span><b>→</b><span>Agenti</span><b>→</b><span>Validazione</span><b>→</b><span>Report</span></div>')
+        st.html(steps(selected,grid=True))

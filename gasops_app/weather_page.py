@@ -9,7 +9,7 @@ from .models import Kind, utc_now
 from .public_data import SourceUnavailable
 from .session import database
 from .weather_gas import analyse_gas_day
-from .visuals import local_time
+from .visuals import info, local_time
 
 LABELS={"calendar":"Calendario · aggregato","aggregate_weather":"Calendario + HDD · aggregato",
         "sector_calendar":"Calendario · tre settori","sector_weather":"Calendario + HDD · tre settori"}
@@ -23,12 +23,9 @@ def weather_panel(context):
         return
     with st.container(border=True,key="panel_weather"):
         st.subheader("Meteo e domanda")
-        st.caption("Open-Meteo · temperature orarie allineate al giorno gas (06:00–06:00) · "
-                   "Milano, Roma e Napoli a pesi uguali · HDD base 18 °C.")
+        info("Info meteo","Open-Meteo · temperature orarie allineate al giorno gas (06:00–06:00). Milano, Roma e Napoli a pesi uguali; HDD base 18 °C.","L’API gratuita è riservata all’uso non commerciale. Nessuna richiesta senza attivazione.")
         consent=st.checkbox("Attiva meteo automatico · demo non commerciale",key="weather_demo_consent")
         if not consent:
-            st.caption("Nessuna richiesta meteo senza attivazione. "+ 
-                       "L’API gratuita è riservata all’uso non commerciale.")
             return
         fingerprint=context.bundle.fingerprint
         now=utc_now()
@@ -67,8 +64,7 @@ def weather_panel(context):
         base=result["mae"]["calendar"]
         change=(result["mae"]["sector_weather"]/base-1)*100 if base>0 else None
         c.metric("Variazione MAE",numero(change,signed=True)+"%" if change is not None else "—")
-        st.caption(f'{mode} · {result["holdout"]} giorni verificati in due finestre cronologiche · '
-                   f'addestramento finale: {result["observations"]} giorni. Non è un backtest operativo a sette giorni.')
+        st.caption(f'{mode} · {result["holdout"]} giorni di verifica · confronto non operativo a 7 giorni.')
         st.markdown("**Scenario condizionale · prossimi sette giorni gas**")
         frame=pd.DataFrame(result["points"]).set_index("period")
         st.line_chart(frame[["calendar_gwh","estimate_gwh"]].rename(columns={
@@ -84,6 +80,7 @@ def weather_panel(context):
                            "MAE con HDD":round(result["sector_mae"]["sector_weather"][k],2)}
                           for k,v in SECTORS.items()],hide_index=True)
             st.dataframe(result["folds"],hide_index=True)
+            st.caption(f'Addestramento finale: {result["observations"]} giorni · due finestre cronologiche.')
             st.caption("Confronto a parità di osservazioni, gap di sette giorni prima di ogni verifica. "
                        "L’archivio previous_day1 è un lead fisso per ora, non un’unica emissione giornaliera. "
                        "Non certifica le versioni storiche dei prelievi. Pesi territoriali non calibrati. "

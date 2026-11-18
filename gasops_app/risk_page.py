@@ -9,12 +9,13 @@ from .italiano import numero
 from .models import utc_now
 from .risk import RiskSettings, forecast_uncertainty, simulate
 from .session import assumptions, fixture, save_assumptions
+from .visuals import info
 
 
 def risk_page():
     st.title("Rischio probabilistico")
-    st.caption("Stima probabilità di deficit e perdita economica potenziale · Monte Carlo, VaR e CVaR")
-    st.info("Le probabilità sono condizionate alle ipotesi, non rappresentano il rischio ufficiale del sistema gas. Non è settlement.")
+    st.caption("Simulazione Monte Carlo · rischio ipotetico, non ufficiale né settlement.")
+    info("Info simulazione","Stima probabilità di deficit e perdita economica potenziale, VaR e CVaR.","Le probabilità sono condizionate alle ipotesi; non rappresentano il rischio ufficiale del sistema gas.")
     state = assumptions()
     data = st.session_state.get("active_bundle") or fixture()
     context = MarketContext(data, state.model, utc_now())
@@ -125,9 +126,6 @@ def risk_page():
         st.plotly_chart(fig, width="stretch")
     else:
         st.caption("Rischio monetario non calcolato: prezzo non fornito.")
-    st.caption("CVaR = media della massa di coda peggiore, anche in presenza di perdite uguali. " + r["loss_definition"])
-    st.caption("Le correlazioni sono ipotesi sui fattori gaussiani; offerta e prezzo non sono calibrati. "
-               "Con molte simulazioni a zero il VaR può essere nullo e il CVaR positivo.")
-    st.caption("Il Centro operativo usa le ipotesi di volatilità salvate qui, ma applica il proprio scenario aggregato della fonte selezionata.")
+    info("Info VaR e CVaR","CVaR = media della massa di coda peggiore, anche in presenza di perdite uguali. "+r["loss_definition"],"Le correlazioni sono ipotesi sui fattori gaussiani; offerta e prezzo non sono calibrati. Con molte simulazioni a zero il VaR può essere nullo e il CVaR positivo.","Il Centro operativo usa le ipotesi di volatilità salvate qui, ma applica il proprio scenario aggregato della fonte selezionata.")
     st.download_button("Esporta simulazione JSON",json.dumps(r,ensure_ascii=False,indent=2),
                        "gasops-risk.json","application/json")

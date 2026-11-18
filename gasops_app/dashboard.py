@@ -15,7 +15,7 @@ from .models import AGENT_LABELS, Agent, Kind, Provider
 from .session import ai_controls, analysis_label, briefing_run, launch, preview_market, source_filters
 from .reports import markdown
 from .visuals import AMBER, BLUE, ROSE, TEAL, breakdown_chart, chip, demand_chart, error_chart
-from .visuals import forecast_readout, heading, header, kind_tag, kpi, local_time, mini_chart, plot, rows, steps
+from .visuals import forecast_readout, heading, header, info, kind_tag, kpi, local_time, mini_chart, plot, rows, steps
 
 
 def _change(facts: dict, field: str) -> str:
@@ -83,9 +83,8 @@ def _source_panel(context: MarketContext) -> None:
         details.extend([(feed.name, period), ("Stato ARERA", _state(feed))])
     rows(details)
     if origin.grain == "daily" and "distribution_gwh" in origin.fields and not origin.archive:
-        st.caption("Tre aggregati ENTSOG/SRG: proxy parziale, non domanda nazionale ufficiale. Nessun prezzo o offerta osservati.")
-        with st.expander("Perimetro e metodologia"):
-            st.write(origin.description)
+        st.caption("Prelievi SRG · perimetro parziale")
+        info("Info perimetro","Tre aggregati ENTSOG/SRG: proxy parziale, non domanda nazionale ufficiale. Nessun prezzo o offerta osservati.",origin.description)
     links = [f"[{feed.name}]({feed.url})" for feed in (origin, *origin.companions) if feed.url]
     if links:
         st.markdown(" · ".join(links))
@@ -174,23 +173,24 @@ def _supporting_charts(context: MarketContext, data: pd.DataFrame, page: str) ->
 def _briefing_panel(selection, clicked: bool) -> None:
     with st.container(border=True,key="panel_overview_brief"):
         st.subheader("Bollettino di mercato")
-        st.caption("Il pulsante genera un report sui dati selezionati: andamento dei prelievi, "
-                   "previsioni, qualità, scenari e verifiche locali. Se è selezionato un modello AI, "
-                   "aggiunge un'interpretazione dei risultati condivisibili. Non modifica fonti o calcoli.")
+        lead,help_col=st.columns([4,1],vertical_alignment="center")
+        lead.caption("Mercato, previsioni e rischi · sintesi dei dati selezionati.")
+        with help_col:
+            info("Info bollettino","Il pulsante esegue i sei agenti e i controlli locali. Il modello AI, se selezionato, interpreta i risultati condivisibili.","Non modifica le fonti, i calcoli o le posizioni operative. Scenari e settlement possono essere dimostrativi.")
         extras=[]
         if st.session_state.get("briefing_gie"):
             extras.append("GIE (AGSI+, ALSI e IIP)")
         if st.session_state.get("briefing_weather"):
             extras.append("Open-Meteo")
-        st.caption("Fonti supplementari selezionate: "+(", ".join(extras) if extras else
-                   "nessuna · configurabili in Fonti del briefing AI nel menu laterale."))
+        if extras:
+            st.caption("Fonti aggiuntive: "+", ".join(extras))
         if clicked:
             generated=launch(selection,full=True)
             if generated is None:
                 st.error("Il nuovo bollettino non è stato generato. L’eventuale risultato precedente resta qui sotto.")
         run=briefing_run()
         if run is None:
-            st.info("Nessun bollettino generato in questa sessione. Premi il pulsante in alto: il risultato apparirà qui.")
+            st.caption("Nessun bollettino generato. Premi il pulsante in alto: il risultato apparirà qui.")
         else:
             matches=bool(selection.bundle and run.input_sha256==selection.bundle.fingerprint
                          and run.assumptions.get("model")==selection.model)
@@ -203,8 +203,7 @@ def _briefing_panel(selection, clicked: bool) -> None:
             if actual_ai:
                 st.caption("Interpretazione AI · "+(run.model or "modello non indicato"))
                 st.text(run.interpretation)
-                st.caption("Testo generato dal modello, da verificare · Riscontri: "+
-                           ", ".join(AGENT_LABELS[a] for a in run.interpretation_sources))
+                st.caption("Interpretazione da verificare · "+", ".join(AGENT_LABELS[a] for a in run.interpretation_sources))
             else:
                 st.caption("Report deterministico · nessuna interpretazione AI generata.")
             for warning in run.warnings:
@@ -266,10 +265,7 @@ def overview() -> None:
             heading("Fonti e aggiornamento")
             _source_panel(context)
         _quality_panel(context)
-    a,b,c=st.columns(3)
-    a.markdown("**[Mercato e previsioni](/market)**  \nStorico, andamento e stime")
-    b.markdown("**[Stoccaggi e forniture](/security-of-supply)**  \nAGSI+, ALSI, IIP e Jarvis")
-    c.markdown("**[Registro operativo](/ledger)**  \nFatture, prezzi, garanzie e scadenze")
+    st.markdown("[Mercato e previsioni](/market) · [Stoccaggi e forniture](/security-of-supply) · [Registro operativo](/ledger)")
 
 
 def _model_comparison(context: MarketContext) -> None:

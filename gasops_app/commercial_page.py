@@ -9,6 +9,7 @@ import streamlit as st
 from .commercial_controls import (BILL_REF, EPS_REF, LNG_REF, PRICE_REF, demo_invoices,
                                   exposure, imbalance_prices, lng_deadlines, reconcile)
 from .italiano import numero
+from .visuals import info
 from .operations_ledger import sample_rows
 
 
@@ -26,7 +27,7 @@ def _csv(rows):
 
 def commercial_workbench(ledger_view):
     st.title("Operazioni commerciali")
-    st.caption("Dati fittizi · Settembre 2026 · Edizioni normative di studio · Nessuna disposizione operativa o fattura reale")
+    st.caption("Demo sintetica · settembre 2026 · nessuna fattura reale")
     records = sample_rows()
     demo = reconcile(records,demo_invoices(),"DEMO-001",2026,9)
     eps = exposure(D(420000),D(280000),D(220000),D(1000000))
@@ -36,7 +37,7 @@ def commercial_workbench(ledger_view):
     a.metric("Partite da riconciliare",len(issues))
     b.metric("Differenze note",money(sum((abs(r["delta"]) for r in issues if r["delta"] is not None),D(0))))
     c.metric("Utilizzo garanzie",numero(eps["ratio"],1)+"%")
-    st.caption("I tre indicatori si riferiscono al caso demo fisso; gli strumenti sottostanti consentono simulazioni indipendenti.")
+    info("Info riepilogo","Indicatori del caso demo fisso; gli strumenti sottostanti consentono simulazioni indipendenti. Edizioni normative di studio, nessuna disposizione operativa.")
     tabs=st.tabs(["Fatture","Prezzi","Garanzie","Scadenze","Bilanci e GNL"])
     with tabs[0]:
         st.subheader("Confronta le partite economiche")
@@ -52,7 +53,7 @@ def commercial_workbench(ledger_view):
                        "Differenza":money(r["delta"]),"Esito":r["status"]} for r in rows],hide_index=True)
         st.download_button("Esporta riconciliazione CSV",_csv(rows),"gasops-riconciliazione.csv","text/csv",
                            key="commercial_reconcile_export")
-        st.caption(BILL_REF+" · Una differenza non costituisce una nota di credito.")
+        info("Info riconciliazione",BILL_REF+" · Una differenza non costituisce una nota di credito.")
     with tabs[1]:
         st.subheader("Verifica i prezzi di sbilanciamento")
         from .operational_sources_page import gme_reference
@@ -81,7 +82,7 @@ def commercial_workbench(ledger_view):
             st.caption(priced["method"]+" · SA "+numero(priced["adjustment"],3)+" €/MWh")
         except ValueError as error:
             st.warning(str(error))
-        st.caption(PRICE_REF+" · Prezzi esposti a tre decimali; calcolo non arrotondato.")
+        info("Info prezzi",PRICE_REF+" · Prezzi esposti a tre decimali; calcolo non arrotondato.")
     with tabs[2]:
         st.subheader("Controlla la capienza delle garanzie")
         st.caption("Inserire componenti EPSu già determinate e MEPSu disponibile; importi firmati, IVA inclusa ove prevista.")
@@ -104,7 +105,7 @@ def commercial_workbench(ledger_view):
                 st.success("Inferiore al 90%.")
         except ValueError as error:
             st.warning(str(error))
-        st.caption(EPS_REF+" · Non calcola autonomamente Pfat, Pdet, Patt o MEPSu.")
+        info("Info garanzie",EPS_REF+" · Non calcola autonomamente Pfat, Pdet, Patt o MEPSu.")
     with tabs[3]:
         st.subheader("Scadenze commerciali")
         st.caption("Date dimostrative. Il calendario lavorativo deve essere verificato prima dell’uso.")
@@ -121,6 +122,6 @@ def commercial_workbench(ledger_view):
             st.download_button("Esporta scadenze CSV",_csv(deadline_rows),"gasops-scadenze.csv","text/csv")
         except ValueError as error:
             st.warning(str(error))
-        st.caption("Festività e convenzioni di pagamento non certificate. Nessun promemoria viene inviato.")
+        info("Info scadenze","Festività e convenzioni di pagamento non certificate. Nessun promemoria viene inviato.")
     with tabs[4]:
         ledger_view()

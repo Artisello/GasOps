@@ -21,7 +21,7 @@ from .models import Run, utc_now
 from .public_data import SourceUnavailable
 from .regulatory import Library, read_local_pdfs
 from .store import Store
-from .visuals import chip, kind_tag, local_time, steps
+from .visuals import chip, info, kind_tag, local_time, steps
 from .workflow import DAILY_BRIEFING, run_workflow
 
 LOG = logging.getLogger(__name__)
@@ -103,21 +103,21 @@ def ai_controls(*, prefix="sidebar") -> None:
         problem = str(error)
     if problem:
         st.warning(problem)
-    if config:
-        if st.session_state.get("execution_mode")=="Deterministic":
-            st.caption("Modello disponibile: selezionalo in Modalità di analisi per usarlo nel report.")
+    if not config:
+        st.caption("AI non configurata · report deterministico disponibile")
+    elif prefix=="sidebar":
         st.caption(("Groq Cloud" if config.groq else "Ollama locale" if config.local else "Provider remoto")+
                    " · "+config.model)
-    else:
-        st.caption("AI non configurata · report deterministico disponibile")
-    with st.expander("Connessione e limiti AI", expanded=not config):
+    with st.expander("Connessione e limiti AI", expanded=False):
+        if config and st.session_state.get("execution_mode")=="Deterministic":
+            st.caption("Modello disponibile: selezionalo in Modalità di analisi.")
         if not config:
             st.write("Per Groq Cloud, imposta GROQ_API_KEY nei Secrets di Streamlit; "
                      "oppure i tre campi GASOPS_LLM_URL, GASOPS_LLM_MODEL, GASOPS_LLM_API_KEY.")
             st.code('GROQ_API_KEY = "LA_TUA_CHIAVE"',language="toml")
             st.caption("Groq Cloud non è Grok di xAI. Non inserire la chiave qui o in GitHub.")
             return
-        st.caption("Configurazione presente; la connessione va verificata con un test reale.")
+        st.caption("Configurata · verifica con il test.")
         if not config.local:
             try:
                 st.caption(f"Richieste interne ultime 24 h: {database().llm_usage()}/30 · max 4/min. "
@@ -153,10 +153,9 @@ def sidebar() -> None:
                     help="Consulta AGSI+ e ALSI Italia e IIP al lancio del report. Se usi un modello remoto, invia solo indicatori pubblici con attribuzione, non record UMM originali.")
         st.checkbox("Aggiungi analisi meteo (demo non commerciale)",key="briefing_weather",
                     help="Consulta Open-Meteo solo con ENTSOG recente; i riepiloghi possono essere condivisi con il modello selezionato.")
-        st.caption("Le fonti sono consultate al lancio, con cache. Attiva solo se autorizzato all’uso e condivisione dei dati.")
+        st.caption("Solo dati pubblici autorizzati alla condivisione.")
     if config and not config.local:
-        st.caption("Condividi solo domande e dati non riservati; estratti normativi e settlement esclusi.")
-    st.html('<div class="sidebar-caption">Europe/Rome · Prototipo indipendente</div>')
+        st.caption("Non inserire dati riservati.")
 
 
 def reasoner() -> CompatibleReasoner | None:
@@ -220,19 +219,25 @@ def source_filters(page: str, *, lookback: bool = True) -> Selection:
             refresh = st.button("Aggiorna fonti", icon=":material/refresh:", width="stretch", key=f"{page}_refresh")
         else:
             refresh = False
-            st.caption("Giorno gas dalle 06:00 locali")
+            pass
     with st.expander("Impostazioni avanzate · modello previsionale"):
         previous = assumptions()
         model = st.selectbox("Modello previsionale", MODEL_CHOICES, index=MODEL_CHOICES.index(previous.model),
                              format_func=MODELLI.__getitem__, key=f"{page}_model",
                              help="Automatico usa il modello con l’errore medio più basso sugli stessi periodi storici.")
         save_assumptions(previous.model_copy(update={"model": model}))
-    st.caption({
+    if name in (ARCHIVE,DEMO):
+        st.caption("Archivio storico · non mercato attuale" if name==ARCHIVE else "Dati sintetici · simulazione")
+    elif name==DAILY:
+        st.caption("Prelievi SRG · perimetro parziale")
+    else:
+        st.caption("Bilancio nazionale · disponibilità contabile")
+    info("Info fonte",{
         PUBLIC:"Bilancio nazionale mensile e prezzo medio PSV. La disponibilità è contabile, non fisica.",
         DAILY:"Somma dei prelievi SRG di distribuzione, industria e termoelettrico. Non è il totale nazionale; non include offerta o prezzi.",
         ARCHIVE:"Serie pubblica storica 2015–2021. Le proiezioni non descrivono il mercato di oggi.",
         DEMO:"Dati interamente sintetici, utilizzabili solo per provare i calcoli."
-    }[name])
+    }[name],"Il giorno gas inizia alle 06:00 locali.")
     st.session_state[f"{page}_source_note"] = ""
     if name == DEMO:
         bundle = fixture()

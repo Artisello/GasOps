@@ -138,3 +138,7 @@ Diagnostica sempre visibile nella sidebar e nella panoramica, anche in modalità
 ### Bollettino visibile nella panoramica
 
 La CTA Genera bollettino AI (oppure Genera bollettino di mercato senza modello selezionato) apre il risultato nella stessa pagina, subito dopo i controlli fonte, prima dei grafici. Indicazione della modalità realmente eseguita, sintesi AI distinguibile dai calcoli locali, conteggi controlli/rilievi, fonte e periodo, dettagli espandibili, export Markdown/JSON e collegamento al Centro operativo. L'ultimo bollettino della sessione rimane visibile anche dopo una domanda separata o cambio dati/modello, con avvertenza se non corrisponde alla selezione. Non si recuperano automaticamente report di altri visitatori dalla cronologia condivisa. Corretto anche il formato della matrice di predizione meteo Ridge per output aggregato monodimensionale, emerso nella CI precedente.
+
+### Interfaccia compatta
+
+Firma nella navigazione: «Prototipo per SNAM creato da Igor» (progetto indipendente, non ufficiale). Controlli compatti, guida contestuale con popover nativi Info, spiegazioni metodologiche e dettagli tecnici secondari. La provenienza GIE, le etichette demo/simulazione, i limiti essenziali, gli errori e le avvertenze restano visibili. Funzionalità analitiche, fonti, quota AI e calcoli invariati. Test UI di regressione; verificare layout desktop/mobile sul deployment.
