@@ -156,4 +156,5 @@ def test_offline_jrc_series_and_explicit_simulated_scenario():
     stress = result.results[Agent.SCENARIO]
     assert stress.values["baseline_kind"] == Kind.SYNTHETIC.value
     assert stress.evidence[0].document == "Italia · Dati di esempio"
-    assert stress.summary.startswith("Base di esempio")
+    assert stress.values["kind"] == Kind.SIMULATION.value
+    assert "non dati osservati" in stress.summary
