@@ -317,3 +317,40 @@ def test_briefing_format_retry_respects_quota(monkeypatch):
     assert run.mode=="Deterministic fallback" and not run.ai_sections
     assert len(calls)==1 and run.ai_usage["calls"]==1
     assert any("Quota interna" in warning for warning in run.warnings)
+
+
+def test_simple_demand_question_accepts_section_and_recovers_oversized_answer(monkeypatch):
+    from gasops_app.country_analysis import direct_market_question
+    from gasops_app.market import demand_trend_question
+    q="Come è cambiata la domanda di gas nell’ultimo periodo?"
+    assert direct_market_question(q) and demand_trend_question(q)
+    assert not demand_trend_question("Perché è cambiata la domanda di gas?")
+    replies=iter([
+        {"sections":[{"id":"answer","text":"x"*6001,"references":["market_intelligence"]}]},
+        {"interpretation":"I consumi sono aumentati nel periodo osservato.","references":["market_intelligence"]},
+    ])
+    seen=[]
+    class Response:
+        status_code=200
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def iter_content(self,chunk_size):
+            yield json.dumps({"choices":[{"message":{"content":json.dumps(next(replies))}}]}).encode()
+    def post(*args,**kwargs):
+        seen.append(kwargs["json"])
+        return Response()
+    monkeypatch.setattr("gasops_app.llm.requests.post",post)
+    model=CompatibleReasoner(LLMConfig("openai/gpt-oss-120b","https://api.groq.com/openai/v1","fixture"))
+    run=run_workflow(MarketContext(synthetic(),"Seasonal regression",NOW),Library(),Assumptions(),
+                     q,reasoner=model,planned_only=True)
+    assert run.mode=="LLM-assisted" and len(seen)==2 and run.ai_usage["format_retries"]==1
+    assert set(run.results)=={Agent.MARKET,Agent.QUALITY}
+    assert "2–4 frasi" in seen[0]["messages"][-1]["content"]
+    assert "Recupero formato" in seen[1]["messages"][-1]["content"]
+
+
+def test_editorial_length_is_not_a_validation_failure():
+    from gasops_app.ai_response import parse_sections
+    sections,refs=parse_sections([{"id":"answer","text":"x"*2400,"references":["market_intelligence"]}],
+                                 ("answer","evidence"),["market_intelligence"],[],6000)
+    assert len(sections[0]["text"])==2400 and refs==["market_intelligence"]

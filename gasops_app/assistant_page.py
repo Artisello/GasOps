@@ -4,7 +4,8 @@ import logging
 
 import streamlit as st
 
-from .italiano import ESITI, GRAVITA, TIPI
+from .italiano import ESITI, GRAVITA, TIPI, numero
+from .market import demand_trend_question, demand_readout
 from .models import Agent, AGENT_LABELS, Run, utc_now
 from .reports import markdown
 from . import session
@@ -72,8 +73,13 @@ def _report(report:Run,selection):
           "Calcoli locali · AI non disponibile" if report.mode=="Deterministic fallback" else "Calcoli locali · senza risposta AI")
     st.caption(mode+" · "+local_time(report.finished_at))
     period=report.assumptions.get("source_period") or report.source.latest_period or "non indicato"
+    if report.assumptions.get("scope_unavailable"):
+        st.info(report.summary)
+        return
     st.text(f"{report.source.name} · {TIPI[report.source.kind]} · periodo {period}")
-    if not selection.bundle or report.input_sha256!=selection.bundle.fingerprint or report.assumptions.get("model")!=selection.model:
+    if report.assumptions.get("requested_country")=="DE":
+        st.caption("Perimetro della domanda: Germania · selezione automatica per questa analisi. Prezzo THE e dati di bilanciamento effettivi non integrati.")
+    if (not report.assumptions.get("requested_country") and (not selection.bundle or report.input_sha256!=selection.bundle.fingerprint)) or report.assumptions.get("model")!=selection.model:
         st.warning("Questo risultato usa dati o un modello previsionale diversi dalla selezione corrente. Esegui una nuova analisi per aggiornarlo.")
     for warning in report.warnings:
         st.warning(warning)
@@ -83,8 +89,8 @@ def _report(report:Run,selection):
         st.markdown("**Risposta AI**")
         ai_readout(report)
     else:
-        if report.mode!="Deterministic":
-            st.warning("Nessuna risposta AI generata. I calcoli sottostanti sono soltanto evidenze locali di riserva.")
+        if report.mode!="Deterministic" and not report.warnings:
+            st.warning("Nessuna risposta AI generata; risultati locali.")
         st.markdown("**Report di calcolo (senza AI)**")
         if not report.results:
             st.text(report.summary or "Nessun risultato disponibile.")
@@ -105,7 +111,16 @@ def _report(report:Run,selection):
             for agent in highlights[:2]:
                 result=report.results[agent]
                 st.caption(AGENT_LABELS[agent]+" · "+ESITI[result.status])
-                st.text(result.summary)
+                concise=demand_readout(result.values,report.source.grain) if agent==Agent.MARKET and demand_trend_question(report.question) else None
+                st.text(concise or result.summary)
+            if report.assumptions.get("requested_country")=="DE":
+                storage=(report.assumptions.get("public_operational_context") or {}).get("AGSI+ Germania",{})
+                if storage.get("status")=="available":
+                    values=storage.get("values",{})
+                    if values.get("fill_pct") is not None:
+                        st.text("Stoccaggi Germania: "+numero(values["fill_pct"],1)+"% · "+str(storage.get("gas_day","data non indicata"))+" · GIE AGSI+")
+                elif storage:
+                    st.caption("Stoccaggi Germania non disponibili o non recenti.")
         critical=[f for f in report.findings if f.severity=="high"]
         if critical:
             st.warning("Rilievi ad alta priorità: "+str(len(critical))+". Apri Rilievi da verificare.")

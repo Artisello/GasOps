@@ -1,9 +1,10 @@
 """Comparable demand, supply and price facts at the native source frequency."""
 
+import re
 import pandas as pd
 
 from .data import FIELDS, period_text
-from .italiano import MESI
+from .italiano import MESI, numero
 
 
 def _change(current: float, previous: float) -> float | None:
@@ -53,3 +54,25 @@ def market_facts(data: pd.DataFrame, grain: str) -> dict:
         facts["peak_month"] = MESI[int(season.idxmax()) - 1]
         facts["low_month"] = MESI[int(season.idxmin()) - 1]
     return facts
+
+
+def demand_trend_question(question):
+    """Narrow observational questions need no simulation, causal or forecast model."""
+    return bool(re.search(r"\b(?:domanda|consum[oi])\b",question,re.I)
+                and re.search(r"cambiat|variaz|andament|ultim|cresciut|diminuit|evoluz",question,re.I)
+                and not re.search(r"perch[eéè]|caus|prevision|forecast|scenario|simul|settlement|prezz|offert|stoccagg|import|esport|correl|rispetto all.anno|ann[uo]al|confront.*paes",question,re.I))
+
+
+def demand_readout(facts,grain):
+    if not facts or facts.get("demand_gwh") is None:
+        return None
+    text=f"{facts['label']}: consumi osservati pari a {numero(facts['demand_gwh'])} GWh."
+    change=facts.get("demand_gwh_change_pct")
+    if change is not None:
+        if grain=="daily":
+            text+=" Variazione della media sui giorni confrontabili delle due finestre di 7 giorni: "+numero(change,1,signed=True)+"%."
+        else:
+            text+=" Variazione sul mese precedente: "+numero(change,1,signed=True)+"%."
+    else:
+        text+=" Variazione non disponibile per assenza di periodi confrontabili."
+    return text
