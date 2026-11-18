@@ -32,9 +32,8 @@ def _results(result,base,r,unit):
         ("Carenza media",r["expected_deficit_gwh"],unit,"Media su tutti gli scenari, inclusi gli zeri",1,""),
         ("Costo lordo medio",r["expected_gross_cost_eur"],"€","Stima ipotetica, non settlement",0,""),
     ])
-    st.write("In circa "+numero(100*p,1)+" simulazioni su 100, l’offerta non copre la domanda.")
     if r["conditional_deficit_gwh"] is not None:
-        st.caption("Quando si verifica una carenza, mancano in media "+numero(r["conditional_deficit_gwh"])+" "+unit+".")
+        st.caption("Carenza media quando presente: "+numero(r["conditional_deficit_gwh"])+" "+unit+".")
     else:
         st.caption("Nessuna carenza nel campione; non significa rischio reale pari a zero.")
     for label,key in (("domanda","clipped_demand_fraction"),("offerta","clipped_supply_fraction")):
@@ -42,9 +41,9 @@ def _results(result,base,r,unit):
             st.warning("Il modello ha troncato a zero "+numero(100*r[key])+"% dei valori simulati di "+label+". Rivedi le ipotesi di volatilità.")
     if any(r["stress"].values()):
         with st.container(border=True,key="panel_risk_comparison"):
-            st.subheader("Quanto cambia rispetto alla base?")
+            st.subheader("Confronto con la base")
             delta=100*(p-base["probability_deficit"])
-            st.caption("Stessi shock casuali e stesso seed; cambiano solo i valori centrali e le volatilità relative che ne dipendono.")
+            info("Confronto","Stessi shock casuali e seed; cambiano soltanto i valori centrali e le volatilità relative che ne dipendono.")
             kpi_grid([("Probabilità nella base",100*base["probability_deficit"],"%","Prima dello stress",1,""),
                       ("Probabilità nello scenario",100*p,"%","Dopo lo stress",1,""),
                       ("Variazione",delta,"punti %","Scenario − base",1,"")])
@@ -109,7 +108,7 @@ def _results(result,base,r,unit):
 
 def risk_page():
     st.title("Simulazione rischi")
-    st.caption("Quanto gas potrebbe mancare e quanto potrebbe costare? · Scenario ipotetico, non rischio ufficiale.")
+    st.caption("Scenario ipotetico · non rischio ufficiale")
     state=assumptions()
     data=st.session_state.get("active_bundle") or fixture()
     origin=data.origin
@@ -221,7 +220,7 @@ def risk_page():
     if any(r.get(k)!=v for k,v in fingerprint.items()):
         st.warning("Fonte, previsione o scenario cambiati. Esegui una nuova simulazione.")
         return
-    st.caption("Ultimo calcolo eseguito · modifica le ipotesi e premi nuovamente il pulsante per aggiornare.")
+    st.caption("Ultimo calcolo · aggiornamento manuale")
     if r["inputs"]["price_eur_mwh"] is None and r["stress"]["price_delta"]:
         st.caption("Shock prezzo non applicato: rischio economico disattivato.")
     _results(result,saved["base"],r,unit)

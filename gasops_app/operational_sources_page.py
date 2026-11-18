@@ -29,14 +29,13 @@ def configured_key():
 def operational_context():
     """Standalone view; only the selected platform is loaded."""
     st.title("Stoccaggi e forniture")
-    st.caption("Quanto gas è stoccato, quanto entra in rete e quali avvisi sono pubblicati.")
     key=configured_key()
     selected=st.radio("Sezione",["AGSI+","ALSI","IIP","Jarvis"],horizontal=True,key="operational_platform",
                       label_visibility="collapsed",
                       format_func={"AGSI+":"Scorte","ALSI":"Gas liquefatto","IIP":"Avvisi di mercato","Jarvis":"Rete Snam"}.__getitem__)
     if not key and selected!="Jarvis":
         st.info("Accesso GIE non configurato. La sezione Rete Snam resta disponibile.")
-    with st.popover("Info fonti",icon=":material/info:"):
+    with st.popover("Fonti",icon=":material/info:"):
         st.write("AGSI+: gas negli stoccaggi. ALSI: terminali di gas naturale liquefatto (GNL). IIP: avvisi pubblicati dagli operatori. Jarvis: dati della rete Snam importati manualmente.")
         st.caption("Chiave GIE configurata; verifica al caricamento." if key else "Imposta GASOPS_GIE_API_KEY nei Secrets di Streamlit e riavvia l’app.")
     if selected=="AGSI+":
@@ -53,7 +52,7 @@ def _jarvis_panel(prefix="supply"):
     import pandas as pd
     state="jarvis_public_snapshot_v1"
     st.subheader("Stato del sistema gas")
-    st.caption("Italia · rete Snam · stime pubblicate, non posizioni dei singoli utenti.")
+    st.caption("Italia · rete Snam · stime di sistema importate")
     st.link_button("Apri portale Snam Jarvis",JARVIS_SOURCE,icon=":material/open_in_new:")
     with st.expander("Importa dati pubblici Jarvis",expanded=state not in st.session_state):
         info("Come importare i dati","Scarica il modello CSV I.G.O.R., compila con i dati pubblici autorizzati e caricalo qui. Il modello non è un export nativo Jarvis.","Usa GWh e date ISO 8601 con offset. Non inserire informazioni riservate o bilanci individuali. I file non vengono inviati a LLM o salvati su disco.")
@@ -103,7 +102,7 @@ def _jarvis_panel(prefix="supply"):
         change=" · Δ "+numero(value-prior,1,signed=True)+" GWh dalla versione precedente" if value is not None and prior is not None else ""
         cards.append((label,value,"GWh",detail+change,1,""))
     kpi_grid(cards)
-    st.caption("Evoluzione delle stime nello stesso giorno gas (GWh)")
+    st.caption("Evoluzione infragiornaliera (GWh)")
     frame=history.copy()
     frame["Pubblicazione"]=pd.to_datetime(frame["published_at"],utc=True).dt.tz_convert(ROME)
     for label,field,_ in fields:
@@ -238,7 +237,7 @@ def _inventory_panel(platform,loader,key):
                  key=platform+"_"+scope+"_trend")
         else:
             st.info("Nessun dato per questo indicatore nel periodo selezionato.")
-        st.caption("Fonte: "+GIE_CREDIT[platform]+" · giorni senza dati lasciati vuoti.")
+        st.caption("Fonte: "+GIE_CREDIT[platform])
     info("Info indicatori","Il riempimento è quello pubblicato dalla fonte, non una soglia di sicurezza. La giacenza misura energia stoccata.",
          "Per ALSI il rapporto di immissione è riferito al valore dichiarato dall’operatore; non è una stima della capacità commerciale.")
     with st.expander("Dati giornalieri e download"):
@@ -255,7 +254,7 @@ def _inventory_panel(platform,loader,key):
 def _iip_panel(key):
     st.subheader("Interruzioni e avvisi di mercato (UMM)")
     st.markdown("**Perimetro GIE · richiesta senza filtro geografico**")
-    st.caption("Avvisi pubblicati · non una misura di capacità persa.")
+
     info("Info UMM","Informazioni e indisponibilità pubblicate dagli operatori. Il conteggio non indica eventi unici o capacità persa aggregata.")
     _credit("IIP")
     if not key:

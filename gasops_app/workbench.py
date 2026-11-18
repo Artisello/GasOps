@@ -28,10 +28,10 @@ def _settlement_panel() -> None:
     advanced=mode=="Completo"
     saved=st.session_state.get("commercial_settlement") if advanced else None
     inputs=(CommercialInput.model_validate(saved) if saved else CommercialInput(**state.settlement.model_dump())) if advanced else state.settlement
-    st.caption("Partecipante ipotetico · volumi e prezzi inseriti dall’utente · importi prima delle imposte.")
+    st.caption("Partecipante ipotetico · IVA esclusa")
     form,output=st.columns([1,1.2],gap="medium")
     with form,st.container(border=True,key="panel_settlement_input"):
-        st.subheader("1. Inserisci i dati")
+        st.subheader("Dati")
         with st.form("settlement_form_"+mode,border=False):
             unit=st.selectbox("Unità dei volumi",("kWh","MWh","GWh"),index=("kWh","MWh","GWh").index(inputs.unit))
             def field(label,value,help=None):
@@ -72,9 +72,10 @@ def _settlement_panel() -> None:
                          ". Il risultato precedente resta visibile.")
                 invalid=True
         if advanced:
-            st.caption("Calcolo completo indipendente: il bollettino AI conserva le ipotesi del calcolo semplice.")
+            st.caption("Calcolo completo indipendente dal bollettino AI.")
+            info("Ipotesi del bollettino","Il bollettino AI conserva le ipotesi del calcolo semplice.")
     with output,st.container(border=True,key="panel_settlement_output"):
-        st.subheader("2. Risultato")
+        st.subheader("Risultato")
         if invalid:
             st.caption("Ultimo risultato valido, non i valori appena inseriti.")
         result=settle_commercial(inputs) if advanced else settle(inputs)
@@ -153,10 +154,10 @@ def _scenario_panel() -> None:
                (" · base modificata dall’utente" if saved else " · base di riferimento"))
     if data.origin.grain=="monthly":
         st.caption("Disponibilità contabile, non offerta fisica della rete.")
-    st.caption("Scenario ipotetico, non previsione né sbilanciamento ufficiale del sistema.")
+    st.caption("Scenario ipotetico · non previsione né SAS ufficiale")
     form,output=st.columns([1,1.2],gap="medium")
     with form,st.container(border=True,key="panel_scenario_input"):
-        st.subheader("1. Imposta lo scenario")
+        st.subheader("Ipotesi")
         with st.form(f"scenario_form_{data.fingerprint[:12]}",border=False):
             demand_pct=st.slider("Variazione della domanda (%)",-100.,300.,float(changes.demand_pct),1.)
             supply_pct=st.slider("Variazione dell’offerta escluso stoccaggio (%)",-100.,300.,float(changes.supply_pct),1.)
@@ -181,7 +182,7 @@ def _scenario_panel() -> None:
         info("Info scenario","Lo stoccaggio è già incluso nell’offerta totale. I cambiamenti si applicano separatamente alle altre fonti e allo stoccaggio.",
              "Il Centro operativo usa gli scostamenti salvati e la propria fonte di riferimento; la base personalizzata resta in questa pagina.")
     with output,st.container(border=True,key="panel_scenario_output"):
-        st.subheader("2. Impatto dello scenario")
+        st.subheader("Impatto")
         base=scenario(case,ScenarioInput(demand_pct=0))
         stress=scenario(case,changes)
         balance_label="Carenza" if stress.imbalance_gwh<0 else "Eccesso" if stress.imbalance_gwh>0 else "Equilibrio"

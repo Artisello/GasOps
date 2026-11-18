@@ -44,7 +44,8 @@ def header(title: str, meta: str, action: str | None = None, disabled: bool = Fa
             left = st.container()
         with left:
             st.title(title)
-            st.html(f'<div class="gas-header-meta">{meta}</div>')
+            if meta:
+                st.html(f'<div class="gas-header-meta">{meta}</div>')
         clicked = False
         if action:
             with right:
@@ -56,9 +57,12 @@ def header(title: str, meta: str, action: str | None = None, disabled: bool = Fa
 
 def info(label: str, *paragraphs: str) -> None:
     """Native, keyboard-accessible contextual help; do not use for active warnings."""
-    with st.popover(label,icon=":material/info:"):
+    # Keep a concise accessible topic label beside the information icon.
+    topic=label.removeprefix("Info ").strip() or "Dettagli"
+    with st.popover(topic[:1].upper()+topic[1:],icon=":material/info:"):
         for paragraph in paragraphs:
-            st.write(paragraph)
+            if paragraph:
+                st.write(paragraph)
 
 
 def heading(label: str, right: str = "") -> None:

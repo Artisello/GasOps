@@ -65,7 +65,7 @@ def _invoice_panel(records):
 
 def _price_panel():
     st.subheader("Prezzi di sbilanciamento")
-    st.caption("Calcolo illustrativo · regime ordinario · valori inseriti, non prezzi GME effettivi.")
+    st.caption("Simulazione · regime ordinario · non prezzi GME effettivi")
     a,b=st.columns(2)
     with a:
         day=st.date_input("Giorno gas",date(2026,9,5),key="price_day")
@@ -105,7 +105,7 @@ def _price_panel():
 
 def _guarantee_panel():
     st.subheader("Controllo delle garanzie")
-    st.caption("Componenti già determinate · importi con segno, IVA inclusa ove prevista.")
+    st.caption("Componenti già determinate · IVA inclusa ove prevista")
     a,b=st.columns(2)
     with a:
         pf=st.number_input("Pfat · fatturato (€)",-1e12,1e12,420000.,step=10000.,key="guarantee_pfat")
@@ -126,13 +126,12 @@ def _guarantee_panel():
         st.caption("Utilizzo del limite MEPSu")
         st.markdown("### "+numero(risk["ratio"],1)+"%")
         st.progress(float(max(D(0),min(D(100),risk["ratio"]))/100))
-        st.caption("Soglie di studio: 90% attenzione · 100% limite. Barra limitata a 0–100%; valore effettivo sopra.")
+        info("Soglie","Soglie di studio: 90% attenzione, 100% limite. Barra limitata a 0–100%; valore effettivo sopra.")
         if risk["status"]=="LIMITE":
             st.error("Esposizione pari o superiore al limite. Verifica specialistica necessaria.")
         elif risk["status"]=="ATTENZIONE":
             st.warning("Soglia di attenzione del 90% raggiunta.")
-        else:
-            st.caption("Esposizione inferiore al 90%.")
+
     kpi_grid([("Esposizione EPSu",risk["eps"],"€","Pfat + Pdet + Patt",2,""),
               ("Margine residuo",risk["headroom"],"€","MEPSu − EPSu",2,"rose" if risk["headroom"]<0 else ""),
               ("Distanza dal 90%",case["to_90"],"€","Negativo = soglia superata",2,"")])
@@ -141,7 +140,7 @@ def _guarantee_panel():
         kpi_grid([("Utilizzo nello scenario",projected["ratio"],"%",projected["status"],1,""),
                   ("Margine nello scenario",projected["headroom"],"€","Limite invariato",2,""),
                   ("MEPS aggiuntivo teorico",case["additional_meps_90"],"€","Per utilizzo ≤ 90%",2,"")])
-        st.caption("Indicazione matematica, non richiesta di garanzia né decisione di accesso.")
+        info("Scenario","Indicazione matematica, non richiesta di garanzia né decisione di accesso.")
     info("Info garanzie",EPS_REF,"I componenti EPSu e MEPSu devono essere già validati. Non vengono calcolati automaticamente. Lo scenario varia solo Patt; non modifica l’esposizione attuale.")
     st.download_button("Scarica controllo garanzie CSV",_csv([
         {"scenario":name,"eps":r["eps"],"meps":r["meps"],"headroom":r["headroom"],"ratio":r["ratio"],"status":r["status"],"mode":"SIMULAZIONE","reference":EPS_REF}
@@ -151,7 +150,7 @@ def _guarantee_panel():
 
 def _calendar_panel(invoice_rows):
     st.subheader("Scadenze commerciali")
-    st.caption("Calendario dimostrativo · non verifica pagamenti o adempimenti eseguiti.")
+    st.caption("Calendario demo · stato pagamenti non verificato")
     as_of=st.date_input("Data di riferimento",date(2026,11,18),key="commercial_as_of")
     with st.expander("Parametri calendario GNL"):
         a,b=st.columns(2)
@@ -204,4 +203,4 @@ def commercial_workbench(ledger_view):
                   ("Differenze note",summary["known_difference"],"€","Somma assoluta delle differenze note",2,""),
                   ("Utilizzo garanzie",risk["ratio"] if risk else None,"%",risk["status"] if risk else "Non calcolabile",1,""),
                   ("Date entro 7 giorni",sum(r["days_left"] is not None and 0<=r["days_left"]<=7 for r in calendar),"","Calendario dimostrativo",0,"")])
-        st.caption("Riepilogo aggiornato con le ipotesi delle schede. Non è lo stato operativo di Snam.")
+

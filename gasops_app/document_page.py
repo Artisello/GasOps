@@ -139,8 +139,8 @@ def _visitor_upload_panel():
     for notice in notices:
         st.warning(notice)
     with st.expander("Carica PDF",expanded=not personal):
-        st.caption("Nessun account richiesto · PDF disponibili durante la sessione, non dopo una nuova sessione, un refresh o un riavvio. Non condivisi con gli altri visitatori.")
-        st.caption("Usa solo documenti pubblici o autorizzati; non caricare materiale riservato sul prototipo pubblico.")
+        st.caption("PDF personali · solo sessione corrente · non condivisi.")
+        st.caption("Solo PDF pubblici o autorizzati. Nessun dato riservato.")
         with st.form("document_visitor_add",clear_on_submit=True):
             files=st.file_uploader("Seleziona PDF",type=["pdf"],accept_multiple_files=True,
                 help="8 PDF, massimo 24 MB per file, 64 MB e 2.000 pagine in totale; PDF con testo ricercabile.")
@@ -332,7 +332,7 @@ def _search(cached):
 def _ask(cached):
     docs=cached["docs"]
     model=reasoner()
-    st.caption("Risposta basata sui soli PDF selezionati, con citazioni testuali controllate.")
+    st.caption("Risposta dai PDF selezionati · citazioni controllate.")
     if model is None:
         st.info("AI non selezionata. Scegli il modello nel menu laterale; la ricerca nei PDF funziona comunque.")
     else:
@@ -442,7 +442,8 @@ def _review_documents(cached):
     names=list(docs.documents)
     model=reasoner()
     st.subheader("Revisore documentale")
-    st.caption("Ricerca mirata di possibili incongruenze. Due riscontri testuali obbligatori; nessun giudizio automatico di conformità.")
+    st.caption("Possibili incongruenze · non giudizio di conformità")
+    info("Revisione","Due riscontri testuali obbligatori. Analisi limitata agli estratti recuperati; la corrispondenza letterale non prova l’interpretazione.")
     with st.form("desk_reviewer",border=False):
         a,b=st.columns(2)
         first=a.selectbox("Documento A",names,key="review_a")
@@ -508,7 +509,7 @@ def _review_documents(cached):
             st.success(f"{added} nuovi rilievi nel registro." if added else "Nessun nuovo rilievo aggiunto.")
             if omitted:
                 st.warning("Registro pieno: esporta e svuota prima di aggiungerne altri.")
-        st.caption("Consulta Registro rilievi per verificare le pagine originali, annotare l’esito ed esportare il dossier.")
+
         payload={"theme":saved["theme"],"model":saved["model"],"status":"ipotesi da verificare",
                  "editions":{name:docs.documents[name].digest for name in {saved["first"],saved["second"]}},
                  "findings":[{**item,"citations":[c.model_dump(mode="json") for c in item["citations"]]} for item in saved["findings"]]}
@@ -518,7 +519,7 @@ def _review_documents(cached):
         for hit in [*saved["left"],*saved["right"]]:
             st.caption(hit.document+f" · PDF p. {hit.page}")
             st.text(hit.evidence)
-    st.caption("Analisi limitata ai passaggi recuperati, non a tutto il codice. La corrispondenza letterale non prova la correttezza dell’interpretazione.")
+
 
 
 def _review_register(cached):
@@ -526,7 +527,8 @@ def _review_register(cached):
     cases=valid_cases(cached.get(REVIEW_KEY,[]),docs)
     cached[REVIEW_KEY]=cases
     st.subheader("Registro rilievi")
-    st.caption("Dossier della sessione · solo per le edizioni presenti in questo archivio. Nessuna nuova richiesta AI.")
+    st.caption("Dossier della sessione · edizioni PDF correnti")
+    info("Registro","Nessuna nuova richiesta AI. I rilievi legati a PDF rimossi o modificati vengono esclusi. Esporta prima di rimuovere PDF o chiudere la sessione.")
     if not cases:
         st.info("Nessun rilievo nel registro. Avvia il Revisore e aggiungi le ipotesi che vuoi approfondire.")
         return
@@ -608,7 +610,6 @@ def _references(cached):
 
 def document_page():
     st.title("Norme e documenti")
-    st.caption("Cerca, interroga e confronta i documenti dell’archivio.")
     info("Info archivio","La ricerca mostra testo estratto dalle pagine dei PDF presenti, non note precompilate. Le corrispondenze per parole chiave non sono un parere legale.",
          "Usa solo copie pubbliche o autorizzate. I PDF autorizzati pubblicati nel repository o in Storage sono condivisi tra tutti i visitatori e conservati indipendentemente dalla sessione Streamlit. Chiunque può caricare PDF nel proprio spazio di sessione senza account. Solo gli account I.G.O.R. autorizzati possono pubblicare nell’archivio condiviso; la rimozione dei documenti condivisi è riservata all’amministratore. Non caricare dati riservati. I PDF non entrano nel bollettino; la ricerca è sul server. Con Chiedi all’AI, soltanto la domanda e gli estratti sono inviati al modello selezionato, previo consenso per provider remoti. Non caricare documenti riservati su un deployment pubblico. Nessun OCR. La vigenza delle edizioni non è verificata.")
     cached=_archive()

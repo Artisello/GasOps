@@ -6,7 +6,7 @@ import streamlit as st
 
 from .models import Kind
 from .italiano import numero,GRAVITA
-from .visuals import rows
+from .visuals import rows, info
 
 
 def snapshot(context):
@@ -46,9 +46,9 @@ def panel(context):
     report=snapshot(context)
     origin=context.bundle.origin
     st.subheader("Sentinella")
-    st.caption("Controlli sui dati selezionati · eseguiti all’apertura/aggiornamento, non in continuo.")
+    info("Controlli","Controlli sui dati selezionati all’apertura e all’aggiornamento; nessun monitoraggio in continuo.")
     if report["demo"]:
-        st.caption("Archivio storico o simulazione: non rappresenta il mercato corrente.")
+        st.caption("Storico o demo · non mercato corrente")
     coverage=f'{report["observed"]}/{report["expected"]}' if report["expected"] else "—"
     rows([("Periodi utilizzabili · finestra recente",coverage),
           ("Rilievi da verificare",str(len(report["findings"]))),
@@ -63,7 +63,7 @@ def panel(context):
         for action in report["actions"][:3]:
             st.caption(action)
     else:
-        st.caption("Nessun nuovo segnale dai controlli eseguiti; non è una certificazione.")
+        st.caption("Nessun segnale dai controlli eseguiti.")
     with st.expander("Dettaglio controlli"):
         st.caption(f"Finestra: fino a {report['window']} periodi ({'giorni gas' if origin.grain=='daily' else 'mesi'}); include eventuali lacune finali.")
         for f in context.inspection.findings:

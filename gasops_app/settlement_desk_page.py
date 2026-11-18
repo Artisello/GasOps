@@ -6,7 +6,7 @@ import streamlit as st
 
 from .settlement_desk import MAX_BYTES, csv_text, daily_controls, monthly_summary, parse_csv, template
 from .operations_ledger import sample_rows
-from .visuals import kpi_grid
+from .visuals import kpi_grid, info
 
 STATE="settlement_desk_csv_v1"
 JARVIS="https://jarvis.snam.it/public-data?lang=it"
@@ -14,8 +14,8 @@ GME="https://www.mercatoelettrico.org/Home/Esiti/Gas/PrezzoSbilanciamento/Esiti/
 
 
 def panel():
-    st.subheader("Controllo giornaliero e chiusura mese")
-    st.caption("Dati di esempio o CSV normalizzato autorizzato · MWh, €/MWh, importi prima delle imposte. Nessuna fattura o misura ufficiale.")
+    st.subheader("Controllo mensile")
+    st.caption("Simulazione di settlement · IVA esclusa")
     with st.expander("Fonti e importazione"):
         st.markdown(f"[Snam · Jarvis: bilanci e dati operativi]({JARVIS}) · [GME · parametri dei prezzi di sbilanciamento]({GME})")
         st.caption("Riferimenti alle fonti, non download automatici. Il CSV è uno schema I.G.O.R., non un formato Jarvis/GME: normalizza soltanto dati per i quali hai diritto d’uso. Prezzi forniti dall’utente, non stimati dal prezzo PSV.")
@@ -45,7 +45,7 @@ def panel():
     rows=uploaded["rows"] if uploaded else sample_rows()
     st.caption("CSV utente · non verificato dalla fonte · sessione corrente" if uploaded else "Demo sintetica · settembre 2026")
     if uploaded:
-        st.caption("SHA-256: "+uploaded["sha"])
+        info("Impronta CSV","SHA-256: "+uploaded["sha"])
     users=sorted({r.user for r in rows})
     user=st.selectbox("Partecipante (ID fittizio)",users,key="daily_desk_user")
     months=sorted({(r.day.year,r.day.month) for r in rows if r.user==user},reverse=True)
@@ -56,19 +56,19 @@ def panel():
     if not summary["complete"]:
         st.warning("Chiusura mensile non pronta per verifica: giorni mancanti o eccezioni. Importi sotto solo parziali, non totale del mese.")
     else:
-        st.caption("Tutti i giorni superano i controlli implementati. Resta necessaria la validazione specialistica.")
+        st.caption("Controlli superati · validazione specialistica necessaria.")
     kpi_grid([("Addebiti utente",summary["debits"],"€","Solo giorni utilizzabili",2,""),
               ("Crediti utente",summary["credits"],"€","Solo giorni utilizzabili",2,""),
               ("Giorni con eccezioni",summary["exceptions"],"","Da verificare",0,""),
               ("Impatto assoluto rettifiche",summary["revision_abs"],"€",str(summary["comparable"])+" coppie valorizzabili",2,"")])
     a,b=st.columns(2)
     with a:
-        st.caption("Sbilanciamento giornaliero più recente per giorno (MWh)")
+        st.caption("Sbilanciamenti (MWh)")
         frame=pd.DataFrame({"Giorno":pd.to_datetime([r["day"] for r in daily]),
                             "DS":[float(r["ds_mwh"]) if r["ds_mwh"] is not None else None for r in daily]})
         st.bar_chart(frame,x="Giorno",y="DS")
     with b:
-        st.caption("Effetti delle rettifiche provvisorio → definitivo (€)")
+        st.caption("Rettifiche: quantità e prezzo (€)")
         bridge=pd.DataFrame({"Giorno":pd.to_datetime([r["day"] for r in daily]),
                             "Quantità":[float(r["quantity_effect_eur"]) if r["quantity_effect_eur"] is not None else None for r in daily],
                             "Prezzo":[float(r["price_effect_eur"]) if r["price_effect_eur"] is not None else None for r in daily]})
@@ -92,5 +92,4 @@ def panel():
              **r,"issues":"; ".join(r["issues"])} for r in daily]
     st.download_button("Esporta controllo giornaliero CSV",csv_text(export),"igor-controllo-giornaliero.csv",
                        "text/csv",key="daily_desk_export")
-    with st.expander("Metodo e limiti"):
-        st.write("DS = immissioni + stoccaggio netto + transazioni nette PSV − prelievi. Calcolo dimostrativo con arrotondamento per giorno a centesimi. Rettifiche: confronto ultimo provvisorio e ultimo definitivo; effetto quantità valorizzato ai prezzi del provvisorio per il segno del DS finale, poi effetto prezzo residuo. Se manca il prezzo controfattuale, nessuna scomposizione. Gli importi escludono i giorni con eccezioni e non sono fatture. Le soglie e le eccezioni sono controlli di studio, non regole di accettazione Snam. Nessuna trasmissione AI o salvataggio persistente del CSV.")
+    info("Metodo e limiti","DS = immissioni + stoccaggio netto + transazioni nette PSV − prelievi. Calcolo dimostrativo con arrotondamento per giorno a centesimi. Rettifiche: confronto ultimo provvisorio e ultimo definitivo; effetto quantità valorizzato ai prezzi del provvisorio per il segno del DS finale, poi effetto prezzo residuo. Se manca il prezzo controfattuale, nessuna scomposizione. Gli importi escludono i giorni con eccezioni e non sono fatture. Le soglie e le eccezioni sono controlli di studio, non regole di accettazione Snam. Nessuna trasmissione AI o salvataggio persistente del CSV.")
