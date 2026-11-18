@@ -220,3 +220,78 @@ def export_csv(rows):
                 d[k]="'"+v
         writer.writerow(d)
     return out.getvalue()
+
+
+def latest_power_scores(saved,now):
+    """Complete observed electricity days only; no mixing fuel and electricity."""
+    power=saved.get("power") if saved else None
+    if not power:
+        return []
+    try:
+        acquired=datetime.fromisoformat(power["acquired"])
+        if acquired.tzinfo is None or acquired>now:
+            return []
+    except (ValueError,TypeError,KeyError):
+        return []
+    result=[]
+    for metric,code,label in (("Thermal","terna_thermal_day","Generazione termoelettrica"),
+                              ("load","terna_load_day","Fabbisogno elettrico")):
+        candidates=[]
+        for row in power["rows"]:
+            if row["metric"]!=metric:
+                continue
+            day=date.fromisoformat(row["gas_day"])
+            value=finite(row["gwh"])
+            if day<=closed_gas_day(now) and value is not None and value>=0 and row["expected_slots"]>0 and row["valid_slots"]==row["expected_slots"]:
+                candidates.append((day,value,row["valid_slots"]))
+        if not candidates:
+            continue
+        day=max(x[0] for x in candidates)
+        current={(v,n) for d,v,n in candidates if d==day}
+        if len(current)!=1:
+            continue
+        value,slots=current.pop()
+        status="Estratto · sperimentale" if now-acquired<=timedelta(hours=24) and (now.astimezone(ROME).date()-day).days<=3 else "Storico · sperimentale"
+        result.append(entry("Contesto rete",code,label,value,"GWh elettrici",day.isoformat(),"Italia · giorno gas",
+                       "Terna API",PORTAL,status,f"{slots}/{slots} intervalli · acquisito {acquired.isoformat(timespec='minutes')}",
+                       "Ultimo giorno completo della singola metrica. Timestamp di inizio intervallo assunto; termoelettrico include tutti i combustibili."))
+    return result
+
+
+def native_balance_scores(saved,now):
+    """Native aggregate balances, separate from individual settlement and dated versions."""
+    if not saved or saved.get("frame") is None:
+        return []
+    frame=saved["frame"]
+    if not {"family","metric","edition","unit","gas_day","value","sha256"}<=set(frame.columns):
+        return []
+    f=frame[(frame.family=="bilanci")&(frame.metric=="Totale Prelevato")&(frame.unit=="GWh")]
+    f=f[f.gas_day<=closed_gas_day(now).isoformat()]
+    if f.empty:
+        return []
+    day_values={}
+    for (day,edition),group in f.groupby(["gas_day","edition"],sort=True):
+        vals={Decimal(str(v)) for v in group.value if finite(v) is not None}
+        if len(vals)==1 and next(iter(vals))>=0:
+            day_values[(day,edition)]=next(iter(vals))
+    result=[]
+    # Use the latest available unique value separately for the two stages.
+    for stage,code,label in (("provvisorio","native_provisional","Prelievi · provvisorio"),
+                             ("definitivo","native_final","Prelievi · definitivo")):
+        candidates=[d for d,e in day_values if e==stage]
+        if candidates:
+            d=max(candidates)
+            result.append(entry("Contesto rete",code,label,day_values[d,stage],"GWh",d,"SRG · totale prelevato",
+                    "Jarvis · bilanci nativi",JARVIS,"Importato · unità inferita",
+                    "Fase "+stage+" · timestamp di pubblicazione assente",
+                    "Ultima giornata non ambigua per fase; unità riconciliata numericamente con PCS 10,57275, non confermata da Snam."))
+    pairs=[d for d,e in day_values if e=="definitivo" and (d,"provvisorio") in day_values]
+    if pairs:
+        month=max(pairs)[:7]
+        days=[d for d in pairs if d.startswith(month)]
+        diffs=[day_values[d,"definitivo"]-day_values[d,"provvisorio"] for d in days]
+        result.append(entry("Contesto rete","native_revision","Rettifiche assolute · prelievi",sum(abs(v) for v in diffs),"GWh",month,
+                            "SRG · totale prelevato","Jarvis · bilanci nativi",JARVIS,"Importato · unità inferita",
+                            f"{len(days)} giorni confrontabili · ordine di pubblicazione non verificato",
+                            "Somma delle differenze assolute tra valori univoci per fase nell'ultimo mese confrontabile. Non importo di settlement."))
+    return result
