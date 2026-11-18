@@ -101,6 +101,9 @@ def credit_risk_panel():
                   ("G aggiuntiva teorica",additional_guarantee_90(projection),"€","Target utilizzo ≤90%",2,"")])
         info("Metodo",CDR,"Stress incrementale: non ricostruisce Patt ufficiale. Pr regolatorio = media dei prezzi di sbilanciamento di acquisto del mese precedente, €/kWh a sei decimali (convertire in €/MWh). Immettere solo deficit aggiuntivi non già compresi nel Patt di base; nessuna sostituzione con prezzi spot. Le transazioni PSV registrate possono riguardare date oltre l’orizzonte.")
     _lng_panel()
+    st.divider()
+    from .credit_snapshot_page import panel as analytical_panel
+    analytical_panel()
     output=io.StringIO()
     fields=["scenario","pfat","pdet","patt","g","c","eps","meps","headroom","ratio","status",
             "condition_met","reference","horizon_days","mode"]
