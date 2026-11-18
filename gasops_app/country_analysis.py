@@ -4,12 +4,12 @@ The default dashboard remains Italian. Germany is supported with isolated
 Eurostat and GIE AGSI+ snapshots; other recognized geographies fail closed.
 """
 import re
-from datetime import datetime
 
 from .agents import Assumptions, MarketContext
 from .models import Kind, Origin, Run, utc_now
 from .regulatory import Library
-from .workflow import run_workflow, plan
+from .workflow import run_workflow, plan, INTENTS
+from .market import demand_trend_question
 from .models import Agent
 from . import eurostat
 from .operational_sources import load_agsi, attribution
@@ -17,8 +17,8 @@ from .briefing_context import inventory_context
 
 COUNTRY_PATTERNS={
     "IT":r"\b(?:italia|italian[oaie]|italy)\b",
-    "DE":r"\b(?:germania|tedesc[oahe]+|germany|german)\b",
-    "OTHER":r"\b(?:europa|europe|europe[oaie]|francia|frances[ei]|france|spagna|spagnol[oaie]|spain|paesi bassi|olanda|dutch|netherlands|austria|austriac[oahe]+|belgio|belgium|polonia|poland|regno unito|uk|united kingdom|svizzera|switzerland|norvegia|norway|ucraina|ukraine|portogallo|portugal|grecia|greece|russia|stati uniti|usa|ungheria|repubblica ceca|danimarca|svezia|finlandia|turchia)\b",
+    "DE":r"\b(?:germania|tedesc(?:o|a|he|hi)|germany|german)\b",
+    "OTHER":r"\b(?:europa|europe|europe[oaie]|francia|frances[ei]|france|spagna|spagnol[oaie]|spain|paesi bassi|olanda|dutch|netherlands|austria|austriac(?:o|a|he|hi)|belgio|belgium|polonia|poland|regno unito|uk|united kingdom|svizzera|switzerland|norvegia|norway|ucraina|ukraine|portogallo|portugal|grecia|greece|russia|stati uniti|usa|ungheria|repubblica ceca|danimarca|svezia|finlandia|turchia)\b",
 }
 
 
@@ -30,7 +30,7 @@ def requested_country(question):
 
 def direct_market_question(question):
     targets={call.agent for call in plan(question,False)}
-    return targets=={Agent.MARKET}
+    return targets=={Agent.MARKET} and bool(re.search(INTENTS[Agent.MARKET],question,re.I))
 
 
 def country_report(store,question,country,model_name,reasoner,*,gie_key="",include_gie=True,
@@ -51,7 +51,7 @@ def country_report(store,question,country,model_name,reasoner,*,gie_key="",inclu
     context=MarketContext(bundle,model_name,clock())
     public={"Copertura Germania":{"source":"Perimetro analitico Germania","scope":"DE","status":"unavailable",
                 "reason":"Prezzi nazionali tedeschi/THE, flussi giornalieri e bilanciamento o settlement effettivi non integrati. Non usare prezzi PSV, dati SRG o normativa italiana."}}
-    if include_gie:
+    if include_gie and not demand_trend_question(question):
         try:
             if not gie_key:raise ValueError("Chiave GIE non configurata.")
             snapshot=inventory_context(load_agsi(store,gie_key,"DE",now=now),clock(),"AGSI+")

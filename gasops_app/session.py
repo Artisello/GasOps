@@ -24,6 +24,7 @@ from .store import Store
 from .visuals import chip, info, kind_tag, local_time, steps
 from .workflow import DAILY_BRIEFING, run_workflow
 from .country_analysis import requested_country, country_report, direct_market_question
+from .market import demand_trend_question
 
 LOG = logging.getLogger(__name__)
 DEMO, PUBLIC, ARCHIVE = "Dati di esempio · giornalieri", "Eurostat + ARERA · mensili", "JRC · archivio giornaliero"
@@ -419,6 +420,7 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
     stage.html(steps(None, grid=True))
     try:
         direct=not full and direct_market_question(question)
+        narrow=direct and demand_trend_question(question)
         docs = Library(include_notes=False) if direct else library()
         from .briefing_context import collect
         from .operational_sources import gie_key
@@ -426,8 +428,8 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
         from .weather_source import enabled,refresh as refresh_weather,STATE as WEATHER_STATE
         origin=selection.bundle.origin
         current_context=not origin.archive and origin.kind in (Kind.HISTORICAL,Kind.LIVE)
-        include_gie=include_gie and current_context
-        include_weather=enabled(st.session_state) and current_context
+        include_gie=include_gie and current_context and not narrow
+        include_weather=enabled(st.session_state) and current_context and not narrow
         public_context={}
         if include_gie or include_weather:
             try:
@@ -439,7 +441,7 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
                 public_context=collect(database(),context,utc_now(),key=key,include_gie=include_gie,include_weather=include_weather,
                     weather_snapshots=st.session_state.get(WEATHER_STATE,{}) if include_weather else None,
                     clock=utc_now)
-        if current_context and (full or model is not None):
+        if current_context and (full or model is not None) and not narrow:
             from .briefing_market_sources import collect_market_sources
             from .terna_power import credentials
             try:

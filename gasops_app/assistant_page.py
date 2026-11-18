@@ -4,7 +4,8 @@ import logging
 
 import streamlit as st
 
-from .italiano import ESITI, GRAVITA, TIPI
+from .italiano import ESITI, GRAVITA, TIPI, numero
+from .market import demand_trend_question, demand_readout
 from .models import Agent, AGENT_LABELS, Run, utc_now
 from .reports import markdown
 from . import session
@@ -89,7 +90,7 @@ def _report(report:Run,selection):
         ai_readout(report)
     else:
         if report.mode!="Deterministic" and not report.warnings:
-            st.caption("Nessuna risposta AI generata; risultati locali.")
+            st.warning("Nessuna risposta AI generata; risultati locali.")
         st.markdown("**Report di calcolo (senza AI)**")
         if not report.results:
             st.text(report.summary or "Nessun risultato disponibile.")
@@ -110,7 +111,16 @@ def _report(report:Run,selection):
             for agent in highlights[:2]:
                 result=report.results[agent]
                 st.caption(AGENT_LABELS[agent]+" · "+ESITI[result.status])
-                st.text(result.summary)
+                concise=demand_readout(result.values,report.source.grain) if agent==Agent.MARKET and demand_trend_question(report.question) else None
+                st.text(concise or result.summary)
+            if report.assumptions.get("requested_country")=="DE":
+                storage=(report.assumptions.get("public_operational_context") or {}).get("AGSI+ Germania",{})
+                if storage.get("status")=="available":
+                    values=storage.get("values",{})
+                    if values.get("fill_pct") is not None:
+                        st.text("Stoccaggi Germania: "+numero(values["fill_pct"],1)+"% · "+str(storage.get("gas_day","data non indicata"))+" · GIE AGSI+")
+                elif storage:
+                    st.caption("Stoccaggi Germania non disponibili o non recenti.")
         critical=[f for f in report.findings if f.severity=="high"]
         if critical:
             st.warning("Rilievi ad alta priorità: "+str(len(critical))+". Apri Rilievi da verificare.")
