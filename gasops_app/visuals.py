@@ -13,7 +13,7 @@ from .forecast import Forecast, ForecastPoint
 from .italiano import ESITI, TIPI, data_it, numero
 from .models import AGENT_LABELS, Agent, Citation, Kind, Run
 
-TEAL, BLUE, AMBER, ROSE, MUTED = "#65dfbf", "#83b4ff", "#f2be72", "#f6929d", "#a9b8ca"
+TEAL, BLUE, AMBER, ROSE, MUTED = "#65dfbf", "#83b4ff", "#f2be72", "#f6929d", "#b0bed0"
 CHIP = {
     Kind.SYNTHETIC: "synthetic", Kind.HISTORICAL: "historical", Kind.LIVE: "live",
     Kind.FORECAST: "forecast", Kind.SIMULATION: "simulation", Kind.ACCOUNTING: "review", Kind.PHYSICAL: "ok",
@@ -137,13 +137,13 @@ def _frame(fig: go.Figure, grain: str, unit: str, height: int) -> go.Figure:
     fig.update_layout(
         template="plotly_dark", height=height, separators=",.",
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=8, r=14, t=42, b=16), hovermode="x unified", dragmode="zoom",
-        font=dict(family="Inter, Avenir Next, system-ui, sans-serif", color=MUTED, size=12),
+        margin=dict(l=12, r=18, t=42, b=24), hovermode="x unified", dragmode="zoom",
+        font=dict(family="Inter, Avenir Next, system-ui, sans-serif", color=MUTED, size=13),
         legend=dict(orientation="h", x=0, y=1.03, yanchor="bottom", xanchor="left",
-                    font=dict(size=12), traceorder="normal", itemclick="toggle", itemdoubleclick="toggleothers"),
-        hoverlabel=dict(bgcolor="#142235", bordercolor="#334963", font=dict(color="#edf4ff", size=12)),
+                    font=dict(size=13), traceorder="normal", itemclick="toggle", itemdoubleclick="toggleothers"),
+        hoverlabel=dict(bgcolor="#1e2b3c", bordercolor="#63768b", font=dict(color="#f1f5f9", size=13)),
         xaxis=dict(showgrid=True, gridcolor="rgba(153,180,214,0.09)", showline=True, linecolor="#253548",
-                   tickformat="%d/%m" if grain == "daily" else "%m/%Y", zeroline=False, nticks=8),
+                   tickformat="%d/%m" if grain == "daily" else "%m/%Y", zeroline=False, nticks=8, automargin=True),
         yaxis=dict(side="right", title=dict(text=unit, font=dict(size=12)), showgrid=True, gridcolor="rgba(153,180,214,0.12)", showline=True,
                    linecolor="#253548", tickformat=",.0f" if unit == "GWh" else ",.1f",
                    zeroline=False, nticks=6, automargin=True),
@@ -153,7 +153,7 @@ def _frame(fig: go.Figure, grain: str, unit: str, height: int) -> go.Figure:
 
 def _line(name: str, x, y, color: str, unit: str, grain: str, dash: str = "solid") -> go.Scatter:
     return go.Scatter(name=name, x=x, y=y, mode="lines", connectgaps=False,
-                      line=dict(color=color, width=2, dash=dash),
+                      line=dict(color=color, width=2.2, dash=dash),
                       hovertemplate=f"%{{y:,.2f}} {unit}<extra>{name}</extra>",
                       xhoverformat="%d/%m/%Y" if grain == "daily" else "%m/%Y")
 
@@ -203,9 +203,10 @@ def mini_chart(values: pd.Series, label: str, grain: str, unit: str, color: str,
 
 def breakdown_chart(frame: pd.DataFrame, series: list[tuple[str, str, str]], grain: str) -> go.Figure:
     fig = go.Figure()
-    for field, label, color in series:
+    for index, (field, label, color) in enumerate(series):
         if frame[field].notna().any():
-            fig.add_trace(_line(label, frame.index, frame[field], color, "GWh", grain))
+            dash = ("solid", "dash", "dot", "dashdot", "longdash", "longdashdot")[index % 6]
+            fig.add_trace(_line(label, frame.index, frame[field], color, "GWh", grain, dash))
     return _frame(fig, grain, "GWh", 223).update_xaxes(nticks=5)
 
 

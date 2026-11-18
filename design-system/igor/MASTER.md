@@ -6,10 +6,10 @@ Scope: operational analytics and credit/settlement support, desktop-first Stream
 Manual selection from UI UX Pro Max catalogs at [reviewed revision](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/tree/ed766d3bf62f32c8d27762ad49abdc3a4744c84f), not CLI-generated output. See [reasoning](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/blob/ed766d3bf62f32c8d27762ad49abdc3a4744c84f/src/ui-ux-pro-max/data/ui-reasoning.csv) (Financial Dashboard 6, Analytics Dashboard 7, Invoice & Billing Tool 105), styles (Minimalism & Swiss Style), typography (Minimal Swiss 5), chart guidance (Trend Over Time 1), UX (9, 28, 36, 37, 41, 67, 69, 71, 79). Adapt recommendations to an operational console, not a landing page. No upstream scripts/dependencies shipped or executed.
 
 ## Visual system
-- Dark slate foundation: background #0b111b, surface #101925, border #2e4054, foreground #f1f5f9, secondary text #a9b8ca.
+- Dark slate foundation: background #0d131d, surface #141e2b, hover #1e2b3c, decorative border #2e4054, interactive boundary #63768b, foreground #f1f5f9, secondary text #b0bed0. Primary action uses teal with dark #10231f foreground.
 - Teal #65dfbf = primary accent / selected action / observed series; blue #83b4ff = forecast or reference; amber #f2be72 = review; rose #f6929d = problem. Status text always accompanies color where it conveys meaning. Do not imply that high storage or a positive balance guarantees safety.
 - One sans-serif family with local/system fallback (Inter if available), tabular figures. No external font download. Body readable at mobile widths, restrained hierarchy.
-- Spacing 4/8/12/16 px; flat panels, thin borders, no gradients or decorative shadows. Focus ring remains visible; no automatic animation.
+- Spacing 4/8/12/16/24/32 px; flat panels, thin borders, no gradients or decorative shadows. Focus ring remains visible; no automatic animation.
 - Native Streamlit widgets, labels, focus and links. Never hide an alert, source, unit or stale indication to make the design cleaner.
 
 ## Page hierarchy
@@ -21,3 +21,9 @@ Manual selection from UI UX Pro Max catalogs at [reviewed revision](https://gith
 
 ## Review gates
 Verify keyboard-only navigation, link/button focus, contrast >=4.5:1 for ordinary text, meaningful text status alongside colors, usable layout at 375/768/1024/1440 CSS px and browser zoom. Wide tables may scroll locally, not the page. Verify source freshness, dates, units, no implicit demo substitution. Run existing pytest and readiness checks. Browser verification required; static code review alone is not accessibility certification.
+
+## Refinement: operational console
+
+Reviewed [UI/UX Pro Max skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/blob/main/.claude/skills/ui-ux-pro-max/SKILL.md) and its [web quick reference](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/blob/main/.claude/skills/ui-ux-pro-max/references/quick-reference.md), manually (CLI not executed). Preserve the existing dark direction and native Material icons. Distinguish control outlines from decorative borders, reserve teal-filled buttons for primary actions, and preserve native disabled states. Aim for 44 CSS px height on navigation, text inputs, main buttons, tabs and topic help; do not override dense chart/table internals. Tabs scroll locally rather than shrinking their labels; long values can wrap. KPI units and source context stay visible. In multi-series breakdowns line patterns distinguish categories, not forecast status (the time/forecast chart retains its separate semantics). System fonts only; no additional frontend library or external assets.
+
+Before merging, exercise all nine routes, keyboard focus, tabs with long labels, 375/768/1024/1440 viewport widths and 200% zoom, narrow chart legends, dark-only contrast, warning/not-available cases and disabled controls. Static tests check selected token ratios and shared styling; they are not a browser audit.
