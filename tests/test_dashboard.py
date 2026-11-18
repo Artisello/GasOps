@@ -209,3 +209,28 @@ def test_lean_interface_preserves_diagnostics_and_author_credit(monkeypatch,tmp_
     assert any(e.label=="Connessione e limiti AI" for e in app.expander)
     assert any("Dati sintetici" in e.value for e in app.caption)
     assert app.button(key="analysis_launch").label=="Genera bollettino di mercato"
+
+
+def test_ai_sidebar_survives_stale_store_instance(monkeypatch):
+    from gasops_app import session
+    from gasops_app.llm import LLMConfig
+    from gasops_app.supervisor import ModelUnavailable
+    import pytest
+    monkeypatch.setattr(session,"_configuration",lambda:LLMConfig("fixture","https://api.groq.com/openai/v1","secret"))
+    monkeypatch.setattr(session,"database",lambda:object())
+    app=AppTest.from_string("from gasops_app.session import sidebar\nsidebar()").run()
+    assert not app.exception
+    assert any("Contatore AI non disponibile" in e.value for e in app.warning)
+    assert app.button(key="sidebar_llm_probe").disabled
+    with pytest.raises(ModelUnavailable,match="richiesta bloccata"):
+        session._reserve_remote_request()
+
+
+def test_store_wrapper_is_fresh_without_resetting_persisted_budget(tmp_path):
+    from gasops_app.session import store
+    old=store(str(tmp_path))
+    assert old.reserve_llm()
+    new=store(str(tmp_path))
+    assert old is not new
+    assert new.llm_usage()==1
+    assert old.path==new.path

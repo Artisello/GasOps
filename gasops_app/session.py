@@ -49,8 +49,10 @@ def source_notices(warning: str | None) -> tuple[str, str]:
     return warning.replace(ENTSOG_METADATA_NOTE, "").strip(), ENTSOG_METADATA_NOTE
 
 
-@st.cache_resource(show_spinner=False)
 def store(state_dir: str) -> Store:
+    # Store owns no persistent connection. Recreate the lightweight wrapper so
+    # Streamlit hot reload cannot reuse instances of an older Store class.
+    # SQLite state and request counters remain on disk; schema is idempotent.
     return Store(Path(state_dir) / "state.sqlite3")
 
 
@@ -95,6 +97,14 @@ def _configuration():
         return configuration()
 
 
+def _reserve_remote_request() -> bool:
+    # Never permit a remote call if the persisted budget cannot be enforced.
+    try:
+        return database().reserve_llm()
+    except (AttributeError, OSError, sqlite3.Error, RuntimeError):
+        raise ModelUnavailable("Contatore AI non disponibile: richiesta bloccata.") from None
+
+
 def ai_controls(*, prefix="sidebar") -> None:
     config, problem = None, None
     try:
@@ -108,6 +118,19 @@ def ai_controls(*, prefix="sidebar") -> None:
     elif prefix=="sidebar":
         st.caption(("Groq Cloud" if config.groq else "Ollama locale" if config.local else "Provider remoto")+
                    " · "+config.model)
+    usage = None
+    budget_ready = True
+    if config and not config.local:
+        try:
+            db = database()
+            if not callable(getattr(db, "reserve_llm", None)):
+                raise AttributeError("Missing quota reservation")
+            usage = db.llm_usage()
+        except (AttributeError, OSError, sqlite3.Error, RuntimeError) as error:
+            budget_ready = False
+            LOG.warning("AI budget unavailable (%s)", type(error).__name__)
+            if prefix == "sidebar":
+                st.warning("Contatore AI non disponibile. I calcoli locali restano utilizzabili.")
     with st.expander("Connessione e limiti AI", expanded=False):
         if config and st.session_state.get("execution_mode")=="Deterministic":
             st.caption("Modello disponibile: selezionalo in Modalità di analisi.")
@@ -119,14 +142,14 @@ def ai_controls(*, prefix="sidebar") -> None:
             return
         st.caption("Configurata · verifica con il test.")
         if not config.local:
-            try:
-                st.caption(f"Richieste interne ultime 24 h: {database().llm_usage()}/30 · max 4/min. "
+            if budget_ready:
+                st.caption(f"Richieste interne ultime 24 h: {usage}/30 · max 4/min. "
                            "Non è il saldo della quota del provider.")
-            except (OSError,sqlite3.Error):
-                st.caption("Contatore non disponibile: richieste AI bloccate.")
-        if st.button("Test connessione AI",key=prefix+"_llm_probe"):
+            else:
+                st.caption("Contatore non disponibile: richieste AI bloccate. Se persiste, riavvia l’app.")
+        if st.button("Test connessione AI",key=prefix+"_llm_probe",disabled=not budget_ready):
             try:
-                CompatibleReasoner(config,reserve=None if config.local else lambda:database().reserve_llm()).probe()
+                CompatibleReasoner(config,reserve=None if config.local else _reserve_remote_request).probe()
                 st.session_state["llm_probe_result"]=(config.model,True,"Connessione e risposta JSON con riferimento verificate (test sintetico).")
             except ModelUnavailable as error:
                 st.session_state["llm_probe_result"]=(config.model,False,str(error))
@@ -164,7 +187,7 @@ def reasoner() -> CompatibleReasoner | None:
     except ValueError:
         return None
     if config and st.session_state.get("execution_mode")==config.model:
-        return CompatibleReasoner(config,reserve=None if config.local else lambda: database().reserve_llm())
+        return CompatibleReasoner(config,reserve=None if config.local else _reserve_remote_request)
     return None
 
 

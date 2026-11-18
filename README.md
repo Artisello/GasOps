@@ -142,3 +142,7 @@ La CTA Genera bollettino AI (oppure Genera bollettino di mercato senza modello s
 ### Interfaccia compatta
 
 Firma nella navigazione: «Prototipo per SNAM creato da Igor» (progetto indipendente, non ufficiale). Controlli compatti, guida contestuale con popover nativi Info, spiegazioni metodologiche e dettagli tecnici secondari. La provenienza GIE, le etichette demo/simulazione, i limiti essenziali, gli errori e le avvertenze restano visibili. Funzionalità analitiche, fonti, quota AI e calcoli invariati. Test UI di regressione; verificare layout desktop/mobile sul deployment.
+
+### Aggiornamenti a caldo e quota AI
+
+Il wrapper SQLite non è memorizzato nella cache delle risorse Streamlit: una nuova istanza usa il medesimo database persistente e lo schema idempotente. Contatore non disponibile o vecchia classe: diagnostica controllata, test remoto disabilitato, prenotazione quota fail-closed. Nessun reset della quota o cancellazione dei dati. In presenza di moduli Python ancora caricati da un vecchio deployment, riavviare l'app.
