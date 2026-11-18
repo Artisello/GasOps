@@ -368,8 +368,11 @@ def test_commercial_workspace_updates_summary_and_calendar(monkeypatch,tmp_path)
     assert not app.exception and "4.200,00" not in summary()
     app.checkbox(key="invoice_present_long").set_value(False).run()
     assert not app.exception and "1 con importo non confrontabile" in summary()
-    app.number_input(key="guarantee_limit").set_value(920000.).run()
+    # MEPSu = G - C: 1,020,000 - 100,000 = 920,000, strict equality.
+    app.number_input(key="credit_g").set_value(1020000.).run()
     assert not app.exception and "100,0" in summary()
+    app.number_input(key="credit_c").set_value(1020000.).run()
+    assert not app.exception and "LIMITE" in summary()
     app.date_input(key="invoice_date_short").set_value(date(2026,11,8)).run()
     assert not app.exception
     calendar=next(d.value for d in app.dataframe if "Adempimento" in d.value.columns)
