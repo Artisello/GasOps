@@ -33,7 +33,11 @@ L’archivio locale `data/jrc/IT.v1.1.csv` è il file originale italiano del dat
 
 La dashboard indica l’ultimo periodo di ogni fonte, i flag pubblicati e lo stato della cache. Se un aggiornamento fallisce, può usare l’ultima copia verificata con la data originale. I prezzi mancanti rimangono vuoti. Quando mancano volumi allineati per uno scenario, l’app indica una base interamente di esempio. Le simulazioni restano separate dalle osservazioni.
 
-La previsione confronta un riferimento stagionale e una regressione stagionale. La valutazione cronologica usa solo osservazioni antecedenti alla stima. Le bande empiriche richiedono almeno 20 errori fuori campione per orizzonte. Il giorno gas inizia alle 06:00 Europe/Rome e le date di calcolo sono in UTC.
+La **prossima stima** e la fascia all’80% sono sopra il grafico. In **Mercato e previsioni**, il confronto mostra l’errore medio in GWh sul periodo successivo. Con **Automatico**, l’app sceglie il modello con l’errore medio più basso sulle stesse osservazioni storiche. Puoi scegliere un altro modello dal selettore.
+
+Il modello bayesiano usa la stagionalità annuale. Per i dati giornalieri considera il giorno della settimana, le festività a data fissa e la persistenza dei consumi recenti. Per i mesi tiene conto del numero di giorni. La fascia all’80% stima l’incertezza sui coefficienti e sulle osservazioni future. Nei dettagli trovi quante osservazioni storiche sono rientrate nella fascia a un passo. Il confronto è cronologico sullo storico disponibile, che può includere revisioni successive. [Documentazione scikit-learn](https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.BayesianRidge.html)
+
+Le bande empiriche dei modelli precedenti richiedono almeno 20 errori fuori campione per orizzonte. Il giorno gas inizia alle 06:00 Europe/Rome e le date di calcolo sono in UTC.
 
 ## Fonti normative e modello opzionale
 

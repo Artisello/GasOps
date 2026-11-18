@@ -89,6 +89,9 @@ def validate(run: Run, context: MarketContext, assumptions: Assumptions) -> list
         if (any(p["train_end"] >= p["period"] for p in outputs["backtest"])
                 or any(p["period"] <= last_calendar or p["estimate"] < 0 for p in outputs["points"])):
             conflict("forecast-timing", "Date o stime previsionali incoerenti.")
+        if any(p["lower_80"] is not None and not 0 <= p["lower_80"] <= p["estimate"] <= p["upper_80"]
+               for p in outputs["points"]):
+            conflict("forecast-interval", "Fascia previsionale incoerente con la stima.")
         if market and market.values.get("gap_gwh") != forecasted.values.get("gap_gwh"):
             conflict("market-gap", "Gli agenti di mercato e di previsione hanno calcolato saldi diversi per lo stesso periodo.")
 

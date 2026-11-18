@@ -11,7 +11,7 @@ import streamlit as st
 
 from .agents import Assumptions, MarketContext
 from .data import Bundle, ROOT, ROME, jrc_archive, synthetic
-from .forecast import MODELS
+from .forecast import MODEL_CHOICES, ModelChoice
 from .italiano import MODALITA, MODELLI
 from .llm import CompatibleReasoner, configuration
 from .mensile import load_monthly
@@ -98,7 +98,7 @@ def reasoner() -> CompatibleReasoner | None:
 @dataclass(frozen=True)
 class Selection:
     name: str
-    model: str
+    model: ModelChoice
     periods: int
     bundle: Bundle | None
 
@@ -136,8 +136,9 @@ def source_filters(page: str, *, lookback: bool = True) -> Selection:
             periods = windows[window]
     with ctrl[-2]:
         previous = assumptions()
-        model = st.selectbox("Modello previsionale", MODELS, index=MODELS.index(previous.model),
-                             format_func=MODELLI.__getitem__, key=f"{page}_model")
+        model = st.selectbox("Modello previsionale", MODEL_CHOICES, index=MODEL_CHOICES.index(previous.model),
+                             format_func=MODELLI.__getitem__, key=f"{page}_model",
+                             help="Automatico usa il modello con l’errore medio più basso sugli stessi periodi storici.")
         save_assumptions(previous.model_copy(update={"model": model}))
     with ctrl[-1]:
         if name == PUBLIC:
@@ -166,7 +167,7 @@ def source_filters(page: str, *, lookback: bool = True) -> Selection:
 
 
 @st.cache_resource(show_spinner=False, max_entries=8)
-def preview(fingerprint: str, source_json: str, model: str, today: str, _bundle: Bundle) -> MarketContext:
+def preview(fingerprint: str, source_json: str, model: ModelChoice, today: str, _bundle: Bundle) -> MarketContext:
     context = MarketContext(_bundle, model, utc_now())
     # Prime the shared preview; workflow runs construct a fresh context.
     _ = context.facts, context.projection

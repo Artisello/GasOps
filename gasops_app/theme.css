@@ -107,6 +107,17 @@ div[data-testid="stVerticalBlockBorderWrapper"] { border-color: var(--gas-border
 .gas-panel-head h2 { font-size: 1.02rem; padding: 0; margin: 0; }
 .gas-panel-head small, .gas-muted { color: var(--gas-muted); font-size: 0.75rem; }
 
+.gas-forecast-readout {
+  display: flex; flex-wrap: wrap; gap: 0.65rem 1.9rem;
+  padding: 0.65rem 0.8rem; background: #14243a;
+  border-left: 2px solid var(--gas-blue); border-radius: 0.35rem;
+}
+.gas-forecast-readout small { display: block; font-size: 0.76rem; color: var(--gas-muted); }
+.gas-forecast-readout strong {
+  display: block; font: 650 1.0rem/1.5 var(--gas-mono); color: var(--gas-text);
+}
+.gas-forecast-readout > div:first-child strong { color: var(--gas-blue); }
+
 .gas-kpi {
   border: 1px solid var(--gas-border); background: var(--gas-panel);
   border-radius: 0.45rem; padding: 0.86rem 0.90rem 0.75rem; height: 100%;

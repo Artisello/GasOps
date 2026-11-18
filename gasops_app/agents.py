@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from .data import Bundle, synthetic
 from .finance import ScenarioCase, ScenarioInput, SettlementInput, scenario, settle
-from .forecast import Forecast, ModelName, forecast
+from .forecast import AUTOMATIC, MODELS, Forecast, ModelChoice, ModelName, Score, choose, compare, forecast
 from .italiano import GRANULARITA, MODELLI, TIPI, data_it, numero
 from .market import market_facts
 from .models import Agent, Citation, Finding, Kind, Result
@@ -21,7 +21,7 @@ from .supervisor import Arguments, Tool
 
 
 class Assumptions(BaseModel):
-    model: ModelName = "Seasonal regression"
+    model: ModelChoice = AUTOMATIC
     settlement: SettlementInput = Field(default_factory=SettlementInput)
     stress: ScenarioInput = Field(default_factory=ScenarioInput)
     cancellation_notice_days: int = Field(default=7, ge=0, le=366)
@@ -46,7 +46,7 @@ class ScenarioArguments(Arguments):
 @dataclass(frozen=True)
 class MarketContext:
     bundle: Bundle
-    model: ModelName
+    model: ModelChoice
     as_of: datetime
 
     @cached_property
@@ -58,8 +58,17 @@ class MarketContext:
         return market_facts(self.inspection.usable, self.bundle.origin.grain)
 
     @cached_property
+    def projections(self) -> dict[ModelName, Forecast]:
+        series = self.inspection.usable["demand_gwh"]
+        return {model: forecast(series, self.bundle.origin.grain, model) for model in MODELS}
+
+    @cached_property
+    def forecast_scores(self) -> dict[ModelName, Score]:
+        return compare(self.projections)
+
+    @cached_property
     def projection(self) -> Forecast:
-        return forecast(self.inspection.usable["demand_gwh"], self.bundle.origin.grain, self.model)
+        return choose(self.projections, self.forecast_scores, self.model)
 
 
 def _sources(context: MarketContext, *, price: bool = False) -> list[Citation]:
@@ -138,7 +147,10 @@ def _forecast(context: MarketContext) -> Result:
         label = "Proiezione storica" if context.bundle.origin.archive else "Previsione"
         summary = f"{label} per {period} con {MODELLI[series.model].lower()} pari a {numero(first.estimate)} GWh."
     if first and first.lower_80 is not None:
-        summary += f" Intervallo empirico all’80% da {numero(first.lower_80)} a {numero(first.upper_80)} GWh."
+        interval = "Fascia bayesiana" if series.interval_kind == "posterior" else "Fascia empirica"
+        summary += f" {interval} all’80% da {numero(first.lower_80)} a {numero(first.upper_80)} GWh."
+    if first and context.model not in (AUTOMATIC, series.model):
+        summary += f" La serie è troppo breve per {MODELLI[context.model].lower()}."
     if series.mae is not None:
         summary += f" Errore medio assoluto a un passo pari a {numero(series.mae)} GWh."
     gap, coverage = facts.get("gap_gwh"), facts.get("coverage_pct")
@@ -157,6 +169,7 @@ def _forecast(context: MarketContext) -> Result:
         summary += f" L’ultimo consumo osservato differisce di {numero(deviation, signed=True)} GWh dalla stima a un passo."
     return Result(agent=Agent.FORECAST, status="completed" if series.points else "unavailable", summary=summary,
                   values={"kind": Kind.FORECAST.value, "forecast": series.model_dump(mode="json"),
+                          "model_preference": context.model,
                           "gap_gwh": gap, "coverage_pct": coverage, "observed_minus_expected_gwh": deviation},
                   evidence=_sources(context))
 

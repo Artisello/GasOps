@@ -4,7 +4,7 @@ Avvia con `streamlit run app.py`. La dashboard si apre in **Panoramica**, sui da
 
 | Tempo | Mostra | Risultato |
 | --- | --- | --- |
-| 0:00–0:40 | Osserva **Eurostat + ARERA · mensili**. Apri **Mercato e previsioni** e prova il periodo del grafico. | Confronta consumi osservati, disponibilità contabile e prezzo CMEM,m. Il pannello delle fonti indica l’ultimo mese, il flag di pubblicazione e l’eventuale cache. |
+| 0:00–0:40 | Leggi **Prossima stima** e **Fascia all’80%** sopra il grafico. Apri **Mercato e previsioni**. | Il confronto degli errori spiega la scelta automatica. Il selettore del modello permette di provare un’alternativa. |
 | 0:40–1:10 | Seleziona **JRC · archivio giornaliero**. Guarda i consumi per settore. | La serie contiene 2.557 giorni italiani dal 2015 al 2021 e funziona offline. La previsione sulla coda dell’archivio è una proiezione storica. |
 | 1:10–2:00 | Seleziona **Dati di esempio · giornalieri**. Premi **Avvia analisi di mercato AI** e apri il **Centro operativo AI**. | I sei agenti analizzano il caso. Nella simulazione con domanda a +10%, la copertura passa dal 96,6% all’87,8%. Apri un rilievo ed esporta il rapporto. |
 | 2:00–2:35 | In **Bilanciamento**, imposta un prezzo d’acquisto di −42 e ricalcola. In **Scenari aggregati**, varia la domanda o lo stoccaggio. | Con il prezzo negativo, la posizione corta di esempio genera un credito. La tabella aggiorna la copertura e il valore indicativo del saldo. |

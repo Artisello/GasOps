@@ -1,12 +1,12 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pandas as pd
 import pytest
 
-from gasops_app.data import Bundle, synthetic, utc_starts
+from gasops_app.data import Bundle, jrc_archive, synthetic, utc_starts
 from gasops_app.finance import ScenarioCase, ScenarioInput, SettlementInput, scenario, settle
-from gasops_app.forecast import forecast
+from gasops_app.forecast import AUTOMATIC, BAYESIAN, MODELS, BacktestPoint, Forecast, ForecastPoint, choose, compare, forecast
 from gasops_app.models import Kind
 from gasops_app.quality import inspect
 
@@ -91,7 +91,7 @@ def test_settlement_accepts_italian_decimal_separator():
     assert result.cash_flow_eur == D("-50550.00")
 
 
-@pytest.mark.parametrize("model", ["Seasonal regression", "Seasonal naive"])
+@pytest.mark.parametrize("model", MODELS)
 def test_backtest_has_no_same_period_or_future_leakage(model):
     data = inspect(synthetic(), NOW).usable["demand_gwh"]
     baseline = forecast(data, "daily", model)
@@ -107,3 +107,39 @@ def test_backtest_has_no_same_period_or_future_leakage(model):
     assert len(baseline.points) == 14
     assert baseline.points[0].lower_80 is not None
     assert 0 <= baseline.points[0].lower_80 <= baseline.points[0].upper_80
+
+
+def test_bayesian_improves_on_the_public_daily_archive():
+    series = inspect(jrc_archive(), NOW).usable["demand_gwh"]
+    projections = {model: forecast(series, "daily", model) for model in MODELS}
+    scores = compare(projections)
+    chosen = choose(projections, scores, AUTOMATIC)
+    assert chosen.model == BAYESIAN
+    assert scores[BAYESIAN].mae < scores["Seasonal naive"].mae
+    assert all(fit.periods == 56 for fit in scores.values())
+    assert chosen.interval_kind == "posterior" and chosen.coverage_samples == 56
+    assert 0 < chosen.interval_coverage < 1
+    assert all(0 <= p.lower_80 <= p.estimate <= p.upper_80 for p in chosen.points)
+
+
+def test_comparison_uses_common_periods_and_respects_an_explicit_choice():
+    point = ForecastPoint(period="2026-02-01", estimate=100)
+    dates = pd.date_range("2026-01-01", periods=13, freq="D")
+    forecasts = {}
+    for model, error, sample_size in ((BAYESIAN, 5, 13), ("Seasonal naive", 10, 12)):
+        points = [BacktestPoint(
+            period=day.date().isoformat(), train_end=(day.date() - timedelta(days=1)).isoformat(),
+            actual=100, estimate=100 + (error if i < 12 else 1_000),
+        ) for i, day in enumerate(dates[:sample_size])]
+        forecasts[model] = Forecast(model=model, points=[point], backtest=points)
+    scores = compare(forecasts)
+    assert scores[BAYESIAN].mae == 5 and scores[BAYESIAN].periods == 12
+    assert choose(forecasts, scores, AUTOMATIC).model == BAYESIAN
+    assert choose(forecasts, scores, "Seasonal naive").model == "Seasonal naive"
+
+
+def test_short_series_uses_available_seasonal_reference():
+    series = pd.Series(100.0, index=pd.date_range("2026-01-01", periods=21, freq="D"))
+    projections = {model: forecast(series, "daily", model) for model in MODELS}
+    scores = compare(projections)
+    assert choose(projections, scores, BAYESIAN).model == "Seasonal naive"

@@ -8,12 +8,12 @@ import streamlit as st
 
 from .agents import MarketContext
 from .data import FIELDS, period_text
-from .forecast import MODELS, forecast
+from .forecast import AUTOMATIC, MODELS
 from .italiano import GRAVITA, MODALITA, MODELLI, data_it, numero
 from .models import Kind, Provider
 from .session import RUN_ANALYSIS, applicable_run, launch, preview_market, source_filters
 from .visuals import AMBER, BLUE, ROSE, TEAL, breakdown_chart, chip, demand_chart, error_chart
-from .visuals import heading, header, kind_tag, kpi, local_time, mini_chart, plot, rows, steps
+from .visuals import forecast_readout, heading, header, kind_tag, kpi, local_time, mini_chart, plot, rows, steps
 
 
 def _change(facts: dict, field: str) -> str:
@@ -106,17 +106,23 @@ def _charts(context: MarketContext, horizon: int, page: str, height: int = 330) 
     data = context.inspection.usable.tail(horizon)
     title = ("Consumo interno e disponibilità" if origin.grain == "monthly" else
              "Consumi nazionali" if origin.archive else "Domanda e offerta")
-    heading(title, kind_tag(Kind.FORECAST) if context.projection.points else "")
+    projection = context.projection
+    heading(title, kind_tag(Kind.FORECAST) if projection.points else "")
     if not data["demand_gwh"].notna().any():
         st.info("Nessun consumo utilizzabile nel periodo selezionato.")
     else:
-        plot(demand_chart(data, context.projection, origin.grain, height=height), key=f"{page}_demand")
+        if projection.points:
+            forecast_readout(projection.points[0], origin.grain, historical=origin.archive)
+        plot(demand_chart(data, projection, origin.grain, height=height), key=f"{page}_demand")
         horizon_text = "14 giorni gas" if origin.grain == "daily" else "6 mesi"
-        if context.projection.points:
-            note = "Proiezione storica" if origin.archive else "Orizzonte"
-            st.caption(f"{MODELLI[context.model]} · {note.lower()} di {horizon_text} · GWh per periodo")
+        if projection.points:
+            model = MODELLI[projection.model]
+            note = " · scelto dallo storico" if context.model == AUTOMATIC and projection.model in context.forecast_scores else ""
+            st.caption(f"{model}{note} · orizzonte di {horizon_text}")
+            if context.model not in (AUTOMATIC, projection.model):
+                st.caption(f"Lo storico è troppo breve per {MODELLI[context.model].lower()}.")
         else:
-            st.caption(f"{MODELLI[context.model]} richiede una serie storica più lunga.")
+            st.caption("Serve una serie storica più lunga per generare una stima.")
     return data
 
 
@@ -193,6 +199,36 @@ def overview() -> None:
                 st.text(run.interpretation)
 
 
+def _model_comparison(context: MarketContext) -> None:
+    projection = context.projection
+    scores = context.forecast_scores
+    with st.container(border=True, key="panel_market_errors"):
+        heading("Confronto dei modelli")
+        if scores:
+            ordered = sorted(scores, key=lambda model: scores[model].mae)
+            st.caption(f"Errore medio sul periodo successivo, sugli stessi {scores[ordered[0]].periods} periodi storici. "
+                       "Valori più bassi indicano stime più vicine ai consumi osservati.")
+            st.dataframe([{
+                "Modello": MODELLI[name], "Errore medio (GWh)": numero(scores[name].mae, 1) if name in scores else "—",
+                "In uso": "Sì" if name == projection.model else "",
+            } for name in (*ordered, *(model for model in MODELS if model not in scores))],
+                hide_index=True, width="stretch")
+        else:
+            st.caption("Servono almeno 12 osservazioni confrontabili per confrontare gli errori dei modelli.")
+        with st.expander("Come leggere la fascia e verificare gli errori"):
+            if projection.interval_kind == "posterior":
+                st.write("La fascia all’80% descrive l’incertezza stimata dal modello bayesiano. "
+                         "Le previsioni sono state ricostruite usando solo i dati disponibili prima di ogni periodo.")
+                if projection.interval_coverage is not None:
+                    included = round(projection.interval_coverage * projection.coverage_samples)
+                    st.caption(f"Nel test storico, la fascia ha incluso {included} osservazioni su "
+                               f"{projection.coverage_samples} per il periodo successivo.")
+            else:
+                st.write("La fascia si basa sugli errori delle previsioni ricostruite sullo storico.")
+            if projection.backtest:
+                plot(error_chart(projection, context.bundle.origin.grain), "market_error")
+
+
 def market() -> None:
     top, controls = st.container(), st.container()
     with controls:
@@ -207,8 +243,9 @@ def market() -> None:
     _metrics(context)
     with st.container(border=True, key="panel_market_chart"):
         visible = _charts(context, selection.periods, "market", height=348)
+    _model_comparison(context)
     _supporting_charts(context, visible, "market")
-    sources, errors = st.columns([1, 1.55], gap="medium")
+    sources, quality = st.columns([1.3, 1], gap="medium")
     with sources:
         with st.container(border=True, key="panel_market_notes"):
             heading("Lettura del mercato")
@@ -231,22 +268,8 @@ def market() -> None:
                     if not origin.archive and origin.kind != Kind.SYNTHETIC:
                         st.text(f"Acquisizione {feed.name} · {local_time(feed.retrieved_at)}")
                 st.text(f"Impronta dati SHA-256 · {context.bundle.fingerprint}")
+    with quality:
         _quality_panel(context)
-    with errors:
-        with st.container(border=True, key="panel_market_errors"):
-            heading("Errore di previsione", "<small>Valutazione cronologica · Osservato − previsto</small>")
-            projections = {name: context.projection if name == context.model else
-                           forecast(context.inspection.usable["demand_gwh"], origin.grain, name) for name in MODELS}
-            score = pd.DataFrame([{
-                "Modello": MODELLI[name], "MAE (GWh)": numero(fit.mae, 2),
-                "RMSE (GWh)": numero(fit.rmse, 2), "Periodi valutati": len(fit.backtest),
-            } for name, fit in projections.items()])
-            st.dataframe(score, hide_index=True, width="stretch")
-            if context.projection.backtest:
-                plot(error_chart(context.projection, origin.grain), "market_error")
-                st.caption("Le bande usano il 10º e il 90º percentile degli errori fuori campione per ciascun orizzonte.")
-            else:
-                st.caption("Nessuna previsione fuori campione confrontabile per questo modello.")
     with st.expander("Osservazioni e previsioni"):
         raw = context.bundle.rows
         start = visible.index.min().date().isoformat() if len(visible) else ""

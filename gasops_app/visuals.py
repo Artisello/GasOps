@@ -1,6 +1,6 @@
 """Dashboard styles and charts shared across analytical views."""
 
-from datetime import datetime
+from datetime import date, datetime
 from html import escape
 from typing import Iterable
 
@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from .data import ROME
-from .forecast import Forecast
+from .forecast import Forecast, ForecastPoint
 from .italiano import ESITI, TIPI, data_it, numero
 from .models import AGENT_LABELS, Agent, Citation, Kind, Run
 
@@ -68,6 +68,19 @@ def kpi(label: str, value, unit: str, detail: str, decimals: int = 1, tone: str 
         <span class="unit">{escape(unit_label)}</span></div>
       <span class="detail">{escape(detail)}</span>
     </div>
+    """)
+
+
+def forecast_readout(point: ForecastPoint, grain: str, *, historical: bool = False) -> None:
+    period = data_it(date.fromisoformat(point.period), day=grain == "daily")
+    label = "Proiezione storica" if historical else "Prossima stima"
+    interval = (f"{numero(point.lower_80, 0)}–{numero(point.upper_80, 0)} GWh"
+                if point.lower_80 is not None else "Campione insufficiente")
+    st.html(f"""
+        <div class="gas-forecast-readout">
+          <div><small>{label} · {period}</small><strong>{numero(point.estimate, 0)} GWh</strong></div>
+          <div><small>Fascia all’80%</small><strong>{interval}</strong></div>
+        </div>
     """)
 
 
@@ -136,7 +149,7 @@ def demand_chart(data: pd.DataFrame, projection: Forecast, grain: str, *, height
         if any(v is not None for v in upper):
             fig.add_trace(go.Scatter(x=dates, y=lower, mode="lines", showlegend=False, hoverinfo="skip",
                                      line=dict(width=0), legendgroup="interval"))
-            fig.add_trace(go.Scatter(x=dates, y=upper, name="Intervallo empirico 80%", fill="tonexty",
+            fig.add_trace(go.Scatter(x=dates, y=upper, name="Fascia all’80%", fill="tonexty",
                                      fillcolor="rgba(131,172,255,0.17)", hoverinfo="skip",
                                      mode="lines", line=dict(width=0, color=BLUE), legendrank=4,
                                      legendgroup="interval"))

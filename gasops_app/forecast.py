@@ -1,5 +1,6 @@
-"""Calendar-based forecasts with chronological backtests."""
+"""Previsioni a calendario e confronto cronologico su osservazioni comuni."""
 
+from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
@@ -7,8 +8,14 @@ import pandas as pd
 from pydantic import BaseModel, Field
 from sklearn.linear_model import Ridge
 
-ModelName = Literal["Seasonal regression", "Seasonal naive"]
-MODELS = ("Seasonal regression", "Seasonal naive")
+from . import bayesian
+
+BAYESIAN = "Bayesian seasonal"
+AUTOMATIC = "Automatic"
+ModelName = Literal["Bayesian seasonal", "Seasonal regression", "Seasonal naive"]
+ModelChoice = Literal["Automatic", "Bayesian seasonal", "Seasonal regression", "Seasonal naive"]
+MODELS: tuple[ModelName, ...] = (BAYESIAN, "Seasonal regression", "Seasonal naive")
+MODEL_CHOICES: tuple[ModelChoice, ...] = (AUTOMATIC, *MODELS)
 
 
 class ForecastPoint(BaseModel):
@@ -32,6 +39,40 @@ class Forecast(BaseModel):
     backtest: list[BacktestPoint] = Field(default_factory=list)
     mae: float | None = None
     rmse: float | None = None
+    interval_kind: Literal["posterior", "empirical"] = "empirical"
+    interval_coverage: float | None = None
+    coverage_samples: int = 0
+
+
+@dataclass(frozen=True)
+class Score:
+    mae: float
+    rmse: float
+    periods: int
+
+
+def compare(projections: dict[ModelName, Forecast]) -> dict[ModelName, Score]:
+    """Measure one-period errors on exactly the same observed dates."""
+    errors = {model: {p.period: p.actual - p.estimate for p in fit.backtest}
+              for model, fit in projections.items() if fit.points and len(fit.backtest) >= 12}
+    if not errors:
+        return {}
+    common = sorted(set.intersection(*(set(series) for series in errors.values())))
+    if len(common) < 12:
+        return {}
+    scores = {}
+    for model, series in errors.items():
+        residuals = np.array([series[day] for day in common])
+        scores[model] = Score(float(np.abs(residuals).mean()), float(np.sqrt(np.square(residuals).mean())), len(common))
+    return scores
+
+
+def choose(projections: dict[ModelName, Forecast], scores: dict[ModelName, Score], choice: ModelChoice) -> Forecast:
+    if choice != AUTOMATIC and projections[choice].points:
+        return projections[choice]
+    if scores:
+        return projections[min(scores, key=lambda model: scores[model].mae)]
+    return next((projections[model] for model in MODELS if projections[model].points), projections[BAYESIAN])
 
 
 def _features(dates: pd.DatetimeIndex, daily: bool) -> np.ndarray:
@@ -44,7 +85,7 @@ def _features(dates: pd.DatetimeIndex, daily: bool) -> np.ndarray:
     return np.column_stack(columns)
 
 
-def _predict(train: pd.Series, future: pd.DatetimeIndex, daily: bool, model: ModelName) -> np.ndarray:
+def _baseline(train: pd.Series, future: pd.DatetimeIndex, daily: bool, model: ModelName) -> np.ndarray:
     if model == "Seasonal naive":
         season = 7 if daily else 12
         values = train.to_numpy()
@@ -52,7 +93,6 @@ def _predict(train: pd.Series, future: pd.DatetimeIndex, daily: bool, model: Mod
             return np.full(len(future), np.nan)
         guesses = []
         for horizon in range(len(future)):
-            # Earlier observations at the same seasonal position can fill a missing lag.
             idx = len(train) - season + horizon % season
             comparable = values[idx::-season]
             observed = comparable[np.isfinite(comparable)]
@@ -65,41 +105,61 @@ def _predict(train: pd.Series, future: pd.DatetimeIndex, daily: bool, model: Mod
     return fitted.predict(_features(future, daily)).clip(min=0)
 
 
+def _predict(
+    train: pd.Series, dates: pd.DatetimeIndex, daily: bool, model: ModelName
+) -> tuple[np.ndarray, np.ndarray | None, np.ndarray | None]:
+    if model == BAYESIAN:
+        paths = bayesian.predict(train, dates, daily)
+        return paths if paths is not None else (np.full(len(dates), np.nan), None, None)
+    return _baseline(train, dates, daily, model), None, None
+
+
 def forecast(series: pd.Series, grain: str, model: ModelName) -> Forecast:
-    result = Forecast(model=model)
+    result = Forecast(model=model, interval_kind="posterior" if model == BAYESIAN else "empirical")
     if series.dropna().empty:
         return result
     daily = grain == "daily"
     freq, horizon, holdout = ("D", 14, 56) if daily else ("MS", 6, 30)
+    series = series.asfreq(freq)
     future = pd.date_range(series.index[-1], freq=freq, periods=horizon + 1)[1:]
-    fitted = _predict(series, future, daily, model)
+    fitted, lower_fit, upper_fit = _predict(series, future, daily, model)
     errors: list[list[float]] = [[] for _ in range(horizon)]
+    covered = []
     for cutoff in range(max(1, len(series) - holdout), len(series)):
         actuals = series.iloc[cutoff:cutoff + horizon]
         train = series.iloc[:cutoff]
-        estimates = _predict(train, actuals.index, daily, model)
+        estimates, low, high = _predict(train, actuals.index, daily, model)
         for step, (actual, estimate) in enumerate(zip(actuals.to_numpy(), estimates, strict=True)):
             if not (np.isfinite(actual) and np.isfinite(estimate)):
                 continue
-            errors[step].append(float(actual - estimate))
             if step == 0:
                 result.backtest.append(BacktestPoint(
                     period=actuals.index[step].date().isoformat(),
                     train_end=train.index[-1].date().isoformat(),
                     actual=float(actual), estimate=float(estimate),
                 ))
+                if low is not None:
+                    covered.append(low[step] <= actual <= high[step])
+            errors[step].append(float(actual - estimate))
     if errors[0]:
         residuals = np.asarray(errors[0])
         result.mae = float(np.mean(np.abs(residuals)))
         result.rmse = float(np.sqrt(np.mean(np.square(residuals))))
+    if covered:
+        result.interval_coverage = float(np.mean(covered))
+        result.coverage_samples = len(covered)
+
     for i, (day, estimate) in enumerate(zip(future, fitted, strict=True)):
         if not np.isfinite(estimate):
             continue
         sample_size = len(errors[i])
         lower, upper = None, None
-        if sample_size >= 20:
+        if lower_fit is not None:
+            lower, upper = float(lower_fit[i]), float(upper_fit[i])
+        elif sample_size >= 20:
             qlow, qhigh = np.quantile(errors[i], [0.10, 0.90])
-            lower, upper = max(0.0, float(estimate + qlow)), max(0.0, float(estimate + qhigh))
+            lower = max(0.0, min(float(estimate), float(estimate + qlow)))
+            upper = max(float(estimate), float(estimate + qhigh))
         result.points.append(ForecastPoint(
             period=day.date().isoformat(), estimate=float(estimate),
             lower_80=lower, upper_80=upper, interval_samples=sample_size,
