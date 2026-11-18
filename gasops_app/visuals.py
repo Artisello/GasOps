@@ -241,7 +241,8 @@ def ai_readout(run: Run):
         for paragraph in run.interpretation.splitlines():
             if paragraph.strip():st.text(paragraph.strip())
         if run.interpretation_sources:
-            st.caption("Evidenze · "+", ".join(AGENT_LABELS[a] for a in run.interpretation_sources))
+            labels=reference_labels(run,[a.value for a in run.interpretation_sources])
+            st.caption("Fonti · "+"; ".join(labels))
     usage=getattr(run,"ai_usage",{})
     if usage:
         calls=usage.get("calls",0)

@@ -280,7 +280,7 @@ class CompatibleReasoner:
         evidence=json.dumps({"question":question,"verified_tool_results":allowed,
                              "public_operational_context":public,"reference_ids":codes},
                             ensure_ascii=False,separators=(",",":"),allow_nan=False)
-        target=1350 if executive else 450 if narrow else 1200
+        target=1350 if executive else 650 if narrow else min(2000,1200+100*len(required))
         # The provider completion cap already bounds the response. A stricter
         # editorial target should not discard an otherwise valid answer.
         limit=6000
@@ -292,7 +292,7 @@ class CompatibleReasoner:
                      "Ogni sezione cita almeno un codice esatto presente in reference_ids (A1, S1 ecc.). "
                      "Le fonti mancanti supportano solo limiti o verifiche. Niente riferimenti inventati.")
         if narrow:
-            instruction+=" Domanda osservata e variazioni: separa bilancio mensile Eurostat e prelievi giornalieri ENTSOG, specificando date e perimetri; non equipararli. Nessun riepilogo di prezzi, scorte o norme non richieste."
+            instruction+=" Rispondi in 2–4 frasi: domanda osservata e variazioni; separa bilancio mensile Eurostat e prelievi giornalieri ENTSOG, specificando date e perimetri; non equipararli. Nessun riepilogo di prezzi, scorte o norme non richieste."
         if repair:
             instruction=(template+"\nRecupero formato: restituisci solo JSON valido con chiavi interpretation (testo italiano), "
                          "references (lista di codici da reference_ids). "

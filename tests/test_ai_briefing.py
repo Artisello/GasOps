@@ -390,3 +390,58 @@ def test_executive_section_does_not_repeat_title():
     sections,_=parse_sections([{"id":"market","text":"Mercato: domanda in aumento.","references":["market_intelligence"]}],
                              ("summary","market"),["market_intelligence"],[],6000)
     assert sections[0]["text"]=="domanda in aumento."
+
+
+def test_assistant_requires_relevant_sources_and_recovers_missing_citations(monkeypatch):
+    from gasops_app.models import Result,Citation
+    from gasops_app.assistant_sources import requested_sources,MARKET,PRICE,WEATHER,POWER,GIE
+    q="Come è cambiata la domanda di gas nell’ultimo periodo?"
+    assert requested_sources(q)==MARKET
+    assert WEATHER in requested_sources("Come il meteo influenza la domanda?")
+    assert set(POWER)<=set(requested_sources("Previsioni della domanda di gas"))
+    assert set(GIE)<=set(requested_sources("Situazione del mercato del gas"))
+    assert PRICE in requested_sources("Qual è il prezzo PSV?")
+    result=Result(agent=Agent.MARKET,summary="Consumi mensili 100 GWh",evidence=[Citation(document="Eurostat",evidence="100 GWh")])
+    public={MARKET[0]:{"source":"Eurostat","status":"available","period":"2026-10-01","values":{"demand_gwh":100}},
+            MARKET[1]:{"source":"ENTSOG","status":"available","period":"2026-11-17","values":{"demand_gwh":10}}}
+    replies=iter([{"interpretation":"Domanda mensile 100 GWh.","references":["market_intelligence"]},
+                  {"interpretation":"Eurostat: 100 GWh nel mese. ENTSOG: 10 GWh nel giorno gas.","references":["S1","S2"]}])
+    seen=[]
+    class Response:
+        status_code=200
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def iter_content(self,chunk_size):
+            yield json.dumps({"choices":[{"message":{"content":json.dumps(next(replies))}}]}).encode()
+    def post(*args,**kwargs):
+        seen.append(kwargs["json"])
+        return Response()
+    monkeypatch.setattr("gasops_app.llm.requests.post",post)
+    from gasops_app.models import Run
+    model=CompatibleReasoner(LLMConfig("openai/gpt-oss-120b","https://api.groq.com/openai/v1","fixture"))
+    bundle=synthetic()
+    run=Run(question=q,source=bundle.origin,input_sha256=bundle.fingerprint,
+            assumptions={"assistant_source_requirements":list(MARKET),"public_operational_context":public},
+            results={Agent.MARKET:result})
+    model.summarize(run)
+    assert len(seen)==2 and model.format_retries==1
+    assert set(run.ai_sections[0]["references"])=={"src:"+x for x in MARKET}
+    assert "Fonti pertinenti obbligatorie: S1, S2" in seen[0]["messages"][-1]["content"]
+
+
+def test_source_evidence_separates_missing_and_cited():
+    from gasops_app.assistant_sources import source_rows,add_price_source,complete_requirements,MARKET,PRICE,WEATHER,POWER
+    from gasops_app.models import Run
+    public={MARKET[0]:{"source":"Eurostat","status":"available","period":"2026-10-01","values":{"demand_gwh":100},
+                       "price":{"source":"ARERA","status":"available","period":"2026-10-01","value":88.36}},
+            WEATHER:{"source":"Open-Meteo","status":"available","points":[{"day":"2026-11-24","hdd":6.9,"temperature_c":11.1}]}}
+    add_price_source(public)
+    complete_requirements(public,[PRICE,WEATHER,POWER[0]])
+    data=synthetic()
+    run=Run(question="test",source=data.origin,input_sha256=data.fingerprint,
+            assumptions={"public_operational_context":public,"assistant_source_requirements":[PRICE,WEATHER,POWER[0]]},
+            ai_sections=[{"id":"answer","text":"test","references":["src:"+PRICE]}])
+    rows={r["key"]:r for r in source_rows(run)}
+    assert rows[PRICE]["cited"] and "88,36" in rows[PRICE]["evidence"]
+    assert not rows[WEATHER]["cited"] and "6,9" in rows[WEATHER]["evidence"]
+    assert rows[POWER[0]]["status"]=="unavailable" and rows[POWER[0]]["required"]
