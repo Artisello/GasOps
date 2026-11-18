@@ -7,12 +7,11 @@ import streamlit as st
 from .data import jrc_archive,ROME
 from .models import Kind,utc_now
 from .quality import inspect
-from .predictive import evaluate,HORIZONS,MODELS,MIN_TRAIN,MIN_TEST
+from .predictive import evaluate,HORIZONS,MODELS,MODEL_LABELS as LABELS,MIN_TRAIN,MIN_TEST
 from .predictive_sources import session_features,historical_weather
 from .public_data import SourceUnavailable
 from .session import database
 
-LABELS={"weekly":"Naive settimanale","autoregressive":"Ridge autoregressivo","multivariate":"Ridge multivariato"}
 STATE="predictive_study_v1"
 
 
@@ -37,7 +36,9 @@ def panel():
         st.caption("Ultimi 730 giorni dell'archivio storico: risultati non riferiti al mercato attuale.")
     available=session_features(st.session_state) if use_recent else {}
     options=list(available)
-    selected=st.multiselect("Variabili aggiuntive già caricate",options,format_func=lambda k:available[k].name,
+    # Suggest only sufficiently long historical series, never select by test error.
+    eligible=[k for k in ("terna_residual_wind_solar","terna_Thermal","storage","entsog_Physical Flow","flow") if k in available and available[k].values.dropna().shape[0]>=MIN_TRAIN+28+7]
+    selected=st.multiselect("Variabili aggiuntive già caricate",options,default=eligible[:2],format_func=lambda k:available[k].name,
                             max_selections=3,key="predictive_covariates")
     snapshots=tuple((k,sha256(available[k].values.to_csv().encode()).hexdigest(),available[k].provenance) for k in selected)
     def describe(c):
@@ -83,7 +84,7 @@ def panel():
                 "selected":snapshots,"weather":weather,"horizon":horizon,"cov":[describe(c)|{"Provenienza":c.provenance} for c in cov],
                 "acquired":now.isoformat(),"weather_note":weather_note}
         except (ValueError,SourceUnavailable) as e:
-            st.error(str(e))
+            st.caption(str(e))
     saved=st.session_state.get(STATE)
     if not saved:
         return
@@ -92,16 +93,24 @@ def panel():
         return
     if saved.get("weather_note"):st.caption(saved["weather_note"])
     r=saved["result"]
+    if not all(m in r["scores"] for m in MODELS):
+        st.caption("Risultato di una versione precedente: esegui un nuovo confronto.")
+        return
     st.caption(f'{r["test_n"]}/28 origini confrontabili · {r["test_start"]} – {r["test_end"]} · calcolato {saved["acquired"]}')
     st.warning("Backtest con dati storici rivisti e ritardi ipotizzati: non certifica performance operativa ex ante. Nessuna promozione automatica del modello.")
     st.markdown("**Errore medio assoluto, GWh**")
-    cols=st.columns(3)
+    cols=st.columns(len(MODELS))
     for col,m in zip(cols,MODELS,strict=True):
         col.metric(LABELS[m],f'{r["scores"][m]["mae"]:.1f}')
     base=r["scores"]["autoregressive"]["mae"]
+    bayes_base=r["scores"]["bayesian_base"]["mae"]
+    if bayes_base>0:
+        delta=(r["scores"]["bayesian_multi"]["mae"]/bayes_base-1)*100
+        st.caption(f"Variazione MAE Bayes multivariato vs Bayes autoregressivo: {delta:+.1f}% sulle stesse date.")
     if base>0:
         change=(r["scores"]["multivariate"]["mae"]/base-1)*100
         st.caption(f"Variazione MAE multivariato rispetto al Ridge autoregressivo: {change:+.1f}%. Campione comune; nessuna garanzia futura.")
+    st.caption(f"Copertura osservata Bayes multivariato (80% nominale): {r['scores']['bayesian_multi']['coverage_80']:.1f}% su {r['test_n']} origini.")
     backtest=pd.DataFrame(r["records"])
     st.line_chart(backtest.rename(columns=LABELS|{"actual":"Osservato"}),x="target",y=["Osservato",*LABELS.values()],y_label="GWh/giorno gas")
     forecast=r["forecast"]
@@ -110,9 +119,10 @@ def panel():
         st.info("Covariate o lag insufficienti alla data di riferimento: nessuna proiezione.")
     else:
         st.caption(f"Riferimento {forecast['origin']} · giorno gas target {forecast['target']} · non bollettino ufficiale")
-        c=st.columns(3)
+        c=st.columns(len(MODELS))
         for col,m in zip(c,MODELS,strict=True):
             col.metric(LABELS[m],f"{forecast[m]:.1f} GWh")
+        st.caption(f"Intervallo predittivo Bayes multivariato (80% nominale): {forecast['bayesian_multi_low']:.1f}–{forecast['bayesian_multi_high']:.1f} GWh; condizionato ai regressori.")
         if "empirical_low" in forecast:
             st.caption(f"Intervallo empirico descrittivo: {forecast['empirical_low']:.1f}–{forecast['empirical_high']:.1f} GWh; quantili degli errori osservati, copertura non calibrata.")
     with st.expander("Qualità, metodo e download"):

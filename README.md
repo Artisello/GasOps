@@ -293,3 +293,7 @@ Assistente AI → Analista dati: confronta serie pubbliche caricate, statistiche
 ### Pianificazione analitica AI
 
 Assistente AI → Analista dati → Automatica (AI): il modello seleziona fonti, date e strumenti tra quelli consentiti; Python verifica il piano, calcola le evidenze e le rende consultabili. [Metodo e limiti](docs/AUTONOMOUS_ANALYST.md).
+
+### Forecasting bayesiano multi-fonte
+
+Laboratorio previsionale: regressione bayesiana con covariate storiche. Forecasting Snam: correzione bayesiana dei residui e gruppi di vintage Terna/ENTSOG su campioni comuni. [Metodo e limiti](docs/BAYESIAN_MULTISOURCE.md).

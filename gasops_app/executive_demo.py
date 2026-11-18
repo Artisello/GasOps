@@ -10,7 +10,7 @@ from .acer_baf_2026 import report_2026_rows, all_baf_rows, zone_changes
 from .acer_market import REPORT_2026, REPORT_2025
 from .bso_kpis import task_demo, balancing_demo, operations_metrics, balancing_metrics, settlement_metrics, closed_gas_day
 from .operations_ledger import sample_rows
-from .predictive import evaluate, MODELS
+from .predictive import evaluate, MODELS, MODEL_LABELS
 from .visuals import kpi_grid
 from .italiano import numero
 
@@ -98,10 +98,13 @@ def _forecast():
             st.error("Archivio storico o campione non utilizzabile.")
     saved=st.session_state.get(STUDY)
     if not saved:
-        st.info("Avvia il confronto tra benchmark settimanale e regressioni Ridge. Il risultato si basa esclusivamente sui dati inclusi.")
+        st.info("Avvia il confronto tra benchmark settimanale e regressioni Ridge e bayesiane. Il risultato si basa esclusivamente sui dati inclusi.")
         return
     r=saved["result"]
-    names={"weekly":"Naive settimanale","autoregressive":"Ridge autoregressivo","multivariate":"Ridge multivariato"}
+    if not all(m in r["scores"] for m in MODELS):
+        st.caption("Risultato di una versione precedente: esegui un nuovo backtest.")
+        return
+    names=MODEL_LABELS
     st.caption(f'{r["test_n"]} date comuni · riferimento {r["test_start"]} – {r["test_end"]} · D+1')
     kpi_grid([(names[m],r["scores"][m]["mae"],"GWh","MAE fuori campione",1,"") for m in MODELS])
     f=pd.DataFrame(r["records"]).rename(columns=names|{"actual":"Osservato"})
@@ -110,7 +113,7 @@ def _forecast():
     with st.expander("Provenienza e metodo"):
         st.markdown(f"[Archivio JRC]({saved['url']})")
         st.text("SHA-256: "+saved["fingerprint"])
-        st.caption("Ridge con regressori settoriali ritardati, nessun dato futuro osservato come feature. Scaling per finestra di training.")
+        st.caption("Ridge e Bayes con regressori settoriali ritardati, nessun dato futuro osservato come feature. Scaling per finestra di training.")
     st.markdown("[Laboratorio previsionale](/market)")
 
 
