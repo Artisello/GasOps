@@ -119,7 +119,7 @@ def ai_controls(*, prefix="sidebar") -> None:
     if problem:
         st.warning(problem)
     if not config:
-        st.caption("AI non configurata · report deterministico disponibile")
+        st.caption("AI non configurata · report locali disponibili")
     usage = None
     budget_ready = True
     if config and not config.local:
@@ -135,7 +135,7 @@ def ai_controls(*, prefix="sidebar") -> None:
                 st.warning("Contatore AI non disponibile. I calcoli locali restano utilizzabili.")
     with st.expander("Connessione e limiti AI", expanded=False):
         if config and st.session_state.get("execution_mode")=="Deterministic":
-            st.caption("Modello disponibile: selezionalo in Assistente AI.")
+            st.caption("Modello disponibile: attivalo dalla modalità di analisi o dall’assistente.")
         if not config:
             st.write("Per Groq Cloud, imposta GROQ_API_KEY nei Secrets di Streamlit; "
                      "oppure i tre campi GASOPS_LLM_URL, GASOPS_LLM_MODEL, GASOPS_LLM_API_KEY.")
@@ -190,6 +190,32 @@ def reasoner() -> CompatibleReasoner | None:
     if config and st.session_state.get("execution_mode")==config.model:
         return CompatibleReasoner(config,reserve=None if config.local else _reserve_remote_request)
     return None
+
+
+def activate_ai(model_name: str) -> None:
+    """Explicit widget callback, runs before the sidebar is rebuilt."""
+    try:
+        config = _configuration()
+    except ValueError:
+        return
+    if config and config.model == model_name:
+        st.session_state["execution_mode"] = config.model
+
+
+def ai_activation_panel(*, prefix: str) -> None:
+    """Never select a provider automatically or send a connection request."""
+    try:
+        config = _configuration()
+    except ValueError:
+        config = None
+    if config:
+        st.info("AI disattivata. Attiva il modello per fare domande in linguaggio naturale.")
+        if not config.local:
+            st.caption("Attivando il modello autorizzi l’invio delle domande e degli aggregati pubblici consentiti al provider. Non inserire dati riservati.")
+        st.button("Attiva AI · "+config.model, key=prefix+"_activate_ai",type="primary",
+                  on_click=activate_ai,args=(config.model,))
+    else:
+        st.info("AI non configurata. Imposta un modello e le credenziali nei Secrets; consulta Connessione e limiti AI nella barra laterale.")
 
 
 def analysis_label() -> str:
@@ -337,9 +363,15 @@ def briefing_run() -> Run | None:
 
 
 def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool = False,
-           persist: bool = False, planned_only: bool = False, compact: bool = False) -> Run | None:
+           persist: bool = False, planned_only: bool = False, compact: bool = False,
+           ai_policy: str = "selected") -> Run | None:
     if selection.bundle is None:
         return None
+    if ai_policy not in ("selected","required","off"):
+        raise ValueError("Modalità di analisi non valida.")
+    model = None if ai_policy == "off" else reasoner()
+    if ai_policy == "required" and model is None:
+        raise ModelUnavailable("AI non attiva. Nessuna domanda eseguita.")
     context = MarketContext(selection.bundle, selection.model, utc_now())
     status = st.status("Generazione del bollettino…" if full else "Analisi della domanda…", expanded=not compact)
     stage = status.empty()
@@ -359,7 +391,7 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
             with st.spinner("Consultazione delle fonti pubbliche selezionate…"):
                 public_context=collect(database(),context,utc_now(),key=key,include_gie=include_gie,include_weather=include_weather)
         report = run_workflow(
-            context, docs, assumptions(), question, full=full, reasoner=reasoner(),public_context=public_context,planned_only=planned_only,
+            context, docs, assumptions(), question, full=full, reasoner=model,public_context=public_context,planned_only=planned_only,
             notify=lambda run: stage.html(steps(run, grid=True)),
         )
     except ValueError as error:

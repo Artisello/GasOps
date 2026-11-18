@@ -54,6 +54,8 @@ def test_analyst_no_model_no_network(monkeypatch):
     monkeypatch.setattr(requests.Session,"request",forbidden)
     app=AppTest.from_string("from gasops_app.data_analyst_page import panel\npanel()",default_timeout=30).run()
     assert not app.exception
+    assert app.text_area(key="analyst_question").disabled
+    assert app.button(key="analyst_run").label=="Calcola statistiche"
     app.button(key="analyst_run").click().run()
     assert not app.exception and not app.error
     assert app.session_state[data_analyst_page.STATE]["payload"]["series"]

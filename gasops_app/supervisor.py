@@ -152,7 +152,10 @@ def execute(
 
     if reasoner and run.mode == "LLM-assisted":
         try:
-            run.interpretation, run.interpretation_sources = reasoner.summarize(run)
+            narrative, references = reasoner.summarize(run)
+            if not isinstance(narrative,str) or not narrative.strip() or not references:
+                raise ValueError("No grounded AI answer")
+            run.interpretation, run.interpretation_sources = narrative, references
         except Exception as error:
             _fallback(run, "sintesi", error)
 

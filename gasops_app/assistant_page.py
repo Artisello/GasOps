@@ -7,7 +7,7 @@ import streamlit as st
 from .italiano import ESITI, GRAVITA, TIPI
 from .models import Agent, AGENT_LABELS, Run, utc_now
 from .reports import markdown
-from .session import analysis_label, launch, market_scope, reasoner, source_filters
+from .session import analysis_label, launch, market_scope, reasoner, source_filters, ai_activation_panel
 from .visuals import evidence, info, local_time, steps
 from .workflow import DAILY_BRIEFING
 
@@ -84,7 +84,9 @@ def _report(report:Run,selection):
         if report.interpretation_sources:
             st.caption("Basata su: "+", ".join(AGENT_LABELS[a] for a in report.interpretation_sources)+". Interpretazione da verificare.")
     else:
-        st.markdown("**Risultato dell’analisi**")
+        if report.mode!="Deterministic":
+            st.warning("Nessuna risposta AI generata. I calcoli sottostanti sono soltanto evidenze locali di riserva.")
+        st.markdown("**Report di calcolo (senza AI)**")
         if not report.results:
             st.text(report.summary or "Nessun risultato disponibile.")
     if Agent.REGULATORY in report.results:
@@ -153,60 +155,76 @@ def _history():
 
 def assistant_page():
     st.title("Assistente AI")
-    view=st.radio("Modalità assistente",["Assistente operativo","Analista dati"],horizontal=True,key="assistant_view")
+    view=st.radio("Modalità assistente",["Assistente operativo","Analista dati","Report locali"],horizontal=True,key="assistant_view")
     if view=="Analista dati":
         from .data_analyst_page import panel
         panel()
         return
+    local=view=="Report locali"
+    model=None if local else reasoner()
+    if not local and model is None:
+        st.caption("AI non attiva · nessuna domanda sarà elaborata")
+        ai_activation_panel(prefix="assistant")
+        st.chat_input("Attiva l’AI per scrivere una domanda",key="assistant_question",max_chars=600,disabled=True)
+        st.caption("Per i calcoli senza AI seleziona Report locali oppure Analista dati.")
+        return
     selection=source_filters("ops",lookback=False)
     area,scope=market_scope(selection.name)
     st.caption(area+" · "+scope)
-    model=reasoner()
-    st.caption(model.config.model if model else "Calcoli locali")
+    st.caption("Calcoli locali · nessuna chiamata AI" if local else "AI attiva · "+model.config.model)
     if model and not model.config.local:
         st.caption("Solo dati pubblici · domande inviate al provider AI.")
     st.markdown("[Interroga i PDF](/regulatory)")
-    info("Come funziona","Scegli una fonte e fai una domanda autonoma. Non è una ricerca web e non ha memoria conversazionale. Ogni nuova domanda esegue un’analisi indipendente.",
-         "Le scorciatoie usano gli strumenti locali e, se attivo, un solo tentativo AI di sintesi. Le domande libere possono usare fino a tre chiamate. Le fonti supplementari si configurano nella barra laterale. Lo storico dell’assistente rimane nella sessione.")
+    if local:
+        info("Come funziona","Report deterministici con parametri e controlli predefiniti. Nessuna chat o interpretazione AI.")
+    else:
+        info("Come funziona","Ogni domanda avvia un'analisi indipendente. Il modello seleziona strumenti e interpreta le evidenze. Se non riesce, vengono mostrati solo calcoli di riserva, non una risposta AI.",
+             "Le scorciatoie utilizzano un tentativo AI di sintesi; le domande libere fino a tre chiamate. Lo storico rimane nella sessione.")
     disabled=selection.bundle is None
     controls=st.columns([1,1,1,1.4])
     shortcut=None
     for col,(label,question) in zip(controls[:3],STARTERS):
         if col.button(label,key="assistant_starter_"+label,width="stretch",disabled=disabled,help=question):
             shortcut=question
-    full=controls[3].button(analysis_label(),key="assistant_briefing",type="secondary",width="stretch",disabled=disabled)
-    question=st.chat_input("Chiedi qualcosa sul mercato del gas…",key="assistant_question",max_chars=600,disabled=disabled)
+    full=controls[3].button("Genera bollettino locale" if local else "Genera bollettino AI",key="assistant_briefing",type="secondary",width="stretch",disabled=disabled)
+    question=None if local else st.chat_input("Chiedi qualcosa sul mercato del gas…",key="assistant_question",max_chars=600,disabled=disabled)
     requested=DAILY_BRIEFING if full else shortcut or (question.strip() if question else "")
     answer_slot=st.container()
     history_slot=st.container()
+    def render(report):
+        if local:
+            if report.mode=="LLM-assisted" and report.interpretation:
+                st.info("Questa analisi precedente contiene una risposta AI. Consultala in Assistente operativo con AI attiva.")
+                return
+            st.text(report.question)
+            _report(report,selection)
+        else:
+            with st.chat_message("user"):
+                st.text(report.question)
+            with st.chat_message("assistant"):
+                _report(report,selection)
     if requested:
         with answer_slot:
-            with st.chat_message("user"):
-                st.text(requested)
-            with st.chat_message("assistant"):
-                try:
-                    report=launch(selection,requested,full=full,persist=False,planned_only=bool(full or shortcut),compact=True)
-                except Exception as error:
-                    LOG.warning("Assistant workflow failed (%s)",type(error).__name__)
-                    report=None
-                    st.error("Analisi non riuscita. Verifica le fonti o riprova in modalità senza AI.")
-                if report:
-                    _remember(report)
-                    _report(report,selection)
-                else:
-                    st.caption("Nessun nuovo risultato salvato; puoi consultare le analisi precedenti nello storico.")
+            try:
+                report=launch(selection,requested,full=full,persist=False,planned_only=bool(local or full or shortcut),compact=True,
+                              ai_policy="off" if local else "required")
+            except Exception as error:
+                LOG.warning("Assistant workflow failed (%s)",type(error).__name__)
+                report=None
+                st.error("Analisi non riuscita. Verifica il modello o le fonti; nessuna risposta AI generata." if not local else "Report locale non disponibile. Verifica le fonti.")
+            if report:
+                _remember(report)
+                render(report)
     else:
         history=st.session_state.get(HISTORY,[])
         chosen=st.session_state.get(SELECTED)
         report=next((r for r in history if r.id==chosen),history[0] if history else None)
         with answer_slot:
             if report:
-                with st.chat_message("user"):
-                    st.text(report.question)
-                with st.chat_message("assistant"):
-                    _report(report,selection)
+                st.caption("Risultato precedente · modalità effettiva indicata nel report")
+                render(report)
             elif not disabled:
-                st.caption("Scrivi una domanda o scegli una scorciatoia. Il risultato apparirà qui.")
+                st.caption("Scegli un report. Il risultato apparirà qui." if local else "Scrivi una domanda o scegli una scorciatoia. Il risultato apparirà qui.")
             else:
                 st.info("Seleziona una fonte disponibile per iniziare.")
     with history_slot:

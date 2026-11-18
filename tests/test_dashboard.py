@@ -452,6 +452,10 @@ def test_assistant_session_history_isolated_and_shortcut_works(monkeypatch,tmp_p
     app.session_state["selected_source"]=DEMO
     app.run()
     assert not app.exception
+    assert app.chat_input(key="assistant_question").disabled
+    assert not app.button or not any(b.key=="assistant_starter_Consumi" for b in app.button)
+    app.radio(key="assistant_view").set_value("Report locali").run()
+    assert not app.exception and not app.chat_input
     assert not any(foreign.question in e.value for e in app.text)
     assert any("Il risultato apparirà qui" in e.value for e in app.caption)
     app.button(key="assistant_starter_Consumi").click().run()

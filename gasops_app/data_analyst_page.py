@@ -6,7 +6,7 @@ import pandas as pd
 
 from .data import ROME
 from .models import utc_now
-from .session import reasoner
+from .session import reasoner, ai_activation_panel
 from .data_analyst import catalog,analyse,reference_facts,forecast_facts,can_share,MAX_SELECTED,evidence_ids
 
 STATE="data_analyst_result_v1"
@@ -36,8 +36,14 @@ def panel():
     first=a.date_input("Dal",value=date(2000,1,1),min_value=date(1990,1,1),max_value=now.astimezone(ROME).date(),key="analyst_from")
     last=b.date_input("Al",value=now.astimezone(ROME).date(),min_value=date(1990,1,1),max_value=now.astimezone(ROME).date(),key="analyst_to")
     include=st.checkbox("Includi benchmark pubblici e ultimi backtest compatibili",value=True,key="analyst_context")
-    question=st.text_area("Domanda",placeholder="Es. Come si muovono termoelettrico e riconsegna gas? Il forecast migliora?",max_chars=600,key="analyst_question")
     model=reasoner()
+    if model:
+        st.caption("AI attiva · "+model.config.model)
+    else:
+        ai_activation_panel(prefix="analyst")
+    question=st.text_area("Domanda per l’AI",placeholder="Es. Come si muovono termoelettrico e riconsegna gas? Il forecast migliora?",max_chars=600,key="analyst_question",disabled=model is None)
+    if model is None:
+        question=""
     remote=bool(model and not model.config.local)
     consent=False
     if remote:
@@ -46,7 +52,7 @@ def panel():
             st.caption("GIE, flussi di interconnessione ENTSOG e coefficienti/stock Jarvis selezionati: solo elaborazione locale.")
     elif model:st.caption("Modello locale selezionato.")
     else:st.caption("Modalità senza AI: calcoli disponibili; attiva un modello dalla barra laterale per la risposta testuale.")
-    if st.button("Analizza dati",type="primary",key="analyst_run",disabled=not keys):
+    if st.button("Calcola e interroga AI" if model and question.strip() else "Calcola statistiche",type="primary",key="analyst_run",disabled=not keys):
         st.session_state.pop(STATE,None)
         try:
             payload=analyse(items,keys,first.isoformat(),last.isoformat())
@@ -62,19 +68,23 @@ def panel():
             elif model and remote and question.strip():
                 warning="Invio al modello esterno non autorizzato per le serie selezionate."
             st.session_state[STATE]={"payload":payload,"answer":answer,"references":refs,"warning":warning,
-                "question":question,"at":now.isoformat()}
+                "question":question,"at":now.isoformat(),"model":model.config.model if answer else None,
+                "mode":"AI" if answer else "Calcoli locali · nessuna risposta AI"}
         except (ValueError,TypeError,KeyError,ArithmeticError) as e:
             st.error("Analisi non disponibile: verifica intervallo, serie e copertura.")
     saved=st.session_state.get(STATE)
     if not saved:return
     payload=saved["payload"]
     st.caption("Ultima analisi eseguita: "+saved["at"]+" · riesegui dopo ogni modifica a fonti, filtri o domanda.")
-    if saved["question"]:st.text(saved["question"])
+    st.caption(saved.get("mode","AI" if saved.get("answer") else "Calcoli locali · nessuna risposta AI"))
+    if saved["question"] and (model or not saved["answer"]):st.text(saved["question"])
     if saved["warning"]:st.warning(saved["warning"])
-    if saved["answer"]:
-        st.markdown("**Risposta AI**")
+    if saved["answer"] and model:
+        st.markdown("**Risposta AI precedente · "+str(saved.get("model") or "modello non registrato")+"**")
         st.text(saved["answer"])
         st.caption("Evidenze citate: "+", ".join(saved["references"])+" · interpretazione da verificare.")
+    if saved["answer"] and not model:
+        st.info("L’analisi precedente contiene una risposta AI; riattiva il modello per consultarla. Le statistiche rimangono disponibili.")
     if not payload["series"]:
         st.info("Nessuna osservazione nel periodo richiesto.")
     else:
@@ -91,7 +101,7 @@ def panel():
     with st.expander("Fonti, benchmark, backtest e dati dell'analisi"):
         st.json(payload,expanded=False)
         st.caption("Benchmark e backtest mantengono i loro periodi; non sono filtrati come le serie storiche.")
-        st.download_button("Esporta evidenze JSON",json.dumps(saved,ensure_ascii=False,indent=2,allow_nan=False),
+        st.download_button("Esporta evidenze JSON",json.dumps(saved if model else {**saved,"answer":None,"references":[],"question":"","model":None,"mode":"Calcoli locali"},ensure_ascii=False,indent=2,allow_nan=False),
                             "igor-data-analysis.json","application/json",key="analyst_export")
     if st.button("Rimuovi ultima analisi",key="analyst_clear"):
         st.session_state.pop(STATE,None)
