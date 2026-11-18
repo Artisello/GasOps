@@ -161,14 +161,13 @@ def ai_controls(*, prefix="sidebar") -> None:
 
 
 def sidebar() -> None:
-    st.html('<div class="gas-sidebar-foot"></div>')
     config=None
     try:
         config=_configuration()
     except ValueError:
         pass
     modes=["Deterministic",config.model] if config else ["Deterministic"]
-    st.selectbox("Assistente AI",modes,index=1 if config and config.groq else 0,
+    st.selectbox("Modalità di analisi",modes,index=1 if config and config.groq else 0,
                  format_func=lambda value:"Calcoli senza AI" if value=="Deterministic" else value,key="execution_mode")
     ai_controls()
     with st.expander("Fonti aggiuntive AI",expanded=False):

@@ -17,9 +17,10 @@ load_dotenv(ROOT / ".env", override=False)
 st.html(ROOT / "gasops_app" / "theme.css")
 
 from gasops_app import dashboard, session, workbench, operations_page, risk_page, operational_sources_page
+from gasops_app.navigation import sidebar_navigation
 
 pages = [
-    st.Page(dashboard.overview, title="Panoramica", icon=":material/grid_view:", default=True),
+    st.Page(dashboard.overview, title="Panoramica", icon=":material/home:", default=True),
     st.Page(dashboard.market, title="Mercato e previsioni", icon=":material/monitoring:", url_path="market"),
     st.Page(operational_sources_page.operational_context, title="Stoccaggi e forniture", icon=":material/shield:", url_path="security-of-supply"),
     st.Page(workbench.balancing, title="Bilanciamento", icon=":material/balance:", url_path="balancing"),
@@ -36,10 +37,8 @@ with st.sidebar:
           <div><strong>GasOps <em>AI</em></strong><small>Mercato del gas</small></div>
         </div>
     """)
-    for label,indices in (("Mercato",(0,1,2)),("Operazioni",(3,4,5)),("Analisi",(6,7))):
-        st.html(f'<div class="gas-nav-group">{label}</div>')
-        for index in indices:
-            st.page_link(pages[index])
+    sidebar_navigation(pages, current)
+    st.html('<div class="gas-nav-group gas-nav-settings">Impostazioni AI</div>')
     session.sidebar()
     st.html('<div class="gas-byline"><strong>Prototipo per SNAM creato da Igor</strong><small>Progetto indipendente, non ufficiale.</small></div>')
 current.run()
