@@ -88,7 +88,11 @@ def retrieve(
 
     if existing:
         try:
-            return parse(existing[1], datetime.fromisoformat(existing[0]), cached=True, failed=True)
+            result = parse(existing[1], datetime.fromisoformat(existing[0]), cached=True, failed=True)
+            # Diagnostics contain controlled messages only, never response bodies or credentials.
+            if diagnostics and isinstance(result, dict):
+                return {**result, "refresh_error": reason}
+            return result
         except VALIDATION_ERRORS:
             LOG.warning("Nessuna cache verificata per %s", name)
 

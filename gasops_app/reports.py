@@ -4,6 +4,7 @@ import json
 
 from .italiano import ESITI, GRANULARITA, GRAVITA, MODALITA, TIPI
 from .models import AGENT_LABELS, Run
+from .executive_briefing import management_readout
 
 
 def _plain(text: str) -> str:
@@ -16,8 +17,14 @@ def markdown(run: Run, reviewed: dict[str, str]) -> str:
         "# I.G.O.R. — rapporto operativo", "", f"**Obiettivo** {_plain(run.question)}",
         f"**Analisi** `{run.id}` · {run.started_at.isoformat()} UTC · {MODALITA[run.mode]}",
         f"**Fonte** {_plain(source.name)} · {TIPI[source.kind]} · {GRANULARITA[source.grain]}",
-        f"**Impronta dei dati SHA-256** `{run.input_sha256}`", "", "## Sintesi operativa", "", _plain(run.summary),
+        f"**Impronta dei dati SHA-256** `{run.input_sha256}`", "", "## Sintesi operativa", "",
     ]
+    if run.assumptions.get("full_briefing"):
+        overview,forecast,priorities=management_readout(run)
+        lines.extend([_plain(overview), "", _plain(forecast), "", "### Priorità di verifica",
+                      *[f"- {_plain(item)}" for item in priorities]])
+    else:
+        lines.append(_plain(run.summary))
     for feed in (source, *source.companions):
         if feed.url:
             lines.extend(["", f"[{_plain(feed.name)}]({feed.url})"])

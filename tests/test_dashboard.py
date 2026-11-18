@@ -674,7 +674,7 @@ def test_briefing_context_keeps_missing_gie_and_umm_separate():
 _briefing_operational_context({
     "AGSI+":{"status":"available","gas_day":"2026-11-17","values":{"fill_pct":75.0,"stock_twh":100.0}},
     "ALSI":{"status":"unavailable","reason":"Chiave non configurata"},
-    "IIP":{"status":"available","received_records":4,"coverage":"Parziale"},
+    "IIP":{"status":"available","received_records":4,"coverage":"Completa"},
     "Open-Meteo":{"status":"available","points":[{"day":"2026-11-19","hdd":10.0,"temperature_c":8.0}]}
 })
 """).run()
@@ -682,3 +682,12 @@ _briefing_operational_context({
     assert any("Stoccaggi Italia" in e.proto.body and "75,0" in e.proto.body and "record, non eventi" in e.proto.body for e in app.get("html"))
     assert any("Copertura incompleta" in e.value and "ALSI" in e.value for e in app.caption)
     assert any("picco HDD" in e.value for e in app.caption)
+
+
+def test_unverified_iip_not_shown_as_kpi():
+    for source in ({"status":"stale","received_records":None,"coverage":"Completa"},
+                   {"status":"available","received_records":4,"coverage":"Parziale"}):
+        app=AppTest.from_string("from gasops_app.dashboard import _briefing_operational_context\n_briefing_operational_context("+repr({"IIP":source,"AGSI+":{"status":"available","values":{"fill_pct":75.0}}})+")").run()
+        assert not app.exception
+        assert not any("Record UMM ricevuti" in e.proto.body for e in app.get("html"))
+        assert any("Copertura incompleta" in e.value and "IIP" in e.value for e in app.caption)

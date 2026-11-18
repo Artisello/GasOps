@@ -433,6 +433,10 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
         status.update(label="Verifica i dati di ingresso", state="error")
         status.write(str(error))
         return None
+    # Record why AI was not used on this run, not the state of a later rerun.
+    if model is None:
+        report.assumptions["ai_mode_reason"] = ("Modalità locale selezionata" if ai_policy=="off" or ai_configured()
+                                               else "Modello AI non configurato o configurazione non valida")
     st.session_state["last_run"] = report
     if full:
         st.session_state["last_briefing"] = report
