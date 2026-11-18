@@ -29,6 +29,11 @@ def test_indicators_no_network_on_ordinary_rerun(monkeypatch):
     monkeypatch.setattr(module,"acquire_indicators",lambda *a,**k:calls.append(1) or {"price":{"error":True}})
     app=AppTest.from_string("from gasops_app.overview_indicators import panel\npanel()").run()
     assert not app.exception and calls==[]
+    from gasops_app.operational_sources import attribution
+    for platform in ("AGSI+","ALSI"):
+        source=attribution(platform)
+        assert any("["+source["source"]+"]("+source["source_url"]+")" in e.value
+                   for e in app.markdown)
     app.button(key="overview_public_refresh").click().run()
     assert not app.exception and calls==[1]
     app.run()

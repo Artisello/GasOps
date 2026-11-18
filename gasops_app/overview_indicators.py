@@ -9,7 +9,7 @@ from .data import ROME,period_text
 from .italiano import data_it,numero
 from .mensile import ARERA_URL,Prices,load_arera
 from .models import utc_now
-from .operational_sources import GIE_CREDIT,GIE_LINKS,GIE_TERMS,load_agsi,load_alsi
+from .operational_sources import GIE_TERMS,attribution,load_agsi,load_alsi
 from .operational_sources_page import configured_key
 from .session import database
 from .supply_view import finite,inventory_snapshot
@@ -136,7 +136,10 @@ def panel(context=None):
                 st.session_state[STATE]=previous
         snapshots=reuse_indicators(previous.get("values",{}),context,st.session_state,now)
         kpi_grid(current_rows(snapshots,now,gie_enabled=bool(key)))
-        st.markdown("[ARERA · CMEM,m]("+ARERA_URL+") · ["
-                    +GIE_CREDIT["AGSI+"]+"]("+GIE_LINKS["AGSI+"]+") · ["
-                    +GIE_CREDIT["ALSI"]+"]("+GIE_LINKS["ALSI+"]+") · [Condizioni GIE]("+GIE_TERMS+")")
+        links=["[ARERA · CMEM,m]("+ARERA_URL+")"]
+        for platform in ("AGSI+","ALSI"):
+            source=attribution(platform)
+            links.append("["+source["source"]+"]("+source["source_url"]+")")
+        links.append("[Condizioni GIE]("+GIE_TERMS+")")
+        st.markdown(" · ".join(links))
         st.caption("PSV: media mensile pubblicata, non quotazione spot. Gli stoccaggi non misurano la disponibilità commerciale.")
