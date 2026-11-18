@@ -145,11 +145,14 @@ def _calendar_panel(invoice_rows):
 
 def commercial_workbench(ledger_view):
     st.title("Fatture e garanzie")
-    st.caption("Simulazione · partecipante fittizio DEMO-001 · nessuna operazione reale")
+    st.caption("Demo DEMO-001 e controlli su estratti autorizzati · nessuna operazione reale")
     summary_slot=st.container()
     tabs=st.tabs(["Fatture","Garanzie","Scadenze","Prezzi","Bilanci e GNL"])
     with tabs[0]:
         invoice_rows,summary=_invoice_panel(sample_rows())
+        st.divider()
+        from .reconciliation_page import documents_panel
+        documents_panel()
     with tabs[1]:
         risk=_guarantee_panel()
     with tabs[2]:

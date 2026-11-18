@@ -96,4 +96,7 @@ def panel():
              **r,"issues":"; ".join(r["issues"])} for r in daily]
     st.download_button("Esporta controllo giornaliero CSV",csv_text(export),"igor-controllo-giornaliero.csv",
                        "text/csv",key="daily_desk_export")
+    if uploaded:
+        from .reconciliation_page import daily_panel
+        daily_panel(rows,user,year,month,uploaded["sha"])
     info("Metodo e limiti","DS = immissioni + stoccaggio netto + transazioni nette PSV − prelievi. Calcolo dimostrativo con arrotondamento per giorno a centesimi. Rettifiche: confronto ultimo provvisorio e ultimo definitivo; effetto quantità valorizzato ai prezzi del provvisorio per il segno del DS finale, poi effetto prezzo residuo. Se manca il prezzo controfattuale, nessuna scomposizione. Gli importi escludono i giorni con eccezioni e non sono fatture. Le soglie e le eccezioni sono controlli di studio, non regole di accettazione Snam. Nessuna trasmissione AI o salvataggio persistente del CSV.")
