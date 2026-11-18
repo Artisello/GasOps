@@ -434,6 +434,83 @@ def _compare(cached):
                 _results(cached,hits,prefix)
 
 
+def _review_documents(cached):
+    from .document_review import compare_evidence
+    docs=cached["docs"]
+    names=list(docs.documents)
+    model=reasoner()
+    st.subheader("Revisore documentale")
+    st.caption("Ricerca mirata di possibili incongruenze. Due riscontri testuali obbligatori; nessun giudizio automatico di conformità.")
+    with st.form("desk_reviewer",border=False):
+        a,b=st.columns(2)
+        first=a.selectbox("Documento A",names,key="review_a")
+        second=b.selectbox("Documento B",names,index=min(1,len(names)-1),key="review_b")
+        theme=st.text_input("Tema da verificare",placeholder="Es. preavviso di cancellazione, scadenze, garanzie",max_chars=600)
+        consent=False
+        if model and not model.config.local:
+            consent=st.checkbox("Autorizzo l'invio del tema e di massimo sei estratti pubblici o autorizzati al provider AI.")
+        submit=st.form_submit_button("Avvia revisione",type="primary",disabled=model is None)
+    if model is None:
+        st.info("Seleziona un modello AI nella barra laterale. Cerca e Confronta restano disponibili senza AI.")
+    if submit:
+        cached.pop("document_review",None)
+        if not theme.strip():
+            st.warning("Indica un tema preciso.")
+        elif model and not model.config.local and not consent:
+            st.warning("Consenso necessario per la revisione con provider remoto.")
+        elif model:
+            first_hits=search(docs,theme,document=first,limit=6 if first==second else 3)
+            if first==second:
+                left,right=first_hits[::2][:3],first_hits[1::2][:3]
+            else:
+                left,right=first_hits,search(docs,theme,document=second,limit=3)
+            saved={"theme":theme,"first":first,"second":second,"left":left,"right":right,
+                   "model":model.config.model,"findings":[],"status":"insufficient"}
+            if left and right:
+                try:
+                    with st.spinner("Revisione degli estratti e controllo delle citazioni…"):
+                        saved["findings"]=compare_evidence(model,theme,left,right,authorized_remote=consent)
+                    saved["status"]="completed"
+                except ModelUnavailable as exc:
+                    st.warning(str(exc))
+                    saved["status"]="unavailable"
+                except (ValueError,TypeError,RuntimeError,KeyError):
+                    saved["status"]="invalid"
+            cached["document_review"]=saved
+    saved=cached.get("document_review")
+    if not saved:
+        return
+    st.caption("Ultima revisione · "+saved["model"])
+    st.text(saved["theme"]+" · "+saved["first"]+" / "+saved["second"])
+    if saved["status"]=="insufficient":
+        st.info("Riscontri insufficienti nei due insiemi di passaggi. Nessuna richiesta AI effettuata.")
+    elif saved["status"] in ("invalid","unavailable"):
+        st.warning("Revisione non disponibile o citazioni non verificabili. Consulta gli estratti.")
+    elif not saved["findings"]:
+        st.info("Nessun rilievo concreto restituito sugli estratti esaminati. Non esclude altri errori.")
+    for item in saved["findings"]:
+        with st.container(border=True):
+            st.markdown("**Possibile incongruenza**")
+            st.text(item["title"])
+            st.text(item["detail"])
+            for citation in item["citations"]:
+                st.caption(citation.document+f" · PDF p. {citation.page}")
+                st.text("«"+citation.evidence+"»")
+            st.caption("Verifica suggerita")
+            st.text(item["check"])
+    if saved["findings"]:
+        payload={"theme":saved["theme"],"model":saved["model"],"status":"ipotesi da verificare",
+                 "editions":{name:docs.documents[name].digest for name in {saved["first"],saved["second"]}},
+                 "findings":[{**item,"citations":[c.model_dump(mode="json") for c in item["citations"]]} for item in saved["findings"]]}
+        st.download_button("Esporta rilievi JSON",json.dumps(payload,ensure_ascii=False,indent=2),
+                           "gasops-revisione.json","application/json",key="desk_review_export")
+    with st.expander("Estratti esaminati"):
+        for hit in [*saved["left"],*saved["right"]]:
+            st.caption(hit.document+f" · PDF p. {hit.page}")
+            st.text(hit.evidence)
+    st.caption("Analisi limitata ai passaggi recuperati, non a tutto il codice. La corrispondenza letterale non prova la correttezza dell’interpretazione.")
+
+
 def _references(cached):
     items=cached["reference_list"]
     if not items:
@@ -459,7 +536,7 @@ def document_page():
     if not cached["docs"].documents:
         st.info("Aggiungi almeno un PDF per iniziare. Usa Carica PDF oppure consulta l’archivio pubblico. Non vengono mostrati rilievi o citazioni in assenza di documenti.")
         return
-    action=st.radio("Strumento",["Cerca","Chiedi all’AI","Leggi PDF","Confronta","Riferimenti salvati"],
+    action=st.radio("Strumento",["Cerca","Chiedi all’AI","Leggi PDF","Confronta","Revisore","Riferimenti salvati"],
                     horizontal=True,label_visibility="collapsed",key="desk_mode")
     if action=="Cerca":
         _search(cached)
@@ -469,5 +546,7 @@ def document_page():
         _read(cached)
     elif action=="Confronta":
         _compare(cached)
+    elif action=="Revisore":
+        _review_documents(cached)
     else:
         _references(cached)
