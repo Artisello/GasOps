@@ -69,6 +69,8 @@ def test_bso_page_demo_and_imported_empty():
     from streamlit.testing.v1 import AppTest
     app=AppTest.from_string("from gasops_app.bso_kpi_page import page\npage()",default_timeout=30).run()
     assert not app.exception
+    app.radio(key="bso_view").set_value("Registro operativo").run()
+    assert not app.exception
     assert [t.label for t in app.tabs]==["Scadenze","Calendario Snam","Balancing","Settlement"]
     assert any("Puntualità" in e.proto.body and "60,0" in e.proto.body for e in app.get("html"))
     assert any("Scadute aperte" in e.proto.body for e in app.get("html"))
@@ -78,3 +80,31 @@ def test_bso_page_demo_and_imported_empty():
     assert not app.exception
     assert any("Importa il registro" in e.value for e in app.info)
     assert not any("Puntualità" in e.proto.body and "60,0" in e.proto.body for e in app.get("html"))
+
+
+def test_bso_overview_default_and_no_demo_fallback():
+    from streamlit.testing.v1 import AppTest
+    app=AppTest.from_string("from gasops_app.bso_kpi_page import page\npage()",default_timeout=30).run()
+    assert not app.exception
+    assert app.radio(key="bso_view").value=="Panoramica"
+    assert not app.tabs
+    assert {m.label:m.value for m in app.metric}=={
+        "Attività aperte in ritardo":"—","|SAS| medio":"—","Definitivi utilizzabili":"—"}
+    assert any("Le assenze non valgono zero" in e.value for e in app.info)
+    operational=app.dataframe[0].value
+    assert len(operational)==10
+    assert operational["Valore"].isna().all()
+    assert operational["Stato"].eq("Non disponibile").all()
+    context=app.dataframe[1].value
+    assert len(context)==13
+    assert context.loc[context["KPI"]=="Sbilanciamenti / volume","Valore"].iloc[0]==7.4
+    assert context.loc[context["KPI"]=="Flusso fisico","Valore"].isna().all()
+
+    # Visiting demo mode must not populate or contaminate the overview.
+    app.radio(key="bso_view").set_value("Registro operativo").run()
+    assert not app.exception
+    assert app.radio(key="bso_mode").value=="Demo"
+    app.radio(key="bso_view").set_value("Panoramica").run()
+    assert not app.exception
+    assert all(m.value=="—" for m in app.metric)
+    assert app.dataframe[0].value["Valore"].isna().all()
