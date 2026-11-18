@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 
 import requests
 
-from .models import Agent, Result, Run
+from .models import Agent, Result, Run, Citation
 from .supervisor import Call, Tool, ModelUnavailable
 
 SYSTEM = """You are the GasOps AI supervisor for read-only analytical screening. Write explanations in Italian. Select only tools
@@ -19,7 +19,7 @@ historical observations, simulations and accounting assumptions distinct. Scope 
 the cited editions and raise ambiguities for human review. Do not produce trading, billing, or
 infrastructure instructions. Refer to the executed agents and their supplied evidence."""
 SUMMARY = """Return a JSON object with "interpretation" (up to 3 concise sentences in Italian), and
-"references" (a list of executed tool names). Interpret only the provided results. Leave numerical
+"references" (a list of executed tool names). Interpret only the provided results and explicitly supplied public_operational_context. Prioritize material changes, uncertainty, and what to monitor next. Identify source names, dates and units when available, never infer missing operational data or treat a message count as lost capacity. Distinguish monthly observations from daily context and scenarios. Leave numerical
 calculation and rule resolution to the tools. For regulatory explanations, refer to the supplied
 document and PDF page. State when the evidence cannot answer the question."""
 
@@ -51,12 +51,19 @@ def configuration(secrets=None) -> LLMConfig | None:
         value=secrets.get(name) if secrets is not None else None
         return str(value if value is not None else os.environ.get(name,default)).strip()
     model=setting("GASOPS_LLM_MODEL")
-    url=setting("GASOPS_LLM_URL","http://127.0.0.1:11434/v1").rstrip("/")
+    explicit_url=setting("GASOPS_LLM_URL").rstrip("/")
     key=setting("GASOPS_LLM_API_KEY")
     groq_key=setting("GROQ_API_KEY")
-    if not model and groq_key:
-        model,url="openai/gpt-oss-120b","https://api.groq.com/openai/v1"
+    groq_url="https://api.groq.com/openai/v1"
+    # A provider-specific key is enough for Groq; never reinterpret an
+    # explicitly configured remote provider or send a Groq token elsewhere.
+    if (groq_key or key.startswith("gsk_")) and explicit_url in {"",groq_url,groq_url+"/chat/completions"}:
+        model=model or "openai/gpt-oss-120b"
+        explicit_url=explicit_url or groq_url
+    url=explicit_url or "http://127.0.0.1:11434/v1"
     if not model:
+        if key or groq_key or setting("GROK_API_KEY") or setting("XAI_API_KEY"):
+            raise ValueError("Chiave presente, ma modello non configurato. Imposta GASOPS_LLM_MODEL e GASOPS_LLM_URL. Groq e Grok/xAI sono distinti.")
         return None
     parsed=urlsplit(url)
     candidate=LLMConfig(model,url,key or None)
@@ -65,6 +72,8 @@ def configuration(secrets=None) -> LLMConfig | None:
         raise ValueError("Configura un endpoint LLM HTTPS o HTTP locale compatibile /v1.")
     if candidate.groq and not key:
         candidate=LLMConfig(model,url,groq_key or None)
+    if key.startswith("gsk_") and not candidate.groq:
+        raise ValueError("La chiave Groq richiede un endpoint api.groq.com. Controlla GASOPS_LLM_URL.")
     if not candidate.local and not candidate.api_key:
         raise ValueError("Chiave API del modello mancante.")
     if not candidate.local and not candidate.groq and setting("GASOPS_ALLOW_PAID_LLM").lower()!="true":
@@ -180,9 +189,10 @@ class CompatibleReasoner:
         self.pending = []
 
     def probe(self):
-        response=self._chat([{"role":"user","content":"Rispondi soltanto OK."}])
-        if not isinstance(response.get("content"),str) or not response["content"].strip():
-            raise ModelUnavailable("Il modello non ha restituito testo.")
+        # Validate the same structured response and citation path as a real briefing.
+        simulated=Result(agent=Agent.MARKET,summary="Esempio sintetico: consumo 100 GWh.",
+                         evidence=[Citation(document="Test sintetico GasOps",evidence="100 GWh, dato fittizio.")])
+        self.interpret("Test connessione: riferisci il consumo sintetico.",{Agent.MARKET:simulated})
         return True
 
     def route(self, run: Run, tools: Mapping[Agent, Tool]) -> list[Call]:
@@ -202,12 +212,12 @@ class CompatibleReasoner:
                               "Select any additional dependency needed. Leave tool calls empty if sufficient."})
         return self._tool_calls(self._chat(self.messages, remaining), remaining)
 
-    def interpret(self, question: str, results: Mapping[Agent, Result]) -> tuple[str | None, list[Agent]]:
+    def interpret(self, question: str, results: Mapping[Agent, Result], *, context=None) -> tuple[str | None, list[Agent]]:
         self._tool_outputs(results)
         allowed=_evidence(results,external=not self.config.local)
         if not allowed:
             raise ModelUnavailable("Nessun risultato condivisibile con il modello esterno.")
-        evidence = json.dumps({"question": question, "verified_tool_results": allowed})
+        evidence = json.dumps({"question": question, "verified_tool_results": allowed, "public_operational_context": context or {}})
         response = self._chat([*self.messages, {"role": "user", "content": f"{SUMMARY}\n{evidence}"}])
         content = response.get("content") or ""
         if not isinstance(content, str):
@@ -226,4 +236,4 @@ class CompatibleReasoner:
         return narrative.strip(), cited
 
     def summarize(self, run: Run) -> tuple[str | None, list[Agent]]:
-        return self.interpret(run.question, run.results)
+        return self.interpret(run.question, run.results, context=run.assumptions.get("public_operational_context"))

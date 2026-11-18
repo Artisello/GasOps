@@ -140,3 +140,30 @@ def test_iip_market_desk_filters_and_detail_without_more_network(monkeypatch,tmp
     assert not app.exception and len(app.dataframe[0].value)==1
     assert app.dataframe[0].value.iloc[0]["Asset"]=="Example B"
     assert len(calls)==1
+
+
+
+def test_ai_diagnostics_visible_without_key(monkeypatch,tmp_path):
+    from gasops_app import session
+    monkeypatch.setattr(session,"_configuration",lambda:None)
+    app=AppTest.from_string("from gasops_app.session import sidebar\nsidebar()").run()
+    assert not app.exception
+    assert any(e.label=="Connessione e limiti AI" for e in app.expander)
+    assert any("AI non configurata" in e.value for e in app.caption)
+
+
+def test_ai_connection_test_visible_in_deterministic_mode(monkeypatch,tmp_path):
+    from gasops_app import session
+    from gasops_app.llm import LLMConfig
+    monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
+    monkeypatch.setattr(session,"_configuration",lambda:LLMConfig("fixture","https://api.groq.com/openai/v1","secret"))
+    probes=[]
+    monkeypatch.setattr(session.CompatibleReasoner,"probe",lambda self:probes.append(self.config.model) or True)
+    app=AppTest.from_string("from gasops_app.session import sidebar\nsidebar()")
+    app.session_state["execution_mode"]="Deterministic"
+    app.run()
+    assert not app.exception
+    assert any(e.label=="Connessione e limiti AI" for e in app.expander)
+    app.button(key="sidebar_llm_probe").click().run()
+    assert not app.exception and probes==["fixture"]
+    assert any("verificate" in e.value for e in app.success)

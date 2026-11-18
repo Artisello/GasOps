@@ -1,0 +1,67 @@
+from datetime import datetime,timezone,timedelta
+import json
+import pandas as pd
+from gasops_app.briefing_context import collect, inventory_context, iip_context
+from gasops_app.agents import Assumptions, MarketContext
+from gasops_app.data import synthetic
+from gasops_app.llm import CompatibleReasoner, LLMConfig, configuration
+from gasops_app.models import Agent
+from gasops_app.regulatory import Library
+from gasops_app.workflow import run_workflow
+
+NOW=datetime(2026,11,18,12,tzinfo=timezone.utc)
+
+def test_config_provider_key_without_url(monkeypatch):
+    monkeypatch.delenv("GASOPS_LLM_URL",raising=False)
+    c=configuration({"GROQ_API_KEY":"fixture","GASOPS_LLM_MODEL":"openai/gpt-oss-20b"})
+    assert c.groq and c.model=="openai/gpt-oss-20b"
+
+
+def test_inventory_context_stale_and_iip_count_no_raw_records():
+    frame=pd.DataFrame([{"gas_day":NOW.date()-timedelta(days=1),"status":"C",
+                       "stock_twh":70.,"fill_pct":75.,"review":False}])
+    result={"frame":frame,"scope":"IT","acquired":NOW,"failed":False}
+    assert inventory_context(result,NOW,"AGSI+")["values"]["stock_twh"]==70
+    assert "values" not in inventory_context(result,NOW+timedelta(days=3),"AGSI+")
+    iip=iip_context({"acquired":NOW,"failed":False,"messages":[{"private":"NOT_TRANSMITTED"}],
+                     "reported_total":1,"pages":1,"partial":False,"pagination_verified":True},NOW)
+    assert iip["received_records"]==1 and iip["coverage"]=="Completa"
+    assert "NOT_TRANSMITTED" not in json.dumps(iip)
+
+
+def test_no_automatic_context_network_without_opt_in(monkeypatch):
+    def fail(*args,**kwargs):
+        raise AssertionError("Source must not be fetched")
+    monkeypatch.setattr("gasops_app.briefing_context.load_agsi",fail)
+    monkeypatch.setattr("gasops_app.briefing_context.load_alsi",fail)
+    monkeypatch.setattr("gasops_app.briefing_context.load_iip",fail)
+    monkeypatch.setattr("gasops_app.briefing_context.analyse_gas_day",fail)
+    assert collect(None,None,NOW,key="fixture")=={}
+
+
+def test_groq_http_briefing_context_and_structured_probe(monkeypatch):
+    seen=[]
+    class Response:
+        status_code=200
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def iter_content(self,chunk_size):
+            yield json.dumps({"choices":[{"message":{"content":json.dumps(
+                {"interpretation":"Controllare la domanda osservata e le scorte.",
+                 "references":["market_intelligence"]})}}]}).encode()
+    def post(url,**kwargs):
+        seen.append(kwargs["json"])
+        return Response()
+    monkeypatch.setattr("gasops_app.llm.requests.post",post)
+    config=LLMConfig("openai/gpt-oss-120b","https://api.groq.com/openai/v1","fixture")
+    assert CompatibleReasoner(config,reserve=lambda:True).probe()
+    ctx=MarketContext(synthetic(),"Seasonal regression",NOW)
+    data={"AGSI+":{"source":"Gas Infrastructure Europe (GIE) – AGSI+","values":{"stock_twh":70.}}}
+    run=run_workflow(ctx,Library(),Assumptions(),full=True,
+                     reasoner=CompatibleReasoner(config,reserve=lambda:True),public_context=data)
+    assert run.mode=="LLM-assisted" and run.interpretation and len(run.results)==6
+    assert run.assumptions["public_operational_context"]==data
+    assert len(seen)==2 and seen[-1]["response_format"]=={"type":"json_object"}
+    sent=seen[-1]["messages"][-1]["content"]
+    assert "stock_twh" in sent and "Gas Infrastructure Europe" in sent
+    assert '"regulatory_intelligence"' not in sent and '"settlement"' not in sent

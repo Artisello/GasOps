@@ -11,7 +11,7 @@ from .data import FIELDS, period_text
 from .forecast import AUTOMATIC, MODELS
 from .italiano import GRAVITA, MODALITA, MODELLI, data_it, numero
 from .models import Kind, Provider
-from .session import analysis_label, applicable_run, launch, preview_market, source_filters
+from .session import ai_controls, analysis_label, applicable_run, launch, preview_market, source_filters
 from .visuals import AMBER, BLUE, ROSE, TEAL, breakdown_chart, chip, demand_chart, error_chart
 from .visuals import forecast_readout, heading, header, kind_tag, kpi, local_time, mini_chart, plot, rows, steps
 
@@ -203,6 +203,7 @@ def overview() -> None:
         with st.container(border=True, key="panel_agents"):
             heading("Analisi di mercato", chip("ULTIMA ANALISI", "ok") if run else chip("PRONTA"))
             st.caption("Avvia il report per ottenere una sintesi delle evidenze e dei controlli.")
+            ai_controls(prefix="overview")
             with st.expander("Stato dei singoli agenti"):
                 st.html(steps(run))
     if run:
@@ -212,6 +213,9 @@ def overview() -> None:
                 st.caption("Modello selezionato: "+run.model)
             for warning in run.warnings:
                 st.warning(warning)
+            if run.assumptions.get("public_operational_context"):
+                with st.expander("Fonti operative del briefing"):
+                    st.json(run.assumptions["public_operational_context"],expanded=False)
             for result in run.results.values():
                 st.text(result.summary)
             if run.interpretation:

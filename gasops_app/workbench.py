@@ -315,6 +315,9 @@ def _report_panel(report: Run) -> None:
             st.caption("Modello selezionato: "+report.model)
         for warning in report.warnings:
             st.warning(warning)
+        if report.assumptions.get("public_operational_context"):
+            with st.expander("Fonti operative del briefing"):
+                st.json(report.assumptions["public_operational_context"],expanded=False)
         for agent in Agent:
             if agent in report.results:
                 result = report.results[agent]

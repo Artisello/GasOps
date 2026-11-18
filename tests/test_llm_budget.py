@@ -39,3 +39,14 @@ def test_external_evidence_excludes_private_tools():
     safe=_evidence(results,external=True)
     assert Agent.REGULATORY.value not in safe and Agent.SETTLEMENT.value not in safe
     assert Agent.MARKET.value in safe
+
+
+def test_generic_groq_secret_detected():
+    c=configuration({"GASOPS_LLM_API_KEY":"gsk_fixture","GASOPS_LLM_MODEL":"",
+                     "GASOPS_LLM_URL":"https://api.groq.com/openai/v1","GROQ_API_KEY":""})
+    assert c.groq and c.model=="openai/gpt-oss-120b"
+
+
+def test_unknown_key_not_guessed():
+    with pytest.raises(ValueError,match="modello non configurato"):
+        configuration({"GASOPS_LLM_API_KEY":"unknown","GASOPS_LLM_MODEL":"","GROQ_API_KEY":""})

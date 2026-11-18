@@ -95,42 +95,67 @@ def _configuration():
         return configuration()
 
 
-def sidebar() -> None:
-    st.html('<div class="gas-sidebar-foot"></div>')
-    config = None
+def ai_controls(*, prefix="sidebar") -> None:
+    config, problem = None, None
     try:
         config = _configuration()
     except ValueError as error:
-        st.warning(str(error))
-    modes = ["Deterministic", config.model] if config else ["Deterministic"]
-    mode = st.selectbox("Modalità di analisi", modes, index=1 if config and config.groq else 0,
-                        format_func=lambda value: MODALITA.get(value,value),key="execution_mode")
-    if config and mode==config.model:
-        st.caption("Groq Cloud · "+config.model if config.groq else
-                   "Ollama / endpoint locale" if config.local else "Endpoint remoto · possibili costi")
-        if not config.local:
-            st.caption("Solo domande e dati non riservati. L’AI riceve riepiloghi selezionati, "
-                       "non estratti normativi o dati individuali di settlement.")
-        with st.expander("Connessione e limiti AI"):
-            if not config.local:
-                try:
-                    st.caption(f"Richieste interne ultime 24 h: {database().llm_usage()}/30 · max 4/min. "
-                               "Non è il saldo della quota del provider.")
-                except (OSError,sqlite3.Error):
-                    st.caption("Contatore non disponibile: richieste AI bloccate.")
-            if st.button("Test connessione AI",key="llm_probe"):
-                try:
-                    reasoner().probe()
-                    st.session_state["llm_probe_result"]=(config.model,True,"Connessione e risposta testate.")
-                except ModelUnavailable as error:
-                    st.session_state["llm_probe_result"]=(config.model,False,str(error))
-                except Exception:
-                    st.session_state["llm_probe_result"]=(config.model,False,"Connessione o risposta non valida.")
-            probe=st.session_state.get("llm_probe_result")
-            if probe and probe[0]==config.model:
-                (st.success if probe[1] else st.warning)(probe[2])
+        problem = str(error)
+    if problem:
+        st.warning(problem)
+    if config:
+        if st.session_state.get("execution_mode")=="Deterministic":
+            st.caption("Modello disponibile: selezionalo in Modalità di analisi per usarlo nel report.")
+        st.caption(("Groq Cloud" if config.groq else "Ollama locale" if config.local else "Provider remoto")+
+                   " · "+config.model)
     else:
-        st.caption("Calcoli locali senza modello")
+        st.caption("AI non configurata · report deterministico disponibile")
+    with st.expander("Connessione e limiti AI", expanded=not config):
+        if not config:
+            st.write("Per Groq Cloud, imposta GROQ_API_KEY nei Secrets di Streamlit; "
+                     "oppure i tre campi GASOPS_LLM_URL, GASOPS_LLM_MODEL, GASOPS_LLM_API_KEY.")
+            st.code('GROQ_API_KEY = "LA_TUA_CHIAVE"',language="toml")
+            st.caption("Groq Cloud non è Grok di xAI. Non inserire la chiave qui o in GitHub.")
+            return
+        st.caption("Configurazione presente; la connessione va verificata con un test reale.")
+        if not config.local:
+            try:
+                st.caption(f"Richieste interne ultime 24 h: {database().llm_usage()}/30 · max 4/min. "
+                           "Non è il saldo della quota del provider.")
+            except (OSError,sqlite3.Error):
+                st.caption("Contatore non disponibile: richieste AI bloccate.")
+        if st.button("Test connessione AI",key=prefix+"_llm_probe"):
+            try:
+                CompatibleReasoner(config,reserve=None if config.local else lambda:database().reserve_llm()).probe()
+                st.session_state["llm_probe_result"]=(config.model,True,"Connessione e risposta JSON con riferimento verificate (test sintetico).")
+            except ModelUnavailable as error:
+                st.session_state["llm_probe_result"]=(config.model,False,str(error))
+            except Exception:
+                st.session_state["llm_probe_result"]=(config.model,False,"Connessione o risposta non valida.")
+        probe=st.session_state.get("llm_probe_result")
+        if probe and probe[0]==config.model:
+            (st.success if probe[1] else st.warning)(probe[2])
+
+
+def sidebar() -> None:
+    st.html('<div class="gas-sidebar-foot"></div>')
+    config=None
+    try:
+        config=_configuration()
+    except ValueError:
+        pass
+    modes=["Deterministic",config.model] if config else ["Deterministic"]
+    st.selectbox("Modalità di analisi",modes,index=1 if config and config.groq else 0,
+                 format_func=lambda value:MODALITA.get(value,value),key="execution_mode")
+    ai_controls()
+    with st.expander("Fonti del briefing AI",expanded=False):
+        st.checkbox("Aggiungi riepiloghi pubblici GIE",key="briefing_gie",
+                    help="Consulta AGSI+ e ALSI Italia e IIP al lancio del report. Se usi un modello remoto, invia solo indicatori pubblici con attribuzione, non record UMM originali.")
+        st.checkbox("Aggiungi analisi meteo (demo non commerciale)",key="briefing_weather",
+                    help="Consulta Open-Meteo solo con ENTSOG recente; i riepiloghi possono essere condivisi con il modello selezionato.")
+        st.caption("Le fonti sono consultate al lancio, con cache. Attiva solo se autorizzato all’uso e condivisione dei dati.")
+    if config and not config.local:
+        st.caption("Condividi solo domande e dati non riservati; estratti normativi e settlement esclusi.")
     st.html('<div class="sidebar-caption">Europe/Rome · Prototipo indipendente</div>')
 
 
@@ -272,8 +297,20 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
     stage.html(steps(None, grid=True))
     try:
         docs = library()
+        from .briefing_context import collect
+        from .operational_sources import gie_key
+        include_gie=bool(st.session_state.get("briefing_gie"))
+        include_weather=bool(st.session_state.get("briefing_weather"))
+        public_context={}
+        if include_gie or include_weather:
+            try:
+                key=gie_key(st.secrets) if include_gie else ""
+            except (FileNotFoundError,KeyError):
+                key=gie_key() if include_gie else ""
+            with st.spinner("Consultazione delle fonti pubbliche selezionate…"):
+                public_context=collect(database(),context,utc_now(),key=key,include_gie=include_gie,include_weather=include_weather)
         report = run_workflow(
-            context, docs, assumptions(), question, full=full, reasoner=reasoner(),
+            context, docs, assumptions(), question, full=full, reasoner=reasoner(),public_context=public_context,
             notify=lambda run: stage.html(steps(run, grid=True)),
         )
     except ValueError as error:
