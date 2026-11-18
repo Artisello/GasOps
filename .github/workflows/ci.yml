@@ -30,3 +30,7 @@ jobs:
         if: github.event_name == 'pull_request' && github.head_ref == 'feat/entsog-network-intelligence-step4'
         continue-on-error: true
         run: python -m gasops_app.entsog_network_probe
+      - name: ACER TERMINAL CSV smoke test (non-blocking upstream diagnostic)
+        if: github.event_name == 'pull_request' && github.head_ref == 'feat/acer-market-intelligence-step5'
+        continue-on-error: true
+        run: python -m gasops_app.acer_probe
