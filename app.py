@@ -41,4 +41,5 @@ with st.sidebar:
         for index in indices:
             st.page_link(pages[index])
     session.sidebar()
+    st.html('<div class="gas-byline"><strong>Prototipo per SNAM creato da Igor</strong><small>Progetto indipendente, non ufficiale.</small></div>')
 current.run()

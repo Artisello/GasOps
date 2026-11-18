@@ -12,7 +12,7 @@ from .operational_sources import (AGSI_SOURCE,GME_SOURCE,GME_TERMS,JARVIS_SOURCE
                                   gie_key,attributed_csv,attributed_iip_json,GIE_CREDIT,GIE_LINKS,GIE_TERMS)
 from .public_data import SourceUnavailable
 from .session import database
-from .visuals import local_time
+from .visuals import info, local_time
 from .iip_view import MISSING, coverage, display_row, export_rows, filter_messages, options, project_messages
 
 
@@ -28,11 +28,10 @@ def configured_key():
 def operational_context():
     """Standalone view: no demand source filters or forecast computation."""
     st.title("Stoccaggi e forniture")
-    st.caption("Security of supply · dati pubblici su stoccaggi, GNL, indisponibilità e stime di rete.")
     key=configured_key()
     if not key:
         st.info("Fonti GIE non configurate. Jarvis resta disponibile; consulta la configurazione qui sotto.")
-    with st.expander("Configurazione e accesso API"):
+    with st.popover("Accesso API",icon=":material/info:"):
         st.caption("Chiave GIE configurata; verifica al caricamento." if key else "Imposta GASOPS_GIE_API_KEY nei Secrets di Streamlit e riavvia l’app.")
     selected=st.radio("Fonte operativa",["AGSI+","ALSI","IIP","Jarvis"],horizontal=True,key="operational_platform",
                       format_func={"AGSI+":"AGSI+ · Stoccaggi","ALSI":"ALSI · GNL","IIP":"IIP · Indisponibilità","Jarvis":"Jarvis · Rete"}.__getitem__)
@@ -48,10 +47,8 @@ def operational_context():
 
 def _jarvis_panel():
     st.markdown("[Apri i dati pubblici Snam Jarvis]("+JARVIS_SOURCE+")")
-    st.write("Importa una selezione delle stime pubbliche del giorno-gas G: prelievo atteso, SAS e linepack atteso.")
-    st.caption("Il modello CSV GasOps non è un export nativo Jarvis. Riporta manualmente i valori pubblici "
-               "autorizzati, convertiti in GWh, con data di pubblicazione ISO 8601 e offset. "
-               "Non caricare report riservati o bilanci di singoli utenti. Non vengono inviati a LLM o salvati.")
+    st.caption("Importazione manuale · solo dati pubblici, non riservati.")
+    info("Info importazione","Prelievo atteso, SAS e linepack atteso. Il modello CSV GasOps non è un export nativo Jarvis.","Riporta i valori pubblici autorizzati in GWh, con pubblicazione ISO 8601 e offset. Non caricare report riservati o bilanci di singoli utenti. I file non vengono inviati a LLM o salvati.")
     st.download_button("Scarica modello CSV",jarvis_template(),"gasops-jarvis-template.csv","text/csv")
     file=st.file_uploader("CSV normalizzato",type=["csv"],key="jarvis_public_extract")
     if file is not None:
@@ -72,7 +69,7 @@ def _jarvis_panel():
             with st.expander("Versioni e provenienza"):
                 st.dataframe(result["versions"],hide_index=True,width="stretch")
                 st.text("SHA-256 · "+result["sha256"])
-            st.caption("Le stime restano stime. Il SAS viene riportato, non derivato dalla differenza offerta-domanda.")
+            info("Info SAS","Stime dichiarate dall’operatore. Il SAS viene riportato, non derivato dalla differenza offerta-domanda.")
         except ValueError as error:
             st.warning(str(error))
 
@@ -154,7 +151,6 @@ def _inventory_panel(platform,loader,key):
     chart=frame.set_index("gas_day")[[col]]
     chart=chart.reindex(pd.date_range(chart.index.min(),chart.index.max(),freq="D").date)
     st.line_chart(chart.rename(columns={col:labels[col]+" · "+GIE_CREDIT[platform]}))
-    _credit(platform)
     with st.expander("Dettaglio giornaliero"):
         headers={"gas_day":"Giorno gas","status":"Stato","stock_twh":"Giacenza (TWh)","capacity_twh":"Capacità (TWh)",
                  "fill_pct":"Riempimento (%)","withdrawal_gwh_d":"Erogazione (GWh/d)","injection_gwh_d":"Iniezione (GWh/d)",
@@ -164,14 +160,13 @@ def _inventory_panel(platform,loader,key):
         st.dataframe(frame.assign(source=result["source"]).rename(columns=headers),hide_index=True,width="stretch")
         st.download_button("Esporta CSV con fonte",attributed_csv(result),
                            "gasops-gie-"+platform.lower().replace("+","")+".csv","text/csv",key=platform+"_csv")
-    st.caption("C = confermato, E = stimato, N = assente. Non equivale a disponibilità commerciale. "
-               "Per ALSI il rapporto send-out/riferimento usa la capacità dichiarata.")
+    info("Info indicatori","C = confermato, E = stimato, N = assente. Non equivale a disponibilità commerciale.","Per ALSI il rapporto send-out/riferimento usa la capacità dichiarata.")
 
 
 def _iip_panel(key):
     st.subheader("Messaggi urgenti di mercato (UMM)")
-    st.caption("Indisponibilità e informazioni pubblicate dagli operatori. I messaggi non equivalgono "
-               "a eventi unici o a capacità persa aggregata.")
+    st.caption("Messaggi UMM · non misura della capacità persa.")
+    info("Info UMM","Informazioni e indisponibilità pubblicate dagli operatori. Il conteggio non indica eventi unici o capacità persa aggregata.")
     _credit("IIP")
     if not key:
         st.info("Per consultare i messaggi serve una chiave GIE abilitata.")
@@ -190,7 +185,8 @@ def _iip_panel(key):
     period=(result["request_from"]+" – "+result["request_to"]
             if result.get("request_from") and result.get("request_to") else "Non indicato")
     with actions[2]:
-        st.caption("Fonte acquisita: "+local_time(result["acquired"])+(" · cache" if result["cached"] else ""))
+        if result["cached"]:
+            st.caption("Da cache")
     if result["failed"] or utc_now()-result["acquired"]>timedelta(hours=2) or st.session_state.get("gie_iip",{}).get("error"):
         st.warning("Aggiornamento non riuscito o dati non recenti. Consulta il portale IIP.")
     if state=="Parziale":
@@ -206,7 +202,6 @@ def _iip_panel(key):
         with col,st.container(border=True):
             st.caption(label)
             st.markdown("**"+value+"**")
-            st.caption(detail)
     rows=project_messages(result["messages"])
     if not rows:
         st.info("Nessun messaggio restituito per questa richiesta. Non dimostra assenza di indisponibilità.")
@@ -219,13 +214,12 @@ def _iip_panel(key):
         statuses=c2.multiselect("Stato UMM",options(rows,"status"),key="iip_status",placeholder="Tutti")
         types=c3.multiselect("Tipo di evento",options(rows,"event_type"),key="iip_type",placeholder="Tutti")
         visible=filter_messages(rows,query=search,countries=countries,statuses=statuses,types=types)
-        st.caption(f"{len(visible)} di {len(rows)} record ricevuti · ordinati per pubblicazione quando il fuso è noto. "
-                   "I campi non riconosciuti restano non indicati.")
+        st.caption(f"{len(visible)} / {len(rows)} messaggi")
         if visible:
             st.dataframe([display_row(r) for r in visible],hide_index=True,width="stretch",
                          column_config={"Asset":st.column_config.TextColumn(width="medium"),
                                         "Motivo":st.column_config.TextColumn(width="large")})
-            st.caption("Fonte: "+GIE_CREDIT["IIP"]+" · capacità riportata dal singolo messaggio; nessuna somma.")
+            info("Info tabella","Ordinamento per pubblicazione quando il fuso è noto. I campi non riconosciuti restano non indicati.","Capacità del singolo messaggio, senza aggregazione. Fonte: "+GIE_CREDIT["IIP"])
             st.download_button("Esporta CSV filtrato",export_rows(visible,result),"gasops-iip-messaggi.csv",
                                "text/csv",key="iip_csv",icon=":material/download:")
             by_index={r["record_index"]:r for r in visible}
@@ -233,8 +227,8 @@ def _iip_panel(key):
                 format_func=lambda i:f'{i+1} · {by_index[i]["message_id"] or "ID non indicato"} · {by_index[i]["asset"] or MISSING}',
                 key="iip_detail")
             row=by_index[chosen]
-            with st.container(border=True):
-                st.markdown("**Dettaglio UMM**")
+            with st.expander("Dettaglio UMM"):
+                st.markdown("**Messaggio selezionato**")
                 a,b=st.columns(2)
                 with a:
                     for label,field in (("Asset","asset"),("Operatore","operator"),("Paese","country"),
@@ -247,8 +241,7 @@ def _iip_panel(key):
                         st.caption(label)
                         st.text(row.get(field) or MISSING)
                 st.caption("Dati originali e possibili intervalli di capacità multipli")
-                with st.expander("Record originale selezionato"):
-                    st.json(result["messages"][chosen],expanded=False)
+                st.json(result["messages"][chosen],expanded=False)
                 st.caption("Fonte: "+GIE_CREDIT["IIP"])
         else:
             st.info("Nessun risultato corrisponde ai filtri. Modifica la ricerca.")

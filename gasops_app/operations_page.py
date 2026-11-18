@@ -6,12 +6,13 @@ from decimal import Decimal
 import streamlit as st
 
 from .operations_ledger import REFERENCE, allocate_lng_deviation, monthly_preview, revision_pairs, sample_rows
+from .visuals import info
 
 
 def _ledger_detail():
     st.subheader("Registro dei bilanci")
-    st.caption("Demo sintetica · Codice di Rete XCII e Codice di Rigassificazione 2023-I · Nessuna fatturazione ufficiale")
-    st.info("Le edizioni sono fonti di studio. La vigenza, le eccezioni e le convenzioni contabili richiedono convalida specialistica.")
+    st.caption("Demo sintetica · nessuna fatturazione ufficiale")
+    info("Info registro","Codice di Rete XCII e Codice di Rigassificazione 2023-I: edizioni di studio. Vigenza, eccezioni e convenzioni contabili richiedono convalida specialistica.")
     rows = sample_rows()
     pairs = revision_pairs(rows)
     summary = monthly_preview(rows, "DEMO-001", 2026, 9)
@@ -21,9 +22,11 @@ def _ledger_detail():
     a.metric("Partite DS negativo", eur(summary["short_group_eur"]))
     b.metric("Partite DS positivo", eur(summary["long_group_eur"]))
     c.metric("Saldo simulato utente", eur(summary["net_user_cash_eur"]))
-    st.caption("Settembre 2026 · 30 giorni sintetici · imponibili illustrativi, esclusi IVA, altri corrispettivi e aggiustamenti. Il saldo non è una fattura.")
+    st.caption("Settembre 2026 · imponibili illustrativi, IVA esclusa · non fattura")
     st.subheader("Bilanci giornalieri e rettifiche")
-    st.latex(r"DS_k=I_k+S_k+T_k^N-P_k")
+    with st.popover("Info formula",icon=":material/info:"):
+        st.latex(r"DS_k=I_k+S_k+T_k^N-P_k")
+        st.caption(REFERENCE+" · PDF pp. 370–373, 394, 588.")
     data = []
     for prev, last in pairs:
         data.append({"Giorno-gas": last.day.isoformat(), "Versione": last.version,
@@ -40,9 +43,8 @@ def _ledger_detail():
     writer.writeheader()
     writer.writerows(data)
     st.download_button("Esporta registro CSV", output.getvalue(), "gasops-registro-sintetico.csv", "text/csv")
-    st.caption(REFERENCE + " · PDF pp. 370–373, 394, 588.")
     st.subheader("Riconciliazione GNL")
-    st.write("Ripartizione pro-quota dello scostamento già al netto dei margini concordati (cap. 9 §3.2.1, PDF p. 96).")
+    info("Info GNL","Ripartizione pro-quota dello scostamento già al netto dei margini concordati (cap. 9 §3.2.1, PDF p. 96).")
     net = st.number_input("Scostamento netto ipotetico (MWh)", min_value=-10000, max_value=10000, value=1000, step=100)
     programmed = {"DEMO-A": Decimal(6000), "DEMO-B": Decimal(4000)}
     try:

@@ -54,6 +54,13 @@ def header(title: str, meta: str, action: str | None = None, disabled: bool = Fa
     return clicked
 
 
+def info(label: str, *paragraphs: str) -> None:
+    """Native, keyboard-accessible contextual help; do not use for active warnings."""
+    with st.popover(label,icon=":material/info:"):
+        for paragraph in paragraphs:
+            st.write(paragraph)
+
+
 def heading(label: str, right: str = "") -> None:
     st.html(f'<div class="gas-panel-head"><h2>{escape(label)}</h2>{right}</div>')
 

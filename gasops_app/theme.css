@@ -18,8 +18,8 @@
   background: var(--gas-bg); height: 2rem !important; min-height: 0 !important;
 }
 .stApp [data-testid="stMainBlockContainer"] {
-  max-width: 1740px;
-  padding: 2.55rem clamp(1rem, 2.1vw, 2.25rem) 2.5rem;
+  max-width: 1500px;
+  padding: 2.35rem clamp(1rem, 2vw, 2rem) 2rem;
 }
 [data-testid="stSidebar"] {
   min-width: 234px !important;
@@ -42,7 +42,7 @@
 .gas-mark span:nth-child(2) { height: 19px; }
 .gas-mark span:nth-child(3) { height: 13px; opacity: 0.78; }
 [data-testid="stSidebar"] [data-testid="stPageLink-NavLink"] {
-  min-height: 2.55rem;
+  min-height: 2.25rem;
   padding-inline: 0.58rem;
   border: 1px solid transparent;
   border-radius: 0.4rem;
@@ -57,9 +57,9 @@
   border-color: #24554e;
 }
 .gas-sidebar-foot {
-  margin-top: 1.45rem;
+  margin-top: .65rem;
   border-top: 1px solid var(--gas-border);
-  padding-top: 1.0rem;
+  padding-top: .55rem;
 }
 .gas-sidebar-foot p { color: var(--gas-muted); font-size: 0.75rem; }
 .sidebar-caption { font-size: 0.70rem; color: var(--gas-muted); margin-top: 1.5rem; }
@@ -85,7 +85,7 @@
 .gas-chip.simulation { color: #d5baff; background: #2b2241; border-color: #44365e; }
 .gas-chip.high, .gas-chip.failed { color: var(--gas-rose); background: #38232e; border-color: #593141; }
 .gas-chip.running { color: #a2c0ff; background: #192947; border-color: #2d456b; }
-.gas-topline { padding-bottom: 0.85rem; border-bottom: 1px solid var(--gas-border); }
+.gas-topline { padding-bottom: 0.55rem; border-bottom: 1px solid var(--gas-border); }
 .gas-controls { margin-bottom: 0.12rem; }
 .stApp [data-testid="stButton"] button[kind="primary"],
 .stApp [data-testid="stFormSubmitButton"] button[kind="primary"] {
@@ -198,3 +198,17 @@ div[data-testid="stVerticalBlockBorderWrapper"] { border-color: var(--gas-border
   .gas-kpi { min-height: 0; }
   .gas-header-meta { gap: .4rem; }
 }
+
+/* Shared, compact layout. Keep native Streamlit focus and widget accessibility. */
+.gas-byline { border-top: 1px solid var(--gas-border); margin-top: .8rem; padding: .8rem .35rem .2rem; font-size: .76rem; color: var(--gas-text); line-height: 1.45; }
+.gas-byline strong { font-weight: 550; display: block; }
+.gas-byline small { display: block; color: var(--gas-muted); font-size: .70rem; margin-top: .22rem; }
+.gas-nav-group { margin-top: .38rem; }
+.gas-header-meta { margin-top: .3rem; }
+.gas-panel-head { padding-bottom: .45rem; }
+.gas-kpi { min-height: 5.85rem; padding: .75rem .8rem; }
+.gas-kpi .readout { margin: .25rem 0; }
+.stApp [data-testid="stPopoverButton"] { border-color: var(--gas-border); }
+.stApp [data-testid="stPopoverButton"]:focus-visible { outline: 2px solid var(--gas-blue); outline-offset: 2px; }
+.stApp [data-testid="stText"] { line-height: 1.5; }
+@media (max-width: 760px) { .gas-kpi { min-height: 0; } }
