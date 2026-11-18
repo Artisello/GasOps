@@ -1,7 +1,6 @@
 """Read-only one-period Monte Carlo workbench; all scenarios illustrative."""
 import json
 
-import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -11,7 +10,7 @@ from .models import Kind, utc_now
 from .risk import RiskSettings, forecast_uncertainty
 from .risk_view import PRESETS, Stress, compare_stress, gap_distribution, cost_distribution
 from .session import assumptions, fixture, save_assumptions
-from .visuals import BLUE, ROSE, TEAL, info, kpi_grid, local_time, plot
+from .visuals import BLUE, ROSE, TEAL, info, kpi_grid, plot
 
 
 def _graph(title,unit):
@@ -54,7 +53,6 @@ def _results(result,base,r,unit):
                                             ("Costo lordo medio (€)","expected_gross_cost_eur"))],
                          hide_index=True,width="stretch")
     energy,cost,method=st.tabs(["Carenza di gas","Impatto economico","Ipotesi e metodo"])
-    confidence=st.session_state.get("risk_confidence","95")
     with energy:
         level=st.radio("Livello di analisi",["95","99"],format_func=lambda v:v+"%",horizontal=True,
                        key="risk_confidence")
@@ -161,7 +159,7 @@ def risk_page():
     stress=PRESETS.get(preset,Stress())
     if preset!="Personalizzato":
         st.caption("Domanda "+numero(stress.demand_pct,0,signed=True)+"% · offerta "+numero(stress.supply_pct,0,signed=True)+"% · prezzo "+numero(stress.price_delta,0,signed=True)+" €/MWh (se attivo).")
-    form_key=f"risk_form_v2_{data.fingerprint[:14]}_{use_forecast}_{state.model}_{preset}"
+    form_key=f"risk_form_v2_{data.fingerprint[:14]}_{use_forecast}_{state.model}"
     with st.container(border=True,key="panel_risk_inputs"):
         st.subheader("Imposta le ipotesi")
         with st.form(form_key,border=False):
@@ -204,11 +202,12 @@ def risk_page():
             result,base=compare_stress(float(demand_base) if use_forecast else demand,supply,
                                         price if price_enabled else None,chosen,stress,
                                         demand_sd=sd,demand_sd_source=sd_source)
+            base_summary=base.copy()
             result.summary.update({**fingerprint,"source":origin.name,"source_kind":origin.kind.value,
                                    "grain":origin.grain,"source_period":facts.get("period"),
                                    "analysis_period":forecast_period or facts.get("period") or "Periodo ipotetico",
                                    "stress":stress.model_dump(mode="json"),"executed_at":utc_now().isoformat()})
-            st.session_state["risk_workspace_v2"]={"result":result,"base":base.copy()}
+            st.session_state["risk_workspace_v2"]={"result":result,"base":base_summary}
             save_assumptions(state.model_copy(update={"risk":chosen}))
         except (ValueError,ArithmeticError) as error:
             st.session_state.pop("risk_workspace_v2",None)
