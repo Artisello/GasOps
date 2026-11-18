@@ -232,3 +232,7 @@ repository/server; non si accettano nuovi upload temporanei. Gli upload
 effimeri di versioni precedenti non sono recuperabili dopo la scadenza della
 sessione: ricaricare i PDF originali. Nessun progetto/bucket configurato
 automaticamente dall'app. Verificare RLS e persistenza sul deployment.
+
+### Archivio pubblico senza Supabase (prototipo)
+
+Per il demo pubblico, i documenti autorizzati possono essere pubblicati in `data/public-regulatory/` del repository. Questa cartella è deliberatamente separata da `data/regulatory/`, che rimane ignorata da Git. Da [GitHub](https://github.com/Artisello/GasOps/tree/main/data/public-regulatory) scegli Add file > Upload files; committa (o apri una PR se il ramo è protetto). Dopo il deployment, il programma legge i PDF direttamente dal repository distribuito. Non vengono inviati file all'esterno per la ricerca; l'uso del RAG remoto segue le regole di consenso già presenti. Non pubblicare dati riservati: i file rimangono anche nella cronologia Git. Limiti invariati: 8 documenti, 24 MiB per file, 64 MiB e 2.000 pagine complessive. Il caricamento direttamente dall'app richiede comunque Supabase. L'override GASOPS_PDF_DIR per il workspace documentale rimane disponibile e prevale sulla cartella pubblica; eventuali PDF locali preesistenti non vengono pubblicati automaticamente.

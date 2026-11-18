@@ -7,3 +7,6 @@ __pycache__/
 data/regulatory/*
 *.pdf
 .DS_Store
+
+# Explicitly public archive only. All other PDFs remain ignored.
+!data/public-regulatory/*.pdf
