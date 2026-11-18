@@ -26,3 +26,31 @@ def test_theme_has_focus_reflow_and_motion_preferences():
     assert ":focus-visible" in css and "prefers-reduced-motion:reduce" in css
     assert ".gas-chip" in css and "overflow-wrap:anywhere" in css
     assert "display:none" not in css.replace(" ","")
+
+
+def test_interactive_theme_contrast_and_consistency():
+    import tomllib
+
+    css=(ROOT/"gasops_app/theme.css").read_text()
+    tokens=dict(re.findall(r"--gas-([a-z-]+):\s*(#[0-9a-fA-F]{6})",css))
+    for bg in ("bg","panel","selected"):
+        if bg!="selected":
+            assert contrast(tokens["control"],tokens[bg])>=3
+        assert contrast(tokens["blue"],tokens[bg])>=3
+    assert contrast(tokens["teal"],tokens["selected"])>=4.5
+    for bg in ("teal","primary-hover"):
+        assert contrast(tokens["on-primary"],tokens[bg])>=4.5
+    theme=tomllib.loads((ROOT/".streamlit/config.toml").read_text())["theme"]
+    for key, token in (("primaryColor","teal"),("backgroundColor","bg"),
+                       ("secondaryBackgroundColor","panel"),("textColor","text"),
+                       ("borderColor","border")):
+        assert theme[key]==tokens[token]
+
+
+def test_native_interaction_and_local_reflow_rules():
+    css=(ROOT/"gasops_app/theme.css").read_text()
+    assert "--gas-target:2.75rem" in css
+    assert '[role="tablist"]' in css and "overflow-x:auto" in css
+    assert 'button[kind="primary"]:not(:disabled)' in css
+    assert "scroll-margin-block:4rem 1rem" in css
+    assert "font-variant-numeric:tabular-nums" in css
