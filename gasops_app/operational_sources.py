@@ -62,7 +62,7 @@ def number(value, *, signed=False):
         value=value.strip()
         # Official GIE v007 examples use decimal commas as well as dots.
         # Do not guess thousands separators or mixed-locale formats.
-        if re.fullmatch(r"[+-]?\\d+,\\d+",value):
+        if re.fullmatch(r"[+-]?\d+,\d+",value):
             value=value.replace(",",".")
     try:
         v=float(value)
