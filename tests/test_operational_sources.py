@@ -179,3 +179,20 @@ def test_iip_download_contract(monkeypatch):
     assert calls[0]["max_bytes"]==2_000_000
     assert calls[0]["headers"]["x-key"]=="test-key"
     assert calls[0]["diagnostics"] is True
+
+
+def test_iip_diagnostic_preserves_page_metadata_without_response_values():
+    from gasops_app.operational_sources import parse_iip
+    raw={"data":[{"messageId":"fixture-private-value"}],"pagination":{"lastPage":"3","totalCount":58,
+          "next":"https://example.invalid/secret","privateToken":"secret-token"},
+         "total":20,"apiKey":"never-copy-this","message":"sensitive-text"}
+    result=parse_iip(json.dumps(raw),NOW)
+    assert result["partial"] is True and result["pages"] is None
+    d=result["pagination_diagnostic"]
+    assert d["returned_records"]==1 and d["requested_size"]==20
+    assert d["numeric_pagination_fields"]=={"total":20}
+    assert d["nested_pagination_fields"]=={"pagination":{"lastPage":3,"totalCount":58}}
+    rendered=json.dumps(d)
+    for forbidden in ("fixture-private-value","secret-token","never-copy-this","sensitive-text","example.invalid","apiKey"):
+        assert forbidden not in rendered
+    assert d["source_url"]=="https://iip.gie.eu/"
