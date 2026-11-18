@@ -22,7 +22,8 @@ def weather_panel(context):
             and not origin.archive and origin.name.startswith("ENTSOG")):
         return
     with st.container(border=True,key="panel_weather"):
-        st.subheader("Come il meteo può influenzare i consumi")
+        st.subheader("Meteo e consumi di gas")
+        st.caption("Italia · Milano, Roma e Napoli · scenario dei prelievi SRG")
         info("Info meteo","Open-Meteo · temperature orarie allineate al giorno gas (06:00–06:00). Milano, Roma e Napoli a pesi uguali; HDD base 18 °C.","L’API gratuita è riservata all’uso non commerciale. Nessuna richiesta senza attivazione.")
         consent=st.checkbox("Attiva meteo automatico · demo non commerciale",key="weather_demo_consent")
         if not consent:
@@ -60,7 +61,7 @@ def weather_panel(context):
         mode="Meteo archiviato a 24 ore" if result["evaluation"]=="archived_day1" else "Meteo storico realizzato"
         a,b,c=st.columns(3)
         a.metric("Errore senza meteo",numero(result["mae"]["calendar"])+" GWh")
-        b.metric("Errore con meteo per settori",numero(result["mae"]["sector_weather"])+" GWh")
+        b.metric("Errore con meteo",numero(result["mae"]["sector_weather"])+" GWh")
         base=result["mae"]["calendar"]
         change=(result["mae"]["sector_weather"]/base-1)*100 if base>0 else None
         c.metric("Variazione errore",numero(change,signed=True)+"%" if change is not None else "—")
@@ -70,10 +71,11 @@ def weather_panel(context):
         frame=pd.DataFrame(result["points"]).set_index("period")
         st.line_chart(frame[["calendar_gwh","estimate_gwh"]].rename(columns={
             "calendar_gwh":"Calendario (GWh)","estimate_gwh":"Meteo settoriale (GWh)"}))
-        st.bar_chart(frame[list(SECTORS)].rename(columns=SECTORS),stack=True)
-        st.dataframe(frame.reset_index().rename(columns={"period":"Giorno gas","temperature_c":"Temperatura (°C)",
-            "hdd":"HDD","hours":"Ore","calendar_gwh":"Calendario (GWh)","estimate_gwh":"Totale meteo (GWh)",
-            **{k:v+" (GWh)" for k,v in SECTORS.items()}}),hide_index=True,width="stretch")
+        with st.expander("Dettaglio per settore e temperature"):
+            st.bar_chart(frame[list(SECTORS)].rename(columns=SECTORS),stack=True)
+            st.dataframe(frame.reset_index().rename(columns={"period":"Giorno gas","temperature_c":"Temperatura (°C)",
+                "hdd":"HDD","hours":"Ore","calendar_gwh":"Calendario (GWh)","estimate_gwh":"Totale meteo (GWh)",
+                **{k:v+" (GWh)" for k,v in SECTORS.items()}}),hide_index=True,width="stretch")
         with st.expander("Validazione dei modelli e metodologia"):
             st.dataframe([{"Modello":LABELS[k],"MAE (GWh)":round(v,2)}
                           for k,v in result["mae"].items()],hide_index=True)

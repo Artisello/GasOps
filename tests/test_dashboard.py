@@ -249,3 +249,37 @@ def test_overview_has_plain_language_and_responsive_cards(monkeypatch,tmp_path):
     assert any('gas-kpi-grid' in e.proto.body for e in app.get("html"))
     assert app.button(key="analysis_launch").label=="Genera bollettino di mercato"
     assert any(e.label=="Fonti e aggiornamento" for e in app.expander)
+
+
+def test_market_scope_explicit_and_source_failure_preserves_scope(monkeypatch,tmp_path):
+    from gasops_app.session import market_scope, PUBLIC, DAILY, ARCHIVE, DEMO
+    assert market_scope(PUBLIC)==("Italia","Bilancio nazionale mensile")
+    assert "non totale nazionale" in market_scope(DAILY)[1]
+    assert "2015–2021" in market_scope(ARCHIVE)[1]
+    assert market_scope(DEMO)[0]=="Simulazione"
+    monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
+    def unavailable(*args,**kwargs):
+        raise SourceUnavailable("Fonte non disponibile")
+    monkeypatch.setattr("gasops_app.session.load_daily",unavailable)
+    app=AppTest.from_string("from gasops_app.dashboard import market\nmarket()",default_timeout=30)
+    app.session_state["selected_source"]=DAILY
+    app.run()
+    assert not app.exception
+    assert any("Italia · rete Snam (SRG)" in e.value and "non totale nazionale" in e.value for e in app.markdown)
+    assert app.error[0].value=="Fonte non disponibile"
+
+
+def test_market_layout_and_no_weather_request_for_demo(monkeypatch,tmp_path):
+    monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
+    def forbidden(*args,**kwargs):
+        raise AssertionError("Weather unavailable for demo")
+    monkeypatch.setattr("gasops_app.weather_page.analyse_gas_day",forbidden)
+    app=AppTest.from_string("from gasops_app.dashboard import market\nmarket()",default_timeout=30)
+    app.session_state["selected_source"]=DEMO
+    app.run()
+    assert not app.exception
+    assert any("**Simulazione**" in e.value for e in app.markdown)
+    assert [tab.label for tab in app.tabs]==["Consumi e previsioni","Composizione e prezzi","Meteo","Modelli e dati"]
+    assert any("Variazione dei consumi" in e.proto.body for e in app.get("html"))
+    assert any("Dati osservati e previsioni"==e.label for e in app.expander)
+    assert any("Provenienza e metodologia"==e.label for e in app.expander)

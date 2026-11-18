@@ -220,6 +220,16 @@ def _choose_source(page: str, source: str) -> None:
     st.session_state[f"{page}_dataset"] = source
 
 
+def market_scope(name: str) -> tuple[str,str]:
+    """Explicit scope, never infer the geography from a display title."""
+    return {
+        PUBLIC:("Italia","Bilancio nazionale mensile"),
+        DAILY:("Italia · rete Snam (SRG)","Prelievi giornalieri · non totale nazionale"),
+        ARCHIVE:("Italia · archivio storico","Consumi giornalieri 2015–2021 · non dati attuali"),
+        DEMO:("Simulazione","Dati fittizi · nessuna copertura geografica reale"),
+    }[name]
+
+
 def source_filters(page: str, *, lookback: bool = True) -> Selection:
     ctrl = st.columns([3, 1.35, 1.3] if lookback else [3, 1.3], vertical_alignment="bottom")
     stored = st.session_state.get("selected_source", PUBLIC)
@@ -249,7 +259,9 @@ def source_filters(page: str, *, lookback: bool = True) -> Selection:
                              format_func=MODELLI.__getitem__, key=f"{page}_model",
                              help="Automatico usa il modello con l’errore medio più basso sugli stessi periodi storici.")
         save_assumptions(previous.model_copy(update={"model": model}))
-    if name in (ARCHIVE,DEMO):
+    if page=="market":
+        pass  # Geographic scope is already shown directly under the page title.
+    elif name in (ARCHIVE,DEMO):
         st.caption("Archivio storico · non mercato attuale" if name==ARCHIVE else "Dati sintetici · simulazione")
     elif name==DAILY:
         st.caption("Prelievi SRG · perimetro parziale")

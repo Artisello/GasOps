@@ -150,3 +150,7 @@ Il wrapper SQLite non è memorizzato nella cache delle risorse Streamlit: una nu
 ### Panoramica accessibile
 
 Indicatori principali in griglia adattiva, interpretazione in italiano semplice basata esclusivamente sui dati selezionati, bollettino con azione e risultato nello stesso pannello, grafico principale con legenda esplicita, fonti e approfondimenti secondari. Le serie di settore e prezzi restano in Mercato e previsioni; le sezioni operative mantengono i percorsi e i calcoli. Terminologia più accessibile, con etichette tecniche e avvisi sulle simulazioni conservati. Nessun nuovo servizio, nessuna dipendenza. Layout da verificare sul deployment desktop e mobile.
+
+### Mercato e previsioni: area geografica e gerarchia
+
+Perimetro esplicito sotto il titolo: Italia nazionale mensile (Eurostat/ARERA), rete Snam-SRG parziale giornaliera (ENTSOG), archivio italiano 2015–2021 (JRC), simulazione senza copertura reale. Tre indicatori principali con periodo osservato/stimato; schede Consumi e previsioni, Composizione e prezzi, Meteo, Modelli e dati. Le anomalie di qualità restano visibili anche nella vista principale. Il meteo resta condizionale e mantiene l'attivazione esplicita non commerciale, stessa cache e chiamate; Streamlit renderizza tutte le schede, quindi non è un caricamento lazy. Nessuna nuova copertura geografica UE, nessun nuovo modello, nessuna nuova dipendenza. I dati UE di stoccaggio e GNL restano nella pagina dedicata. Verifica visuale sul deployment ancora necessaria.
