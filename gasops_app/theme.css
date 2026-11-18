@@ -49,7 +49,6 @@
   color: var(--gas-muted);
 }
 [data-testid="stSidebar"] [data-testid="stPageLink-NavLink"] p { font-size: 0.80rem; }
-[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"][href=""],
 [data-testid="stSidebar"] [data-testid="stPageLink-NavLink"][aria-current="page"],
 [data-testid="stSidebar"] [data-testid="stPageLink-NavLink"][aria-selected="true"] {
   color: var(--gas-teal);
@@ -244,3 +243,48 @@ div[data-testid="stVerticalBlockBorderWrapper"] { border-color: var(--gas-border
 .st-key-panel_storage_fill [data-testid="stProgress"] { margin-top:.15rem; }
 .st-key-panel_storage_fill h3 { font-size:clamp(1.9rem,3vw,2.6rem); font-variant-numeric:tabular-nums; letter-spacing:-.045em; }
 .st-key-panel_supply_history h2 { font-size:1.15rem; }
+
+/* Sidebar: keep the home entry identifiable even when another page is active. */
+[data-testid="stSidebar"] .gas-brand { padding-bottom:.45rem; }
+[data-testid="stSidebar"] .gas-nav-group {
+  margin:.68rem .58rem .06rem; font-size:.68rem;
+  font-weight:650; letter-spacing:.035em;
+}
+[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"] {
+  min-height:2.4rem; padding:.38rem .65rem;
+  border-radius:.5rem; color:var(--gas-muted);
+  transition:background-color .12s ease, color .12s ease;
+}
+[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"] p {
+  font-size:.85rem; font-weight:500; line-height:1.35;
+}
+[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"]:hover {
+  background:var(--gas-panel-hover); color:var(--gas-text);
+}
+[data-testid="stSidebar"] [class*="st-key-gas_nav_item_"][class*="_active"] [data-testid="stPageLink-NavLink"],
+[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"][aria-current="page"],
+[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"][aria-selected="true"] {
+  background:#14302f; color:var(--gas-teal); border-color:#24554e;
+  box-shadow:inset 3px 0 0 var(--gas-teal);
+}
+[data-testid="stSidebar"] :is(.st-key-gas_nav_home_idle,.st-key-gas_nav_home_active) [data-testid="stPageLink-NavLink"] {
+  min-height:2.85rem; padding:.55rem .7rem;
+  border:1px solid #345b59; border-radius:.62rem;
+  background:#14282e; color:var(--gas-text);
+}
+[data-testid="stSidebar"] :is(.st-key-gas_nav_home_idle,.st-key-gas_nav_home_active) [data-testid="stPageLink-NavLink"] p {
+  font-size:.93rem; font-weight:700;
+}
+[data-testid="stSidebar"] .st-key-gas_nav_home_idle [data-testid="stPageLink-NavLink"]:hover {
+  background:#1c383a; border-color:#438779;
+}
+[data-testid="stSidebar"] .st-key-gas_nav_home_active [data-testid="stPageLink-NavLink"] {
+  background:#194b42; color:#eafff7; border-color:#438779;
+  box-shadow:inset 3px 0 0 var(--gas-teal);
+}
+[data-testid="stSidebar"] .gas-nav-settings {
+  border-top:1px solid var(--gas-border); padding-top:.8rem; margin-top:.8rem;
+}
+@media (prefers-reduced-motion:reduce) {
+  [data-testid="stSidebar"] [data-testid="stPageLink-NavLink"] { transition:none; }
+}
