@@ -52,9 +52,12 @@ def operational_context():
         panel()
     else:
         from .jarvis_archive_page import panel as archive_panel
-        mode=st.radio("Vista rete Snam",["Stime infragiornaliere","Archivio pubblicazioni"],horizontal=True,key="jarvis_view")
+        mode=st.radio("Vista rete Snam",["Stime infragiornaliere","Archivio pubblicazioni","Importazione nativa"],horizontal=True,key="jarvis_view")
         if mode=="Stime infragiornaliere":
             _jarvis_panel()
+        elif mode=="Importazione nativa":
+            from .jarvis_native_page import panel as native_panel
+            native_panel()
         else:
             archive_panel()
 
