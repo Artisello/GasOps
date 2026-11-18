@@ -79,7 +79,12 @@ def library() -> Library:
     path = Path(os.environ.get("GASOPS_PDF_DIR") or ROOT / "data" / "regulatory")
     uploads = st.session_state.get("pdf_uploads", ())
     with st.spinner("Indicizzazione dei documenti…", show_time=False):
-        return indexed_library((*read_local_pdfs(path), *uploads))
+        local = read_local_pdfs(path)
+        # The process-wide resource cache is for server-provided public PDFs only.
+        # Never include session uploads in its keys, arguments or cached results.
+        if uploads:
+            return Library((*local, *uploads))
+        return indexed_library(local)
 
 
 def assumptions() -> Assumptions:

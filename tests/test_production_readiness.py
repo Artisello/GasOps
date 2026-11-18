@@ -37,3 +37,25 @@ def test_monitor_vintage_is_after_acquisition(tmp_path):
     assert a.as_of("entsog",t)==[]
     assert a.as_of("entsog",end)[0][4]=="10"
     assert r["checked_at"]==end.isoformat()
+
+
+def test_public_library_cache_and_mixed_upload_isolation(monkeypatch,tmp_path):
+    public=(("public.pdf",b"public fixture"),)
+    private=(("private.pdf",b"private fixture"),)
+    state={}
+    calls=[]
+    monkeypatch.setattr(session.st,"session_state",state)
+    monkeypatch.setattr(session,"read_local_pdfs",lambda d:public)
+    monkeypatch.setattr(session,"Library",lambda documents:documents)
+    def cached(documents):
+        calls.append(documents)
+        return documents
+    monkeypatch.setattr(session,"indexed_library",cached)
+    assert session.library()==public
+    state["pdf_uploads"]=private
+    assert session.library()==public+private
+    state["pdf_uploads"]=(("another.pdf",b"another fixture"),)
+    assert session.library()==public+state["pdf_uploads"]
+    state.clear()
+    assert session.library()==public
+    assert calls==[public,public]
