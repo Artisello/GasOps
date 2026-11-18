@@ -135,9 +135,13 @@ def acquire(client,secret,first,last,now=None,clock=utc_now):
             part=parse(payload,kind,first,last,clock())
             if not part:notes.append(kind+": copertura zonale/oraria incompleta")
             rows.extend(part)
-        except (SourceUnavailable,ValueError,TypeError,KeyError):
-            notes.append(kind+": fonte non disponibile")
-    if not rows:raise SourceUnavailable("Nessuna previsione giornaliera completa disponibile")
+        except (SourceUnavailable,SourceSchemaError) as error:
+            notes.append(kind+": "+str(error))
+        except (ValueError,TypeError,KeyError):
+            notes.append(kind+": fonte non validabile")
+    if not rows:
+        detail=" · ".join(notes)
+        raise SourceUnavailable("Nessuna previsione giornaliera completa disponibile."+(" "+detail if detail else ""))
     return validate({"acquired":clock().isoformat(),"first":str(first),"last":str(last),"session":SESSION,"rows":rows}),notes
 
 
