@@ -54,3 +54,21 @@ def test_ai_failure_is_not_rendered_as_ai_response(monkeypatch,tmp_path):
     assert not app.exception
     assert any("Nessuna risposta AI generata" in w.value for w in app.warning)
     assert not any("**Risposta AI**"==m.value for m in app.markdown)
+
+
+def test_assistant_import_compatible_with_previous_session_module(monkeypatch):
+    import importlib
+
+    # Simulate a running Streamlit worker retaining the pre-UX session module.
+    monkeypatch.delattr(session,"ai_configured",raising=False)
+    monkeypatch.setattr(session,"_configuration",lambda:None)
+    module=importlib.reload(assistant_page)
+    assert not module.ai_configured()
+    config=LLMConfig("fixture-local","http://localhost:11434/v1")
+    monkeypatch.setattr(session,"_configuration",lambda:config)
+    assert module.ai_configured()
+
+    def invalid_config():
+        raise ValueError("Invalid configuration")
+    monkeypatch.setattr(session,"_configuration",invalid_config)
+    assert not module.ai_configured()

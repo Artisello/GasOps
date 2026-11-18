@@ -7,7 +7,8 @@ import streamlit as st
 from .italiano import ESITI, GRAVITA, TIPI
 from .models import Agent, AGENT_LABELS, Run, utc_now
 from .reports import markdown
-from .session import analysis_label, launch, market_scope, reasoner, source_filters, ai_activation_panel, ai_configured
+from . import session
+from .session import analysis_label, launch, market_scope, reasoner, source_filters, ai_activation_panel
 from .visuals import evidence, info, local_time, steps
 from .workflow import DAILY_BRIEFING
 
@@ -151,6 +152,18 @@ def _history():
                      format_func=lambda k:local_time(entries[k].started_at)+" · "+entries[k].question[:80])
         st.caption("Solo in questa sessione. Scarica le analisi per conservarle.")
         st.button("Svuota storico dell’assistente",key="assistant_clear",on_click=_clear)
+
+
+def ai_configured() -> bool:
+    """Read local configuration without requiring a newly added session symbol.
+
+    Streamlit can retain already imported modules across a source update.
+    Configuration checks must not activate a model or call a provider.
+    """
+    try:
+        return session._configuration() is not None
+    except ValueError:
+        return False
 
 
 def assistant_page():
