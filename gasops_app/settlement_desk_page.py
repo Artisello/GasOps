@@ -16,18 +16,17 @@ GME="https://www.mercatoelettrico.org/Home/Esiti/Gas/PrezzoSbilanciamento/Esiti/
 def panel():
     st.subheader("Controllo mensile")
     st.caption("Simulazione di settlement · IVA esclusa")
-    with st.expander("Fonti e importazione"):
+    with st.expander("Importa bilanci",expanded=STATE not in st.session_state):
         st.markdown(f"[Snam · Jarvis: bilanci e dati operativi]({JARVIS}) · [GME · parametri dei prezzi di sbilanciamento]({GME})")
         st.caption("Riferimenti alle fonti, non download automatici. Il CSV è uno schema I.G.O.R., non un formato Jarvis/GME: normalizza soltanto dati per i quali hai diritto d’uso. Prezzi forniti dall’utente, non stimati dal prezzo PSV.")
         st.download_button("Scarica modello CSV sintetico",template(),"igor-modello-bilanci.csv","text/csv",key="desk_template")
         st.warning("Non caricare dati aziendali riservati o identificativi reali sul prototipo pubblico.")
         with st.form("desk_upload"):
             f=st.file_uploader("CSV bilanci e versioni",type=["csv"],help="UTF-8, virgola come separatore, decimali con punto, fino a 2 MiB.")
-            consent=st.checkbox("Confermo che sto usando dati sintetici o autorizzati alla consultazione sul prototipo pubblico.")
             submitted=st.form_submit_button("Importa e valida CSV")
         if submitted:
-            if not f or not consent:
-                st.warning("Seleziona il file e conferma l’autorizzazione.")
+            if f is None:
+                st.warning("Seleziona un CSV.")
             elif f.size>MAX_BYTES:
                 st.warning("CSV superiore a 2 MiB.")
             else:
@@ -43,7 +42,7 @@ def panel():
             st.rerun()
     uploaded=st.session_state.get(STATE)
     if not uploaded and not st.checkbox("Mostra demo sintetica",key="daily_desk_demo"):
-        st.caption("Importa un registro autorizzato per eseguire il controllo mensile.")
+        st.caption("Carica un CSV o prova la demo sintetica.")
         return
     rows=uploaded["rows"] if uploaded else sample_rows()
     st.caption("CSV utente · non verificato dalla fonte · sessione corrente" if uploaded else "Demo sintetica · settembre 2026")

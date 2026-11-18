@@ -73,11 +73,11 @@ def _jarvis_panel(prefix="supply"):
         st.download_button("1. Scarica modello CSV",jarvis_template(),"igor-jarvis-template.csv","text/csv",key=prefix+"_jarvis_template")
         with st.form(prefix+"_jarvis_import"):
             file=st.file_uploader("2. Carica il CSV compilato",type=["csv"],key=prefix+"_jarvis_public_extract")
-            authorized=st.checkbox("Confermo autorizzazione e assenza di dati riservati.")
+            st.caption("CSV pubblico · solo sessione, senza dati riservati.")
             submitted=st.form_submit_button("Importa stime")
         if submitted:
-            if file is None or not authorized:
-                st.warning("Seleziona il CSV e conferma l’autorizzazione.")
+            if file is None:
+                st.warning("Seleziona un CSV.")
             elif file.size>1_000_000:
                 st.warning("CSV superiore a 1 MB.")
             else:

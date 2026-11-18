@@ -32,16 +32,15 @@ def month_option(values,key):
 
 def _import_tasks():
     with st.expander("Importa registro attività"):
-        st.warning("Solo dati sintetici o autorizzati alla consultazione pubblica. Nessun dato riservato.")
+        st.caption("Dati pubblici o sintetici · solo sessione, senza dati riservati.")
         st.download_button("Modello CSV",task_template(),"igor-attivita-modello.csv","text/csv",key="bso_template")
         info("Formato","ID fittizio, area, descrizione, scadenza, completamento. Date YYYY-MM-DD oppure timestamp ISO con offset (+01:00/+02:00 o Z). Completamento vuoto = aperto nel registro. Una scadenza con orario richiede un completamento con orario. Nessun invio al modello AI, nessun salvataggio persistente.")
         with st.form("bso_import",clear_on_submit=True):
             f=st.file_uploader("Registro CSV",type=["csv"])
-            consent=st.checkbox("Confermo autorizzazione e assenza di dati riservati.")
             submit=st.form_submit_button("Importa")
         if submit:
-            if f is None or not consent:
-                st.warning("Seleziona il CSV e conferma l’autorizzazione.")
+            if f is None:
+                st.warning("Seleziona un CSV.")
             elif f.size>MAX_BYTES:
                 st.error("CSV superiore a 1 MB.")
             else:

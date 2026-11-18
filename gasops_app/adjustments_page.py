@@ -18,10 +18,10 @@ def panel():
         st.download_button("Modello CSV",template(),"igor-aggiustamenti-modello.csv","text/csv",key="adj_template")
         with st.form("adj_import"):
             f=st.file_uploader("Esiti e baseline CSV",type=["csv"],key="adj_file")
-            ok=st.checkbox("Dati sintetici o autorizzati, non riservati; esiti e segni verificati.",key="adj_consent")
+            st.caption("Dati di sessione · ID fittizi; verifica segni e unità.")
             submit=st.form_submit_button("Aggiungi esiti")
         if submit:
-            if f is None or not ok:st.caption("Seleziona il CSV e conferma la provenienza.")
+            if f is None:st.caption("Seleziona un CSV.")
             elif f.size>MAX_BYTES:st.caption("File oltre 2 MiB.")
             else:
                 try:state[STATE]=merge(state.get(STATE),f.getvalue(),utc_now().date())

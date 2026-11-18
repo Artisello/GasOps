@@ -14,11 +14,11 @@ def panel():
         st.markdown(f"[Scarica pubblicazioni Jarvis]({SOURCE})")
         with st.form("jarvis_native_import"):
             f=st.file_uploader("File originale (uno alla volta)",type=["xlsx","zip","csv"],key="jarvis_native_file")
-            consent=st.checkbox("Confermo dati pubblici, autorizzati e non riservati.")
+            st.caption("Dati pubblici · solo sessione, senza dati riservati.")
             submit=st.form_submit_button("Importa",type="primary")
         if submit:
-            if not f or not consent:
-                st.warning("Seleziona il file e conferma l’autorizzazione.")
+            if f is None:
+                st.warning("Seleziona un file.")
             elif f.size>MAX_BYTES:
                 st.error("File superiore a 16 MiB.")
             else:

@@ -16,11 +16,11 @@ def _upload(kind,state,fields,parser):
     st.download_button("Modello CSV",m.template(fields),"igor-"+kind+"-modello.csv","text/csv",key=state+"_template")
     with st.form(state+"_form"):
         raw=st.file_uploader("Estratto CSV normalizzato",type="csv",key=state+"_file")
-        consent=st.checkbox("Confermo dati sintetici o autorizzati, senza identificativi reali.",key=state+"_consent")
+        st.caption("Solo dati pubblici o sintetici · ID fittizi.")
         submit=st.form_submit_button("Importa e valida")
     if submit:
-        if raw is None or not consent:
-            st.warning("Seleziona il file e conferma l’autorizzazione.")
+        if raw is None:
+            st.warning("Seleziona un CSV.")
         else:
             try:
                 st.session_state[state]=parser(raw.getvalue())

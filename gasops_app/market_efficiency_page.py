@@ -18,11 +18,11 @@ def panel(now,year,month):
         st.download_button("Modello CSV",m.template(),"igor-market-actions.csv","text/csv",key="market_eff_template")
         with st.form("market_eff_upload"):
             f=st.file_uploader("Estratto giornaliero",type="csv",key="market_eff_file")
-            consent=st.checkbox("Confermo fonte autorizzata, assenza di dati riservati e copertura dichiarata.")
+            st.caption("Dati pubblici o sintetici · solo sessione.")
             submit=st.form_submit_button("Importa e valida")
         if submit:
-            if f is None or not consent:
-                st.warning("Seleziona il file e conferma l’autorizzazione.")
+            if f is None:
+                st.warning("Seleziona un CSV.")
             else:
                 try:
                     st.session_state[STATE]=m.parse(f.getvalue(),cutoff)
