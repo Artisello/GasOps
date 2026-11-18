@@ -6,7 +6,8 @@ import streamlit as st
 
 from .settlement_desk import MAX_BYTES, csv_text, daily_controls, monthly_summary, parse_csv, template
 from .operations_ledger import sample_rows
-from .visuals import kpi_grid, info
+from .visuals import kpi_grid, info, plot
+from .balancing_charts import daily_bars
 
 STATE="settlement_desk_csv_v1"
 JARVIS="https://jarvis.snam.it/public-data?lang=it"
@@ -69,14 +70,16 @@ def panel():
         st.caption("Sbilanciamenti (MWh)")
         frame=pd.DataFrame({"Giorno":pd.to_datetime([r["day"] for r in daily]),
                             "DS":[float(r["ds_mwh"]) if r["ds_mwh"] is not None else None for r in daily]})
-        st.bar_chart(frame,x="Giorno",y="DS")
+        if frame.DS.notna().any():
+            plot(daily_bars(frame,["DS"],"MWh"),"balancing_daily_ds")
+        else:st.caption("Nessun saldo valorizzabile.")
     with b:
         st.caption("Rettifiche: quantità e prezzo (€)")
         bridge=pd.DataFrame({"Giorno":pd.to_datetime([r["day"] for r in daily]),
                             "Quantità":[float(r["quantity_effect_eur"]) if r["quantity_effect_eur"] is not None else None for r in daily],
                             "Prezzo":[float(r["price_effect_eur"]) if r["price_effect_eur"] is not None else None for r in daily]})
         if bridge[["Quantità","Prezzo"]].notna().any().any():
-            st.bar_chart(bridge,x="Giorno",y=["Quantità","Prezzo"],stack=False)
+            plot(daily_bars(bridge,["Quantità","Prezzo"],"€"),"balancing_daily_revision")
         else:
             st.info("Nessuna coppia con scomposizione valorizzabile.")
     mode=st.radio("Mostra giornate",["Tutte","Eccezioni","Rettifiche"],horizontal=True,key="daily_desk_filter")
