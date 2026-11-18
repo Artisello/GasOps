@@ -119,7 +119,7 @@ def _balancing(demo,now):
         # Explicit synthetic snapshots, not the published Jarvis feed.
         days=[date(2026,11,d) for d in range(1,18) if d!=7]
         frame=pd.DataFrame([{"gas_day":d,"published_at":datetime(d.year,d.month,d.day,18,tzinfo=ROME),
-                             "sas_gwh":float((d*13)%71-35)} for d in days])
+                             "sas_gwh":float((d.day*13)%71-35)} for d in days])
         st.caption("SAS sintetico · novembre 2026")
     else:
         imported=st.session_state.get("jarvis_public_snapshot_v1")

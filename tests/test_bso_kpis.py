@@ -72,6 +72,8 @@ def test_bso_page_demo_and_imported_empty():
     assert [t.label for t in app.tabs]==["Scadenze","Calendario Snam","Balancing","Settlement"]
     assert any("Puntualità" in e.proto.body and "60,0" in e.proto.body for e in app.get("html"))
     assert any("Scadute aperte" in e.proto.body for e in app.get("html"))
+    assert any("Copertura SAS" in e.proto.body and "16/17" in e.proto.body for e in app.get("html"))
+    assert any("Definitivi utilizzabili" in e.proto.body and "30/30" in e.proto.body for e in app.get("html"))
     app.radio(key="bso_mode").set_value("Dati importati").run()
     assert not app.exception
     assert any("Importa il registro" in e.value for e in app.info)
