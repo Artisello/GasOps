@@ -69,7 +69,7 @@ def _source_panel(context: MarketContext) -> None:
     status = "Archivio locale" if origin.archive else "Serie di esempio" if origin.kind == Kind.SYNTHETIC else _state(origin)
     details = [("Fonte", origin.name), ("Ultimo periodo", facts.get("label", "Non disponibile")),
                ("Stato", status)]
-    if not origin.archive:
+    if not origin.archive and origin.kind != Kind.SYNTHETIC:
         if origin.published_at is not None:
             details.append(("Data della fonte", local_time(origin.published_at)))
         details.append(("Ultima acquisizione", local_time(origin.retrieved_at)))
@@ -175,12 +175,19 @@ def overview() -> None:
         selection = source_filters("overview")
     with top:
         clicked = header("Panoramica del mercato", selection.meta, RUN_ANALYSIS, disabled=selection.bundle is None)
+    st.caption("Inizia dalla fonte dati, consulta i valori e avvia il report quando ti serve.")
+    with st.container():
+        a,b,c=st.columns(3)
+        a.markdown("**[Mercato e previsioni](/market)**  \nStorico, andamento e stime")
+        b.markdown("**[Stoccaggi e forniture](/security-of-supply)**  \nAGSI+, ALSI, IIP e Jarvis")
+        c.markdown("**[Registro operativo](/ledger)**  \nFatture, prezzi, garanzie e scadenze")
     if not selection.bundle:
         return
     if clicked:
         launch(selection, full=True)
 
     context = preview_market(selection)
+    st.caption("Ultimo periodo osservato · " + context.facts.get("label", "Non disponibile"))
     _metrics(context)
     main, desk = st.columns([2.42, 1], gap="medium")
     with main:
@@ -194,8 +201,10 @@ def overview() -> None:
         _quality_panel(context)
         run = applicable_run(selection)
         with st.container(border=True, key="panel_agents"):
-            heading("Stato degli agenti", chip("ULTIMA ANALISI", "ok") if run else chip("PRONTI"))
-            st.html(steps(run))
+            heading("Analisi AI", chip("ULTIMA ANALISI", "ok") if run else chip("PRONTA"))
+            st.caption("Avvia il report per ottenere una sintesi delle evidenze e dei controlli.")
+            with st.expander("Stato dei singoli agenti"):
+                st.html(steps(run))
     if run:
         with st.container(border=True, key="panel_overview_brief"):
             heading("Sintesi operativa", chip(MODALITA[run.mode]))
@@ -216,10 +225,10 @@ def _model_comparison(context: MarketContext) -> None:
             st.caption(f"Errore medio sul periodo successivo, sugli stessi {scores[ordered[0]].periods} periodi storici. "
                        "Valori più bassi indicano stime più vicine ai consumi osservati.")
             st.dataframe([{
-                "Modello": MODELLI[name], "Errore medio (GWh)": numero(scores[name].mae, 1) if name in scores else "—",
-                "RMSE (GWh)": numero(scores[name].rmse, 1) if name in scores else "—",
-                "WAPE (%)": numero(scores[name].wape, 1) if name in scores else "—",
-                "Bias (GWh)": numero(scores[name].bias, 1) if name in scores else "—",
+                "Modello": MODELLI[name], "Errore medio (GWh)": round(scores[name].mae, 1) if name in scores else None,
+                "RMSE (GWh)": round(scores[name].rmse, 1) if name in scores else None,
+                "WAPE (%)": round(scores[name].wape, 1) if name in scores and scores[name].wape is not None else None,
+                "Bias (GWh)": round(scores[name].bias, 1) if name in scores else None,
                 "In uso": "Sì" if name == projection.model else "",
             } for name in (*ordered, *(model for model in MODELS if model not in scores))],
                 hide_index=True, width="stretch")
@@ -251,17 +260,19 @@ def market() -> None:
         selection = source_filters("market")
     with top:
         header("Mercato e previsioni", selection.meta)
-    st.markdown("[Security of supply — AGSI+, ALSI, IIP e Jarvis](/security-of-supply)")
+    st.markdown("[Stoccaggi e forniture (Security of supply) — AGSI+, ALSI, IIP e Jarvis](/security-of-supply)")
     if not selection.bundle:
         return
 
     context = preview_market(selection)
     origin = context.bundle.origin
+    st.caption("Ultimo periodo osservato · " + context.facts.get("label", "Non disponibile"))
     _metrics(context)
     with st.container(border=True, key="panel_market_chart"):
         visible = _charts(context, selection.periods, "market", height=348)
-    _model_comparison(context)
     _supporting_charts(context, visible, "market")
+    if st.checkbox("Mostra confronto dei modelli e backtest", key="market_show_models"):
+        _model_comparison(context)
     from .weather_page import weather_panel
     weather_panel(context)
     sources, quality = st.columns([1.3, 1], gap="medium")
@@ -282,6 +293,9 @@ def market() -> None:
                                "I saldi di trasporto richiedono osservazioni operative dedicate.")
             with st.expander("Dettaglio delle fonti"):
                 _source_panel(context)
+                note = st.session_state.get("market_source_note")
+                if note:
+                    st.caption(note)
                 for feed in (origin, *origin.companions):
                     st.caption(feed.description)
                     if not origin.archive and origin.kind != Kind.SYNTHETIC:

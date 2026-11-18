@@ -13,7 +13,7 @@ from .session import assumptions, fixture, save_assumptions
 
 def risk_page():
     st.title("Rischio probabilistico")
-    st.caption("Monte Carlo · VaR · CVaR / Expected Shortfall · simulazioni aggregate")
+    st.caption("Stima probabilità di deficit e perdita economica potenziale · Monte Carlo, VaR e CVaR")
     st.info("Le probabilità sono condizionate alle ipotesi, non rappresentano il rischio ufficiale del sistema gas. Non è settlement.")
     state = assumptions()
     data = st.session_state.get("active_bundle") or fixture()
@@ -49,6 +49,7 @@ def risk_page():
         st.caption("La disponibilità contabile mensile non equivale a capacità fisicamente disponibile.")
     p = facts.get("price_eur_mwh")
     s = state.risk
+    st.subheader("1. Imposta lo scenario")
     with st.form("risk_assumptions"):
         a,b,c = st.columns(3)
         with a:
@@ -91,7 +92,7 @@ def risk_page():
             or (use_forecast and r["forecast_model"] != projection.model)):
         st.warning("Le ipotesi ora visualizzate sono cambiate. Esegui una nuova simulazione.")
         return
-    st.subheader("Risultati dell’ultima simulazione")
+    st.subheader("2. Risultati dell’ultima simulazione")
     a,b,c = st.columns(3)
     a.metric("Probabilità di deficit", f"{numero(100*r['probability_deficit'],2)}%")
     b.metric("Deficit medio", f"{numero(r['expected_deficit_gwh'])} GWh")
@@ -104,7 +105,7 @@ def risk_page():
     st.plotly_chart(fig, width="stretch")
     st.dataframe([{"Variabile": label, **r[key]} for label,key in
                   [("Domanda","demand_gwh"),("Offerta","supply_gwh"),("Margine","gap_gwh"),("Deficit","deficit_gwh")]], hide_index=True)
-    st.subheader("Rischio di coda")
+    st.subheader("3. Perdite nei casi peggiori (VaR e CVaR)")
     metrics = []
     for level in ("95","99"):
         energy = r["deficit_tail_gwh"][level]
