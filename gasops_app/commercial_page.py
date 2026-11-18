@@ -1,15 +1,18 @@
-"""Single commercial workbench; operational demo only, no confidential uploads."""
+"""Commercial desk for synthetic data; no external transactions or confidential files."""
 import csv
 import io
-from datetime import date
+from dataclasses import replace
+from datetime import date, timedelta
 from decimal import Decimal as D
 
+import pandas as pd
 import streamlit as st
 
 from .commercial_controls import (BILL_REF, EPS_REF, LNG_REF, PRICE_REF, demo_invoices,
                                   exposure, imbalance_prices, lng_deadlines, reconcile)
-from .italiano import numero
-from .visuals import info
+from .commercial_view import reconciliation_summary, guarantee_scenario, calendar_rows
+from .italiano import numero, data_it
+from .visuals import info, kpi_grid
 from .operations_ledger import sample_rows
 
 
@@ -25,103 +28,180 @@ def _csv(rows):
     return output.getvalue()
 
 
+def _invoice_panel(records):
+    st.subheader("Riconciliazione delle fatture")
+    st.caption("Settembre 2026 · imponibili di esempio, IVA esclusa.")
+    originals=demo_invoices()
+    invoices=[]
+    for original,label,col in zip(originals,("DS negativo · acquisto","DS positivo · vendita"),st.columns(2),strict=True):
+        with col,st.container(border=True):
+            st.markdown("**"+label+"**")
+            present=st.checkbox("Documento presente",value=True,key="invoice_present_"+original.group)
+            amount=st.number_input("Importo fattura (€)",min_value=0.,max_value=1e12,value=float(original.amount),
+                                   step=100.,disabled=not present,key="invoice_amount_"+original.group)
+            issue=st.date_input("Data emissione",original.issue_date,disabled=not present,key="invoice_date_"+original.group)
+            if present and issue is not None:
+                invoices.append(replace(original,amount=D(str(amount)),issue_date=issue))
+    rows=reconcile(records,invoices,"DEMO-001",2026,9)
+    summary=reconciliation_summary(rows)
+    for r in rows:
+        with st.container(border=True):
+            label="Acquisto per DS negativo" if r["group"]=="short" else "Vendita per DS positivo"
+            st.markdown("**"+label+" · "+r["status"]+"**")
+            kpi_grid([("Importo atteso",r["expected"],"€","Da bilanci definitivi",2,""),
+                      ("Importo documento",r["observed"],"€","Inserito nella demo",2,""),
+                      ("Differenza",r["delta"],"€","Documento − atteso",2,"rose" if r["delta"] else "")])
+            if r["status"]=="MANCANTE":
+                st.warning("Documento non presente nella simulazione.")
+            elif r["status"]=="DIFFERENZA":
+                st.warning("Importo da riconciliare: "+money(abs(r["delta"]))+".")
+            if r["due"]:
+                st.caption("Data di pagamento indicativa: "+data_it(r["due"]))
+    st.download_button("Scarica riconciliazione CSV",_csv([{**r,"mode":"SIMULAZIONE"} for r in rows]),
+                       "gasops-riconciliazione.csv","text/csv",key="commercial_reconcile_export")
+    info("Info fatture",BILL_REF,"Le due partite sono separate. Una differenza non è una nota di credito. Fatture multiple, IVA e rettifiche richiedono verifica. Non vengono emesse fatture.")
+    return rows,summary
+
+
+def _price_panel():
+    st.subheader("Prezzi di sbilanciamento")
+    st.caption("Calcolo illustrativo · regime ordinario · valori inseriti, non prezzi GME effettivi.")
+    a,b=st.columns(2)
+    with a:
+        day=st.date_input("Giorno gas",date(2026,9,5),key="price_day")
+        volume=st.number_input("Volume STSP title (MWh)",0.,1e9,2500.,step=100.)
+        mean=st.number_input("Prezzo medio GME (€/MWh)",0.,10000.,40.,disabled=volume<2000)
+        rate=st.number_input("Small adjustment pubblicato (%)",0.,10.,1.)
+    with b:
+        buy=st.number_input("Massimo acquisto TSO (€/MWh)",-10000.,10000.,42.)
+        sell=st.number_input("Minimo vendita TSO (€/MWh)",-10000.,10000.,38.)
+        ordinary=st.checkbox("Regime ordinario e dati TSO completi",value=True)
+    history=None
+    if volume<2000:
+        st.info("Sotto 2.000 MWh: si usa la media dei 30 giorni precedenti. Esempio sintetico a prezzo costante.")
+        historical=st.number_input("Prezzo medio ipotetico dei 30 giorni (€/MWh)",0.,10000.,39.)
+        if day is not None:
+            history={day-timedelta(days=i):D(str(historical)) for i in range(1,31)}
+    try:
+        if day is None:
+            raise ValueError("Indica il giorno gas.")
+        priced=imbalance_prices(day,D(str(volume)),D(str(mean)),D(str(buy)),D(str(sell)),
+                                D(str(rate)),history,ordinary=ordinary)
+        kpi_grid([("Prezzo acquisto",priced["buy"],"€/MWh","Per DS negativo",3,""),
+                  ("Prezzo vendita",priced["sell"],"€/MWh","Per DS positivo",3,""),
+                  ("Small adjustment",priced["adjustment"],"€/MWh","Percentuale × media",3,"")])
+        st.caption(priced["method"])
+        with st.expander("Dettaglio del calcolo"):
+            st.dataframe([{"Prezzo":"Acquisto","Media + SA":float(priced["mean"]+priced["adjustment"]),
+                           "Estremo TSO":buy,"Risultato":float(priced["buy"])},
+                          {"Prezzo":"Vendita","Media − SA":float(priced["mean"]-priced["adjustment"]),
+                           "Estremo TSO":sell,"Risultato":float(priced["sell"])}],hide_index=True,width="stretch")
+    except (ValueError,OverflowError) as error:
+        st.warning(str(error))
+    info("Info prezzi",PRICE_REF,"Il calcolo usa la percentuale semestrale fornita dall’utente; nessun calcolo automatico Euribor. Prezzi esposti a tre decimali; confronto non arrotondato.")
+    from .operational_sources_page import gme_reference
+    gme_reference()
+
+
+def _guarantee_panel():
+    st.subheader("Controllo delle garanzie")
+    st.caption("Componenti già determinate · importi con segno, IVA inclusa ove prevista.")
+    a,b=st.columns(2)
+    with a:
+        pf=st.number_input("Pfat · fatturato (€)",-1e12,1e12,420000.,step=10000.,key="guarantee_pfat")
+        pd_=st.number_input("Pdet · determinato (€)",-1e12,1e12,280000.,step=10000.,key="guarantee_pdet")
+    with b:
+        pa=st.number_input("Patt · atteso (€)",-1e12,1e12,220000.,step=10000.,key="guarantee_patt")
+        limit=st.number_input("MEPSu · limite (€)",min_value=0.,max_value=1e12,value=1000000.,step=10000.,key="guarantee_limit")
+    with st.expander("Simula un aumento o una riduzione dell’esposizione"):
+        shock=st.number_input("Variazione ipotetica di Patt (€)",-1e12,1e12,80000.,step=10000.,key="guarantee_shock")
+    try:
+        case=guarantee_scenario(*(D(str(v)) for v in (pf,pd_,pa,limit,shock)))
+    except ValueError as error:
+        st.warning(str(error))
+        return None
+    risk=case["current"]
+    projected=case["projected"]
+    with st.container(border=True,key="panel_guarantee_usage"):
+        st.caption("Utilizzo del limite MEPSu")
+        st.markdown("### "+numero(risk["ratio"],1)+"%")
+        st.progress(float(max(D(0),min(D(100),risk["ratio"]))/100))
+        st.caption("Soglie di studio: 90% attenzione · 100% limite. Barra limitata a 0–100%; valore effettivo sopra.")
+        if risk["status"]=="LIMITE":
+            st.error("Esposizione pari o superiore al limite. Verifica specialistica necessaria.")
+        elif risk["status"]=="ATTENZIONE":
+            st.warning("Soglia di attenzione del 90% raggiunta.")
+        else:
+            st.caption("Esposizione inferiore al 90%.")
+    kpi_grid([("Esposizione EPSu",risk["eps"],"€","Pfat + Pdet + Patt",2,""),
+              ("Margine residuo",risk["headroom"],"€","MEPSu − EPSu",2,"rose" if risk["headroom"]<0 else ""),
+              ("Distanza dal 90%",case["to_90"],"€","Negativo = soglia superata",2,"")])
+    with st.container(border=True):
+        st.markdown("**Scenario ipotetico · "+numero(D(str(shock)),0,signed=True)+" € su Patt**")
+        kpi_grid([("Utilizzo nello scenario",projected["ratio"],"%",projected["status"],1,""),
+                  ("Margine nello scenario",projected["headroom"],"€","Limite invariato",2,""),
+                  ("MEPS aggiuntivo teorico",case["additional_meps_90"],"€","Per utilizzo ≤ 90%",2,"")])
+        st.caption("Indicazione matematica, non richiesta di garanzia né decisione di accesso.")
+    info("Info garanzie",EPS_REF,"I componenti EPSu e MEPSu devono essere già validati. Non vengono calcolati automaticamente. Lo scenario varia solo Patt; non modifica l’esposizione attuale.")
+    st.download_button("Scarica controllo garanzie CSV",_csv([
+        {"scenario":name,"eps":r["eps"],"meps":r["meps"],"headroom":r["headroom"],"ratio":r["ratio"],"status":r["status"],"mode":"SIMULAZIONE","reference":EPS_REF}
+        for name,r in (("base",risk),("ipotetico",projected))]),"gasops-garanzie.csv","text/csv",key="guarantee_export")
+    return risk
+
+
+def _calendar_panel(invoice_rows):
+    st.subheader("Scadenze commerciali")
+    st.caption("Calendario dimostrativo · non verifica pagamenti o adempimenti eseguiti.")
+    as_of=st.date_input("Data di riferimento",date(2026,11,18),key="commercial_as_of")
+    with st.expander("Parametri calendario GNL"):
+        a,b=st.columns(2)
+        month=a.date_input("Primo giorno del mese di programmazione",date(2026,12,1))
+        acceptance=b.date_input("Accettazione programma",date(2026,11,20))
+        raw=st.text_input("Festività escluse (AAAA-MM-GG, separate da virgola)","2026-11-01, 2026-12-08, 2026-12-25, 2026-12-26")
+    deadlines=[{"task":"Pagamento "+r["invoice"],"due":r["due"],"reference":BILL_REF} for r in invoice_rows if r["invoice"]]
+    try:
+        holidays={date.fromisoformat(v.strip()) for v in raw.split(",") if v.strip()}
+        if month is None:
+            raise ValueError("Indica il mese di programmazione.")
+        deadlines+=lng_deadlines(month,acceptance,holidays)
+    except (ValueError,OverflowError) as error:
+        st.warning("Scadenze GNL non calcolate: "+str(error))
+    if as_of is None:
+        st.info("Indica la data di riferimento.")
+        return []
+    result=calendar_rows(deadlines,as_of)
+    if not result:
+        st.info("Nessuna data disponibile per i parametri inseriti.")
+        return []
+    urgent=[r for r in result if r["days_left"] is not None and 0<=r["days_left"]<=7]
+    past=[r for r in result if r["days_left"] is not None and r["days_left"]<0]
+    kpi_grid([("Entro 7 giorni",len(urgent),"","Da valutare nella demo",0,""),
+              ("Date trascorse",len(past),"","Non implica mancato pagamento",0,"")])
+    st.dataframe([{"Adempimento":r["task"],"Data":r["due"],"Giorni residui":r["days_left"],"Stato data":r["status"]}
+                  for r in result],hide_index=True,width="stretch")
+    st.download_button("Scarica scadenze CSV",_csv(result),"gasops-scadenze.csv","text/csv",key="commercial_calendar_export")
+    info("Info scadenze",BILL_REF,LNG_REF,"I pagamenti usano giorni di calendario; le scadenze GNL escludono weekend e festività inserite. Convenzioni ed effettiva vigenza da verificare. Nessun promemoria automatico.")
+    return result
+
+
 def commercial_workbench(ledger_view):
     st.title("Fatture e garanzie")
-    st.caption("Demo sintetica · settembre 2026 · nessuna fattura reale")
-    records = sample_rows()
-    demo = reconcile(records,demo_invoices(),"DEMO-001",2026,9)
-    eps = exposure(D(420000),D(280000),D(220000),D(1000000))
-    issues = [r for r in demo if r["status"] not in ("QUADRA","NON DOVUTA")]
-    st.subheader("Riepilogo del caso di esempio")
-    a,b,c=st.columns(3)
-    a.metric("Partite da riconciliare",len(issues))
-    b.metric("Differenze note",money(sum((abs(r["delta"]) for r in issues if r["delta"] is not None),D(0))))
-    c.metric("Utilizzo garanzie",numero(eps["ratio"],1)+"%")
-    info("Info riepilogo","Indicatori del caso demo fisso; gli strumenti sottostanti consentono simulazioni indipendenti. Edizioni normative di studio, nessuna disposizione operativa.")
-    tabs=st.tabs(["Fatture","Prezzi","Garanzie","Scadenze","Bilanci e GNL"])
+    st.caption("Simulazione · partecipante fittizio DEMO-001 · nessuna operazione reale")
+    summary_slot=st.container()
+    tabs=st.tabs(["Fatture","Garanzie","Scadenze","Prezzi","Bilanci e GNL"])
     with tabs[0]:
-        st.subheader("Controlla gli importi fatturati")
-        st.caption("Esempio imponibile, un documento per gruppo DS; IVA, note di credito e fatture multiple richiedono verifica.")
-        a,b=st.columns(2)
-        short=a.number_input("Documento DS negativo (€)",min_value=0.,value=168000.,step=100.)
-        long=b.number_input("Documento DS positivo (€)",min_value=0.,value=57000.,step=100.)
-        from dataclasses import replace
-        invoices=[replace(demo_invoices()[0],amount=D(str(short))),replace(demo_invoices()[1],amount=D(str(long)))]
-        rows=reconcile(records,invoices,"DEMO-001",2026,9)
-        st.dataframe([{"Partita":"DS negativo" if r["group"]=="short" else "DS positivo",
-                       "Atteso":money(r["expected"]),"Documento":money(r["observed"]),
-                       "Differenza":money(r["delta"]),"Esito":r["status"]} for r in rows],hide_index=True)
-        st.download_button("Esporta riconciliazione CSV",_csv(rows),"gasops-riconciliazione.csv","text/csv",
-                           key="commercial_reconcile_export")
-        info("Info riconciliazione",BILL_REF+" · Una differenza non costituisce una nota di credito.")
+        invoice_rows,summary=_invoice_panel(sample_rows())
     with tabs[1]:
-        st.subheader("Verifica i prezzi di sbilanciamento")
-        from .operational_sources_page import gme_reference
-        gme_reference()
-        st.caption("Regime ordinario · volumi e prezzi ipotetici · inserire la percentuale semestrale pubblicata.")
-        a,b=st.columns(2)
-        volume=a.number_input("Volume STSP title (MWh)",0.,1e9,2500.,step=100.)
-        mean=a.number_input("Prezzo medio GME (€/MWh)",0.,10000.,40.)
-        rate=a.number_input("Small adjustment pubblicato (%)",0.,10.,1.)
-        buy=b.number_input("Massimo acquisto TSO (€/MWh)",-10000.,10000.,42.)
-        sell=b.number_input("Minimo vendita TSO (€/MWh)",-10000.,10000.,38.)
-        ordinary=b.checkbox("Regime ordinario e dati TSO completi",value=True)
-        day=date(2026,9,5)
-        history=None
-        if volume<2000:
-            st.info("Sotto 2.000 MWh si usa lo storico dei 30 giorni precedenti. Per questa demo lo storico è sintetico.")
-            historical=st.number_input("Prezzo medio ipotetico dei 30 giorni (€/MWh)",0.,10000.,39.)
-            from datetime import timedelta
-            history={day-timedelta(days=i):D(str(historical)) for i in range(1,31)}
-        try:
-            priced=imbalance_prices(day,D(str(volume)),D(str(mean)),D(str(buy)),D(str(sell)),
-                                    D(str(rate)),history,ordinary=ordinary)
-            a,b=st.columns(2)
-            a.metric("Acquisto (€/MWh)",numero(priced["buy"],3))
-            b.metric("Vendita (€/MWh)",numero(priced["sell"],3))
-            st.caption(priced["method"]+" · SA "+numero(priced["adjustment"],3)+" €/MWh")
-        except ValueError as error:
-            st.warning(str(error))
-        info("Info prezzi",PRICE_REF+" · Prezzi esposti a tre decimali; calcolo non arrotondato.")
+        risk=_guarantee_panel()
     with tabs[2]:
-        st.subheader("Verifica le garanzie disponibili")
-        st.caption("Inserire componenti EPSu già determinate e MEPSu disponibile; importi firmati, IVA inclusa ove prevista.")
-        a,b=st.columns(2)
-        pf=a.number_input("Pfat (€)",value=420000.,step=10000.)
-        pd=a.number_input("Pdet (€)",value=280000.,step=10000.)
-        pa=b.number_input("Patt (€)",value=220000.,step=10000.)
-        limit=b.number_input("MEPSu (€)",min_value=0.,value=1000000.,step=10000.)
-        try:
-            risk=exposure(*(D(str(v)) for v in (pf,pd,pa,limit)))
-            a,b=st.columns(2)
-            a.metric("EPSu",money(risk["eps"]))
-            b.metric("Capienza residua",money(risk["headroom"]))
-            st.progress(float(max(D(0),min(D(100),risk["ratio"]))/100),text="Utilizzo "+numero(risk["ratio"],1)+"%")
-            if risk["status"]=="LIMITE":
-                st.error("EPSu ≥ MEPSu: verifica specialistica necessaria.")
-            elif risk["status"]=="ATTENZIONE":
-                st.warning("Soglia del 90% raggiunta.")
-            else:
-                st.success("Inferiore al 90%.")
-        except ValueError as error:
-            st.warning(str(error))
-        info("Info garanzie",EPS_REF+" · Non calcola autonomamente Pfat, Pdet, Patt o MEPSu.")
+        calendar=_calendar_panel(invoice_rows)
     with tabs[3]:
-        st.subheader("Scadenze commerciali")
-        st.caption("Date dimostrative. Il calendario lavorativo deve essere verificato prima dell’uso.")
-        a,b=st.columns(2)
-        month=a.date_input("Mese di programmazione GNL",date(2026,12,1))
-        acceptance=b.date_input("Accettazione programma",date(2026,11,20))
-        raw=st.text_input("Festività da escludere (AAAA-MM-GG, separate da virgola)","2026-11-01, 2026-12-08, 2026-12-25, 2026-12-26")
-        try:
-            holidays={date.fromisoformat(v.strip()) for v in raw.split(",") if v.strip()}
-            deadlines=lng_deadlines(month,acceptance,holidays)
-            deadlines += [{"task":"Pagamento "+r["invoice"],"due":r["due"],"reference":BILL_REF} for r in demo if r["invoice"]]
-            deadline_rows=sorted(deadlines,key=lambda d:d["due"] or date.max)
-            st.dataframe([{"Adempimento":r["task"],"Data":r["due"],"Fonte":r["reference"]} for r in deadline_rows],hide_index=True)
-            st.download_button("Esporta scadenze CSV",_csv(deadline_rows),"gasops-scadenze.csv","text/csv")
-        except ValueError as error:
-            st.warning(str(error))
-        info("Info scadenze","Festività e convenzioni di pagamento non certificate. Nessun promemoria viene inviato.")
+        _price_panel()
     with tabs[4]:
         ledger_view()
+    with summary_slot:
+        kpi_grid([("Partite da verificare",summary["issues"],"",str(summary["unknown"])+" con importo non confrontabile",0,""),
+                  ("Differenze note",summary["known_difference"],"€","Somma assoluta delle differenze note",2,""),
+                  ("Utilizzo garanzie",risk["ratio"] if risk else None,"%",risk["status"] if risk else "Non calcolabile",1,""),
+                  ("Date entro 7 giorni",sum(r["days_left"] is not None and 0<=r["days_left"]<=7 for r in calendar),"","Calendario dimostrativo",0,"")])
+        st.caption("Riepilogo aggiornato con le ipotesi delle schede. Non è lo stato operativo di Snam.")
