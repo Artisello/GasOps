@@ -6,6 +6,7 @@ from datetime import timedelta
 from .data import ROME
 from .models import Kind,utc_now
 from .quality import inspect
+from .public_data import SourceUnavailable
 from .advanced_kpis import entry
 from .mensile import load_monthly
 from .entsog import load as load_daily
