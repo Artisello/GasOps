@@ -13,7 +13,9 @@ from .forecast import Forecast, ForecastPoint
 from .italiano import ESITI, TIPI, data_it, numero
 from .models import AGENT_LABELS, Agent, Citation, Kind, Run
 
-TEAL, BLUE, AMBER, ROSE, MUTED = "#65dfbf", "#83b4ff", "#f2be72", "#f6929d", "#a9b8ca"
+TEAL, BLUE, AMBER, ROSE, MUTED = "#65dfbf", "#83b4ff", "#f2be72", "#f6929d", "#b6c4d4"
+TEXT, PANEL, BORDER = "#f1f5f9", "#14202e", "#34475a"
+CHART_FONT = "Inter, Avenir Next, system-ui, sans-serif"
 CHIP = {
     Kind.SYNTHETIC: "synthetic", Kind.HISTORICAL: "historical", Kind.LIVE: "live",
     Kind.FORECAST: "forecast", Kind.SIMULATION: "simulation", Kind.ACCOUNTING: "review", Kind.PHYSICAL: "ok",
@@ -51,7 +53,6 @@ def header(title: str, meta: str, action: str | None = None, disabled: bool = Fa
             with right:
                 clicked = st.button(action, icon=":material/play_arrow:", type="primary",
                                     width="stretch", disabled=disabled, key="analysis_launch")
-        st.html('<div class="gas-topline"></div>')
     return clicked
 
 
@@ -138,10 +139,10 @@ def _frame(fig: go.Figure, grain: str, unit: str, height: int) -> go.Figure:
         template="plotly_dark", height=height, separators=",.",
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         margin=dict(l=8, r=14, t=42, b=16), hovermode="x unified", dragmode="zoom",
-        font=dict(family="Inter, Avenir Next, system-ui, sans-serif", color=MUTED, size=12),
+        font=dict(family=CHART_FONT, color=MUTED, size=13),
         legend=dict(orientation="h", x=0, y=1.03, yanchor="bottom", xanchor="left",
                     font=dict(size=12), traceorder="normal", itemclick="toggle", itemdoubleclick="toggleothers"),
-        hoverlabel=dict(bgcolor="#142235", bordercolor="#334963", font=dict(color="#edf4ff", size=12)),
+        hoverlabel=dict(bgcolor=PANEL, bordercolor=BORDER, font=dict(color=TEXT, size=13)),
         xaxis=dict(showgrid=True, gridcolor="rgba(153,180,214,0.09)", showline=True, linecolor="#253548",
                    tickformat="%d/%m" if grain == "daily" else "%m/%Y", zeroline=False, nticks=8),
         yaxis=dict(side="right", title=dict(text=unit, font=dict(size=12)), showgrid=True, gridcolor="rgba(153,180,214,0.12)", showline=True,
@@ -169,7 +170,7 @@ def demand_chart(data: pd.DataFrame, projection: Forecast, grain: str, *, height
             fig.add_trace(go.Scatter(x=dates, y=lower, mode="lines", showlegend=False, hoverinfo="skip",
                                      line=dict(width=0), legendgroup="interval"))
             fig.add_trace(go.Scatter(x=dates, y=upper, name="Intervallo stimato (80%)", fill="tonexty",
-                                     fillcolor="rgba(131,172,255,0.17)", hoverinfo="skip",
+                                     fillcolor="rgba(131,180,255,0.18)", hoverinfo="skip",
                                      mode="lines", line=dict(width=0, color=BLUE), legendrank=4,
                                      legendgroup="interval"))
         boundary=data["demand_gwh"].last_valid_index()
@@ -215,12 +216,25 @@ def error_chart(forecast: Forecast, grain: str) -> go.Figure:
         index=pd.to_datetime([p.period for p in forecast.backtest]),
     )
     fig = go.Figure(go.Bar(x=values.index, y=values, marker_color=[TEAL if n >= 0 else ROSE for n in values],
+                          marker_pattern_shape=["" if n >= 0 else "/" for n in values],
                           hovertemplate="%{y:+,.1f} GWh<extra>Osservato − previsione</extra>"))
     fig.add_hline(y=0, line_color="#637891", line_width=1)
     return _frame(fig, grain, "GWh", 220)
 
 
+def style_figure(figure: go.Figure) -> go.Figure:
+    """Harmonize chart chrome without changing traces, axes, scales or chart semantics."""
+    figure.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family=CHART_FONT, color=MUTED, size=13),
+        hoverlabel=dict(bgcolor=PANEL, bordercolor=BORDER, font=dict(color=TEXT, size=13)),
+    )
+    figure.update_xaxes(automargin=True)
+    figure.update_yaxes(automargin=True)
+    return figure
+
+
 def plot(figure: go.Figure, key: str) -> None:
-    st.plotly_chart(figure, key=key, width="stretch", theme=None,
+    st.plotly_chart(style_figure(figure), key=key, width="stretch", theme=None,
                     config={"displaylogo": False, "displayModeBar": "hover", "scrollZoom": False,
                             "modeBarButtonsToRemove": ["lasso2d", "select2d"]})
