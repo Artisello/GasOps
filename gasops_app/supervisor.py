@@ -30,6 +30,10 @@ class Call:
     arguments: Arguments
 
 
+class ModelUnavailable(RuntimeError):
+    """Controlled, credential-free provider message."""
+
+
 class Reasoner(Protocol):
     label: str
 
@@ -86,7 +90,8 @@ def _execute_batch(
 def _fallback(run: Run, stage: str, error: Exception) -> None:
     LOGGER.warning("Model %s failed (%s)", stage, type(error).__name__)
     run.mode = "Deterministic fallback"
-    run.warnings.append(f"Modello non disponibile nella fase di {stage}. Il rapporto usa i risultati validati.")
+    detail = " "+str(error) if isinstance(error,ModelUnavailable) else ""
+    run.warnings.append(f"Modello non disponibile nella fase di {stage}.{detail} Il rapporto usa i risultati validati.")
 
 
 def _gated_batch(run: Run, calls: dict[Agent, Call], tools: Mapping[Agent, Tool],
@@ -110,8 +115,10 @@ def execute(
 ) -> Run:
     """Run the quality gate, bounded batches and a deterministic validation pass."""
     calls = {call.agent: call for call in defaults}
+    summary_only = bool(reasoner and getattr(reasoner,"summary_only_full",False) and required==set(tools))
     if reasoner:
         run.mode, run.model = "LLM-assisted", reasoner.label
+    if reasoner and not summary_only:
         try:
             proposed = {call.agent: call for call in reasoner.route(run, tools)}
             if not proposed:
@@ -122,7 +129,7 @@ def execute(
 
     _gated_batch(run, calls, tools, notify)
 
-    if reasoner and run.mode == "LLM-assisted":
+    if reasoner and run.mode == "LLM-assisted" and not summary_only:
         try:
             followups = {
                 call.agent: call for call in reasoner.review(run, tools)

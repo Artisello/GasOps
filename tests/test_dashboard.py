@@ -12,12 +12,13 @@ def test_overview_button_completes_offline_run(monkeypatch, tmp_path):
     monkeypatch.setenv("GASOPS_STATE_DIR", str(tmp_path))
     monkeypatch.setenv("GASOPS_PDF_DIR", str(tmp_path))
     monkeypatch.setenv("GASOPS_LLM_MODEL", "")
+    monkeypatch.delenv("GROQ_API_KEY",raising=False)
     app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=30)
     app.session_state["selected_source"] = DEMO
     app.run()
     assert not app.exception
     assert app.title[0].value == "Panoramica del mercato"
-    assert app.button(key="analysis_launch").label == "Avvia analisi di mercato AI"
+    assert app.button(key="analysis_launch").label == "Genera report di mercato"
     assert app.selectbox(key="overview_model").value == AUTOMATIC
     app.button(key="analysis_launch").click().run()
     assert not app.exception
