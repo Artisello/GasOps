@@ -209,7 +209,10 @@ def _scenario_panel() -> None:
 
 def balancing() -> None:
     header("Bilanciamento", f'{kind_tag(Kind.SIMULATION)} <span>Calcoli illustrativi · nessuna operazione reale</span>')
-    participant, aggregate = st.tabs(["Sbilanciamento del partecipante", "Scenario di mercato"])
+    daily, participant, aggregate = st.tabs(["Controllo giornaliero", "Sbilanciamento del partecipante", "Scenario di mercato"])
+    with daily:
+        from .settlement_desk_page import panel
+        panel()
     with participant:
         _settlement_panel()
     with aggregate:
