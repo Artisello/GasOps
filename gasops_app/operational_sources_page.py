@@ -185,8 +185,11 @@ def _inventory_panel(platform,loader,key):
         chart=chart_window(frame,days)
         label,unit=labels[col]
         st.caption(scope_label(scope)+" · "+unit)
-        plot(mini_chart(chart[col],label,"daily",unit,TEAL if is_storage else BLUE).update_layout(height=320),
-             key=platform+"_"+scope+"_trend")
+        if chart[col].notna().any():
+            plot(mini_chart(chart[col],label,"daily",unit,TEAL if is_storage else BLUE).update_layout(height=320),
+                 key=platform+"_"+scope+"_trend")
+        else:
+            st.info("Nessun dato per questo indicatore nel periodo selezionato.")
         st.caption("Fonte: "+GIE_CREDIT[platform]+" · giorni senza dati lasciati vuoti.")
     info("Info indicatori","Il riempimento è quello pubblicato dalla fonte, non una soglia di sicurezza. La giacenza misura energia stoccata.",
          "Per ALSI il rapporto di immissione è riferito al valore dichiarato dall’operatore; non è una stima della capacità commerciale.")
@@ -203,7 +206,7 @@ def _inventory_panel(platform,loader,key):
 
 def _iip_panel(key):
     st.subheader("Interruzioni e avvisi di mercato (UMM)")
-    st.markdown("**Perimetro: internazionale · paesi dichiarati nei messaggi**")
+    st.markdown("**Perimetro GIE · richiesta senza filtro geografico**")
     st.caption("Avvisi pubblicati · non una misura di capacità persa.")
     info("Info UMM","Informazioni e indisponibilità pubblicate dagli operatori. Il conteggio non indica eventi unici o capacità persa aggregata.")
     _credit("IIP")
