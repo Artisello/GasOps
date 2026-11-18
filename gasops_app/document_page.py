@@ -6,7 +6,7 @@ from pathlib import Path
 import streamlit as st
 
 from .data import ROOT
-from .document_desk import build, identity, search, searchable_pages, bookmark, page_text, MAX_RESULTS, MAX_TOTAL_BYTES
+from .document_desk import build, identity, search, searchable_pages, bookmark, page_text, extend_uploads, MAX_RESULTS, MAX_TOTAL_BYTES
 from .regulatory import read_local_pdfs, MAX_DOCUMENTS, MAX_PDF_BYTES
 from .visuals import info
 from .session import reasoner
@@ -14,6 +14,34 @@ from .document_rag import answer, MAX_PASSAGES
 from .supervisor import ModelUnavailable
 
 STATE="document_desk_v1"
+UPLOADS="document_archive_uploads_v2"
+UPLOAD_EPOCH="document_archive_uploader_epoch"
+UPLOAD_NOTICE="document_archive_notice"
+
+
+def _remove_upload(digest):
+    st.session_state[UPLOADS]=tuple((name,data) for name,data in st.session_state.get(UPLOADS,())
+                                    if identity(((name,data),))[0][1]!=digest)
+    st.session_state[UPLOAD_EPOCH]=st.session_state.get(UPLOAD_EPOCH,0)+1
+    st.session_state[UPLOAD_NOTICE]=("Documento rimosso dall’archivio.",[],[])
+
+
+def _update_index(inputs,docs=None):
+    key=identity(inputs)
+    cached=st.session_state.get(STATE)
+    if cached and cached["identity"]==key:
+        return cached
+    if docs is None:
+        with st.spinner("Lettura e indicizzazione dei PDF…"):
+            docs=build(inputs)
+    # Preserve bookmarks for unchanged document editions only. Search/RAG
+    # results and previews must be regenerated against the updated index.
+    editions={(name,pdf.digest) for name,pdf in docs.documents.items()}
+    refs=[item for item in (cached or {}).get("reference_list",[])
+          if (item["document"],item["sha256"]) in editions]
+    cached={"identity":key,"docs":docs,"reference_list":refs}
+    st.session_state[STATE]=cached
+    return cached
 
 
 def _archive():
@@ -23,40 +51,75 @@ def _archive():
     except OSError:
         local=()
         st.warning("Archivio predisposto sul server non leggibile.")
-    # Upload first, so shared files cannot silently crowd out the user's files.
-    uploaded=st.file_uploader("Aggiungi PDF",type=["pdf"],accept_multiple_files=True,key="desk_pdf_upload",
+    if UPLOADS not in st.session_state:
+        # Recover still-available PDFs from the earlier session index, if any.
+        # The uploader is not the source of truth and is never rehydrated.
+        previous=st.session_state.get(STATE,{})
+        docs=previous.get("docs")
+        local_hashes={digest for _,digest in identity(local)}
+        st.session_state[UPLOADS]=tuple((pdf.name,pdf.data) for pdf in docs.documents.values()
+                                       if pdf.digest not in local_hashes) if docs else ()
+    existing=st.session_state[UPLOADS]
+    st.subheader("I tuoi documenti")
+    st.caption("I PDF caricati restano disponibili mentre navighi nell’app. La raccolta è privata alla sessione, non un archivio permanente.")
+    epoch=st.session_state.get(UPLOAD_EPOCH,0)
+    uploaded=st.file_uploader("Aggiungi PDF",type=["pdf"],accept_multiple_files=True,key=f"desk_pdf_upload_{epoch}",
                               help="PDF con testo selezionabile, fino a 24 MB per file. Solo documenti pubblici o autorizzati.")
-    inputs=[]
-    total=0
-    for item in uploaded or []:
-        if item.size>MAX_PDF_BYTES or total+item.size>MAX_TOTAL_BYTES or len(inputs)>=MAX_DOCUMENTS:
-            st.warning("Alcuni PDF caricati superano i limiti dell’archivio; non sono stati indicizzati.")
-            continue
-        inputs.append((item.name,item.getvalue()))
-        total+=item.size
-    inputs=tuple(inputs)+local
-    key=identity(inputs)
-    cached=st.session_state.get(STATE)
-    if not cached or cached["identity"]!=key:
-        with st.spinner("Lettura e indicizzazione dei PDF…"):
-            docs=build(inputs)
-        # Prevent earlier search output being displayed for a different edition.
-        cached={"identity":key,"docs":docs,"reference_list":[]}
-        st.session_state[STATE]=cached
+    if uploaded:
+        additions=[]
+        rejected=[]
+        size=0
+        for item in uploaded:
+            if item.size>MAX_PDF_BYTES or size+item.size>MAX_TOTAL_BYTES or len(additions)>=MAX_DOCUMENTS:
+                rejected.append(f"{item.name} · limite di caricamento superato.")
+                continue
+            additions.append((item.name,item.getvalue()))
+            size+=item.size
+        try:
+            with st.spinner("Aggiunta dei documenti all’archivio…"):
+                retained,docs,notices=extend_uploads(existing,tuple(additions),local)
+            cached=_update_index((*retained,*local),docs)
+            st.session_state[UPLOADS]=retained
+            count=len(retained)-len(existing)
+            st.session_state[UPLOAD_NOTICE]=(f"{count} PDF aggiunti all’archivio." if count else "",
+                                             rejected+notices,docs.errors if cached["docs"] is not docs else [])
+        except (ValueError,RuntimeError):
+            st.session_state[UPLOAD_NOTICE]=("",rejected+["Caricamento non completato. I PDF precedenti sono conservati."],[])
+        # A fresh uploader accepts incremental additions and cannot re-add a
+        # removed file. Only the independent archive survives navigation.
+        st.session_state[UPLOAD_EPOCH]=epoch+1
+        st.rerun()
+    cached=_update_index((*st.session_state[UPLOADS],*local))
     docs=cached["docs"]
-    for warning in docs.errors:
+    message,notices,errors=st.session_state.pop(UPLOAD_NOTICE,("",[],[]))
+    if message:
+        st.success(message)
+    for warning in dict.fromkeys([*notices,*errors,*docs.errors]):
         st.warning(warning)
     if docs.documents:
         coverage=searchable_pages(docs)
+        own={digest for _,digest in identity(st.session_state[UPLOADS])}
         st.caption(f"{len(docs.documents)} PDF · {sum(coverage.values())} / {sum(p.pages for p in docs.documents.values())} pagine con testo")
-        with st.expander("Archivio e versioni"):
+        with st.container(border=True,key="panel_document_archive"):
             for name,pdf in docs.documents.items():
-                st.text(name)
-                st.caption(f"{coverage[name]}/{pdf.pages} pagine con testo · SHA-256 {pdf.digest[:12]}…")
-                if coverage[name]<pdf.pages:
-                    st.caption("Alcune pagine non contengono testo estraibile: potrebbero includere immagini o tabelle.")
-                st.download_button("Scarica PDF",pdf.data,pdf.name,"application/pdf",key="desk_download_"+pdf.digest,
-                                   icon=":material/download:")
+                label,actions=st.columns([3,1.45],vertical_alignment="center")
+                with label:
+                    st.text(pdf.name)
+                    st.caption(f"{pdf.pages} pagine · {len(pdf.data)/1024/1024:.2f} MB · "+
+                               ("Caricato nella sessione" if pdf.digest in own else "Predisposto sul server"))
+                    if coverage[name]<pdf.pages:
+                        st.caption(f"Testo estraibile in {coverage[name]} pagine.")
+                with actions:
+                    with st.popover("Azioni",icon=":material/more_horiz:"):
+                        st.download_button("Scarica PDF",pdf.data,pdf.name,"application/pdf",key="desk_download_"+pdf.digest,
+                                           icon=":material/download:",on_click="ignore")
+                        st.caption("SHA-256")
+                        st.text(pdf.digest)
+                        if pdf.digest in own:
+                            st.button("Rimuovi PDF",key="desk_remove_"+pdf.digest,
+                                      icon=":material/delete:",on_click=_remove_upload,args=(pdf.digest,))
+                        else:
+                            st.caption("Documento predisposto sul server.")
     return cached
 
 
@@ -264,7 +327,7 @@ def document_page():
     st.title("Norme e documenti")
     st.caption("Cerca, interroga e confronta i tuoi PDF.")
     info("Info archivio","La ricerca mostra testo estratto dalle pagine dei PDF presenti, non note precompilate. Le corrispondenze per parole chiave non sono un parere legale.",
-         "Usa solo copie pubbliche o autorizzate. I PDF non entrano nel bollettino; la ricerca è sul server. Con Chiedi all’AI, soltanto la domanda e gli estratti sono inviati al modello selezionato, previo consenso per provider remoti. Non caricare documenti riservati su un deployment pubblico. Nessun OCR. La vigenza delle edizioni non è verificata.")
+         "Usa solo copie pubbliche o autorizzate. I PDF restano disponibili durante la navigazione nella stessa sessione; una nuova sessione o un riavvio possono azzerare la raccolta. Scarica gli originali per conservarli. I PDF non entrano nel bollettino; la ricerca è sul server. Con Chiedi all’AI, soltanto la domanda e gli estratti sono inviati al modello selezionato, previo consenso per provider remoti. Non caricare documenti riservati su un deployment pubblico. Nessun OCR. La vigenza delle edizioni non è verificata.")
     cached=_archive()
     if not cached["docs"].documents:
         st.info("Aggiungi almeno un PDF per iniziare. Non vengono mostrati rilievi o citazioni in assenza di documenti.")

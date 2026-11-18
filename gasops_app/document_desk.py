@@ -55,6 +55,40 @@ def build(inputs):
     return library
 
 
+def extend_uploads(existing, additions, local=()):
+    """Append validated uploads without replacing earlier documents.
+
+    Uploads have priority over server-provided PDFs, as in the original desk.
+    Invalid and duplicate files are never retained as session uploads.
+    """
+    candidates=list(existing)
+    known={digest for _,digest in identity((*existing,*local))}
+    total=sum(len(data) for _,data in existing)
+    notices=[]
+    for name,data in additions:
+        name=Path(name).name
+        digest=sha256(data).hexdigest()
+        if digest in known:
+            notices.append(f"{name} · già presente nell’archivio.")
+            continue
+        if len(data)>MAX_PDF_BYTES or not data.startswith(b"%PDF-"):
+            notices.append(f"{name} · PDF non valido o superiore a 24 MB.")
+            continue
+        if len(candidates)>=MAX_DOCUMENTS or total+len(data)>MAX_TOTAL_BYTES:
+            notices.append(f"{name} · spazio dell’archivio insufficiente. Rimuovi un documento e riprova.")
+            continue
+        candidates.append((name,data))
+        known.add(digest)
+        total+=len(data)
+    library=build((*candidates,*local))
+    accepted={pdf.digest for pdf in library.documents.values()}
+    # Never commit an update that would lose a previously stored upload.
+    if any(digest not in accepted for _,digest in identity(existing)):
+        raise ValueError("Aggiornamento non completato. I documenti precedenti sono conservati.")
+    retained=tuple((name,data) for name,data in candidates if sha256(data).hexdigest() in accepted)
+    return retained,library,notices
+
+
 def page_text(pdf:Pdf,page:int):
     if not 1<=page<=pdf.pages:
         raise ValueError("Pagina fuori intervallo.")
