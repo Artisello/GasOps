@@ -261,6 +261,8 @@ def market() -> None:
         visible = _charts(context, selection.periods, "market", height=348)
     _model_comparison(context)
     _supporting_charts(context, visible, "market")
+    from .weather_page import weather_panel
+    weather_panel(context)
     sources, quality = st.columns([1.3, 1], gap="medium")
     with sources:
         with st.container(border=True, key="panel_market_notes"):
