@@ -8,9 +8,9 @@ from decimal import Decimal as D
 import pandas as pd
 import streamlit as st
 
-from .commercial_controls import (BILL_REF, EPS_REF, LNG_REF, PRICE_REF, demo_invoices,
-                                  exposure, imbalance_prices, lng_deadlines, reconcile)
-from .commercial_view import reconciliation_summary, guarantee_scenario, calendar_rows
+from .commercial_controls import (BILL_REF, LNG_REF, PRICE_REF, demo_invoices,
+                                  imbalance_prices, lng_deadlines, reconcile)
+from .commercial_view import reconciliation_summary, calendar_rows
 from .italiano import numero, data_it
 from .visuals import info, kpi_grid
 from .operations_ledger import sample_rows
@@ -104,48 +104,8 @@ def _price_panel():
 
 
 def _guarantee_panel():
-    st.subheader("Controllo delle garanzie")
-    st.caption("Componenti già determinate · IVA inclusa ove prevista")
-    a,b=st.columns(2)
-    with a:
-        pf=st.number_input("Pfat · fatturato (€)",-1e12,1e12,420000.,step=10000.,key="guarantee_pfat")
-        pd_=st.number_input("Pdet · determinato (€)",-1e12,1e12,280000.,step=10000.,key="guarantee_pdet")
-    with b:
-        pa=st.number_input("Patt · atteso (€)",-1e12,1e12,220000.,step=10000.,key="guarantee_patt")
-        limit=st.number_input("MEPSu · limite (€)",min_value=0.,max_value=1e12,value=1000000.,step=10000.,key="guarantee_limit")
-    with st.expander("Simula un aumento o una riduzione dell’esposizione"):
-        shock=st.number_input("Variazione ipotetica di Patt (€)",-1e12,1e12,80000.,step=10000.,key="guarantee_shock")
-    try:
-        case=guarantee_scenario(*(D(str(v)) for v in (pf,pd_,pa,limit,shock)))
-    except ValueError as error:
-        st.warning(str(error))
-        return None
-    risk=case["current"]
-    projected=case["projected"]
-    with st.container(border=True,key="panel_guarantee_usage"):
-        st.caption("Utilizzo del limite MEPSu")
-        st.markdown("### "+numero(risk["ratio"],1)+"%")
-        st.progress(float(max(D(0),min(D(100),risk["ratio"]))/100))
-        info("Soglie","Soglie di studio: 90% attenzione, 100% limite. Barra limitata a 0–100%; valore effettivo sopra.")
-        if risk["status"]=="LIMITE":
-            st.error("Esposizione pari o superiore al limite. Verifica specialistica necessaria.")
-        elif risk["status"]=="ATTENZIONE":
-            st.warning("Soglia di attenzione del 90% raggiunta.")
-
-    kpi_grid([("Esposizione EPSu",risk["eps"],"€","Pfat + Pdet + Patt",2,""),
-              ("Margine residuo",risk["headroom"],"€","MEPSu − EPSu",2,"rose" if risk["headroom"]<0 else ""),
-              ("Distanza dal 90%",case["to_90"],"€","Negativo = soglia superata",2,"")])
-    with st.container(border=True):
-        st.markdown("**Scenario ipotetico · "+numero(D(str(shock)),0,signed=True)+" € su Patt**")
-        kpi_grid([("Utilizzo nello scenario",projected["ratio"],"%",projected["status"],1,""),
-                  ("Margine nello scenario",projected["headroom"],"€","Limite invariato",2,""),
-                  ("MEPS aggiuntivo teorico",case["additional_meps_90"],"€","Per utilizzo ≤ 90%",2,"")])
-        info("Scenario","Indicazione matematica, non richiesta di garanzia né decisione di accesso.")
-    info("Info garanzie",EPS_REF,"I componenti EPSu e MEPSu devono essere già validati. Non vengono calcolati automaticamente. Lo scenario varia solo Patt; non modifica l’esposizione attuale.")
-    st.download_button("Scarica controllo garanzie CSV",_csv([
-        {"scenario":name,"eps":r["eps"],"meps":r["meps"],"headroom":r["headroom"],"ratio":r["ratio"],"status":r["status"],"mode":"SIMULAZIONE","reference":EPS_REF}
-        for name,r in (("base",risk),("ipotetico",projected))]),"igor-garanzie.csv","text/csv",key="guarantee_export")
-    return risk
+    from .credit_risk_page import credit_risk_panel
+    return credit_risk_panel()
 
 
 def _calendar_panel(invoice_rows):
