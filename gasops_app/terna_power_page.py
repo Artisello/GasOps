@@ -51,6 +51,7 @@ def _annual():
 def _daily():
     st.caption("Italia · generazione netta oraria e carico · aggregazione sperimentale 06:00–06:00")
     st.markdown(f"[Terna Actual Generation]({GEN_DOC}) · [Total Load]({LOAD_DOC}) · [Access token]({TOKEN_DOC})")
+    from .terna_history_page import panel as history_panel
     try:
         client,secret=credentials(st.secrets)
     except (FileNotFoundError,KeyError):
@@ -61,9 +62,8 @@ def _daily():
             st.markdown(f"[Registrazione Developer Portal]({CATALOG})")
             st.code('GASOPS_TERNA_CLIENT_ID = "..."\nGASOPS_TERNA_CLIENT_SECRET = "..."',language="toml")
             st.caption("Inserire soltanto nei Secrets Streamlit o in .env locale; mai in chat, GitHub o nei campi pubblici. Verifica condizioni e quote Terna.")
+        history_panel()
         return
-    from .terna_history_page import panel as history_panel
-    history_panel()
     now=utc_now()
     last=latest_day(now)
     with st.form("terna_request"):
@@ -99,6 +99,7 @@ def _daily():
                         st.warning("Dati visualizzati, ma storico non aggiornato: verificare copertura e limite.")
             except (SourceUnavailable,ValueError):
                 st.error("Richiesta Terna non disponibile o non valida. Ultimo risultato invariato.")
+    history_panel()
     saved=st.session_state.get(STATE)
     if not saved:
         return
