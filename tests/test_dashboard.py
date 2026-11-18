@@ -508,3 +508,27 @@ def test_document_archive_unconfigured_does_not_offer_ephemeral_uploads(monkeypa
     assert not app.exception
     assert any("Archivio remoto non configurato" in e.value for e in app.caption)
     assert not any(b.label=="Pubblica documenti" for b in app.button)
+
+
+
+def test_repository_document_import_instructions_and_bundled_pdf(monkeypatch,tmp_path):
+    import pymupdf
+    from gasops_app import document_page as desk
+    from gasops_app.document_desk import search
+    monkeypatch.delenv("GASOPS_PDF_DIR",raising=False)
+    monkeypatch.setattr(desk,"ROOT",tmp_path)
+    monkeypatch.setattr(desk,"_archive_config",lambda:None)
+    public=tmp_path/"data"/"public-regulatory"
+    public.mkdir(parents=True)
+    private=tmp_path/"data"/"regulatory"
+    private.mkdir()
+    for directory,name,phrase in [(public,"public.pdf","Garanzia autorizzata"),(private,"private.pdf","Documento riservato")]:
+        with pymupdf.open() as pdf:
+            pdf.new_page().insert_text((80,80),phrase)
+            pdf.save(directory/name)
+    app=AppTest.from_string("from gasops_app.document_page import document_page\ndocument_page()").run()
+    assert not app.exception
+    assert any(e.label=="Come aggiungere un PDF" for e in app.expander)
+    assert any(e.value=="public.pdf" for e in app.text)
+    assert not any(e.value=="private.pdf" for e in app.text)
+    assert search(app.session_state[desk.STATE]["docs"],"garanzia autorizzata")

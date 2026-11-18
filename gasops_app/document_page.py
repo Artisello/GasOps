@@ -123,7 +123,9 @@ def _update_index(inputs,docs=None):
 
 
 def _archive():
-    directory=Path(os.environ.get("GASOPS_PDF_DIR") or ROOT/"data"/"regulatory")
+    # Keep the explicit public repository folder separate from ignored local PDFs.
+    override=os.environ.get("GASOPS_PDF_DIR")
+    directory=Path(override) if override else ROOT/"data"/"public-regulatory"
     try:
         local=read_local_pdfs(directory)
     except OSError:
@@ -147,7 +149,12 @@ def _archive():
         else:
             _admin_panel(config,archive,local,remote)
     else:
-        st.caption("Archivio remoto non configurato · consultazione dei soli PDF predisposti nel progetto.")
+        st.caption("Archivio remoto non configurato · pubblicazione tramite repository disponibile.")
+        with st.expander("Come aggiungere un PDF",expanded=not local):
+            st.write("Per il prototipo puoi pubblicare i PDF autorizzati direttamente nel repository. Saranno visibili a tutti dopo il deployment, senza configurare Supabase.")
+            st.link_button("Carica PDF su GitHub","https://github.com/Artisello/GasOps/upload/main/data/public-regulatory",icon=":material/upload_file:")
+            st.caption("Accesso GitHub con permesso di scrittura richiesto. Solo PDF pubblici o autorizzati; massimo 24 MB per file. Per caricare da GasOps, configura Supabase Storage.")
+            st.markdown("[Configurazione archivio remoto](https://github.com/Artisello/GasOps#archivio-pubblico-persistente-supabase-storage)")
     message,notices=st.session_state.pop(NOTICE,("",[]))
     if message:
         st.success(message)
@@ -381,10 +388,10 @@ def document_page():
     st.title("Norme e documenti")
     st.caption("Cerca, interroga e confronta i documenti dell’archivio.")
     info("Info archivio","La ricerca mostra testo estratto dalle pagine dei PDF presenti, non note precompilate. Le corrispondenze per parole chiave non sono un parere legale.",
-         "Usa solo copie pubbliche o autorizzate. I PDF pubblicati nell’archivio remoto sono condivisi tra tutti i visitatori e conservati indipendentemente dalla sessione Streamlit. Solo l’amministratore può pubblicare e rimuovere documenti. Non caricare dati riservati. I PDF non entrano nel bollettino; la ricerca è sul server. Con Chiedi all’AI, soltanto la domanda e gli estratti sono inviati al modello selezionato, previo consenso per provider remoti. Non caricare documenti riservati su un deployment pubblico. Nessun OCR. La vigenza delle edizioni non è verificata.")
+         "Usa solo copie pubbliche o autorizzate. I PDF autorizzati pubblicati nel repository o in Storage sono condivisi tra tutti i visitatori e conservati indipendentemente dalla sessione Streamlit. Solo chi ha permessi di scrittura nel repository o l’amministratore Storage può pubblicare e rimuovere documenti. Non caricare dati riservati. I PDF non entrano nel bollettino; la ricerca è sul server. Con Chiedi all’AI, soltanto la domanda e gli estratti sono inviati al modello selezionato, previo consenso per provider remoti. Non caricare documenti riservati su un deployment pubblico. Nessun OCR. La vigenza delle edizioni non è verificata.")
     cached=_archive()
     if not cached["docs"].documents:
-        st.info("Aggiungi almeno un PDF tramite la gestione amministratore per iniziare. Non vengono mostrati rilievi o citazioni in assenza di documenti.")
+        st.info("Aggiungi almeno un PDF per iniziare. Usa le istruzioni di pubblicazione qui sopra. Non vengono mostrati rilievi o citazioni in assenza di documenti.")
         return
     action=st.radio("Strumento",["Cerca","Chiedi all’AI","Leggi PDF","Confronta","Riferimenti salvati"],
                     horizontal=True,label_visibility="collapsed",key="desk_mode")
