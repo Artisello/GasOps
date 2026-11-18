@@ -312,3 +312,41 @@ def test_supply_alsi_latest_day_with_energy_only():
     latest,changes=inventory_snapshot(frame,"ALSI")
     assert latest["gas_day"]==date(2026,11,17) and latest["inventory_gwh"]==50.
     assert pd.isna(latest["sendout_gwh_d"]) and changes=={}
+
+
+
+def test_balancing_page_simple_and_complete(monkeypatch,tmp_path):
+    monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
+    app=AppTest.from_string("from gasops_app.workbench import balancing\nbalancing()",default_timeout=30).run()
+    assert not app.exception
+    assert [tab.label for tab in app.tabs]==["Sbilanciamento del partecipante","Scenario di mercato"]
+    assert any("Saldo energetico" in e.proto.body for e in app.get("html"))
+    app.radio(key="balancing_mode").set_value("Completo").run()
+    assert not app.exception
+    assert any(e.label=="Stoccaggio netto" for e in app.text_input)
+    assert any(e.label=="Transazioni nette (PSV)" for e in app.text_input)
+    assert any("Calcolo completo indipendente" in e.value for e in app.caption)
+    for widget in app.text_input:
+        if widget.label=="Stoccaggio netto":
+            widget.set_value("300")
+        elif widget.label=="Transazioni nette (PSV)":
+            widget.set_value("-200")
+    next(b for b in app.button if b.label=="Calcola sbilanciamento").click().run()
+    assert not app.exception
+    assert app.session_state["commercial_settlement"]["storage_net"]=="300"
+    assert any("1.100,00" in e.proto.body and "46.200,00" in e.proto.body for e in app.get("html"))
+
+
+def test_balancing_missing_storage_shock_does_not_crash(monkeypatch,tmp_path):
+    from gasops_app.data import synthetic
+    from gasops_app.agents import Assumptions
+    monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
+    app=AppTest.from_string("from gasops_app.workbench import balancing\nbalancing()",default_timeout=30)
+    data=synthetic()
+    app.session_state["active_bundle"]=data
+    app.session_state["scenario_case_"+data.fingerprint]={"demand_gwh":"100","supply_gwh":"120","storage_gwh":None,"price_eur_mwh":"42"}
+    ass=Assumptions()
+    app.session_state["assumptions"]=ass.model_copy(update={"stress":ass.stress.model_copy(update={"storage_pct":10})}).model_dump(mode="json")
+    app.run()
+    assert not app.exception
+    assert any("variazione stoccaggio è sospesa" in e.value for e in app.warning)
