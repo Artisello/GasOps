@@ -73,7 +73,7 @@ def panel():
             payload=analyse(items,keys,first.isoformat(),last.isoformat())
             if include:
                 payload["benchmarks"]=reference_facts()
-                payload["forecasts"]=forecast_facts(st.session_state,now)
+                payload["forecasts"]=forecast_facts(st.session_state,now,include_restricted=not remote)
             answer=None;refs=[];warning=None
             if model and question.strip() and (not remote or consent and can_share(items,keys)) and evidence_ids(payload):
                 try:

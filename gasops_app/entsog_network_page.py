@@ -45,10 +45,18 @@ def panel():
                 with st.spinner("Acquisizione ENTSOG…"):
                     result=load_network(database(),point,from_day,to_day,now=now)
                 st.session_state[STATE]=result
+                from .entsog_vintages import capture,merge,STATE as ARCHIVE,SELECT
+                st.session_state[SELECT]=point
+                try:st.session_state[ARCHIVE]=merge(st.session_state.get(ARCHIVE,[]),[capture(result,utc_now())],utc_now())
+                except ValueError:st.caption("Estrazione disponibile; archivio non aggiornato.")
             except (ValueError,SourceUnavailable) as exc:
-                st.error(str(exc) if isinstance(exc,SourceUnavailable) else "Punto o periodo non valido (massimo 31 giorni conclusi).")
+                st.caption("Fonte temporaneamente indisponibile o periodo non valido.")
+                with st.expander("Dettagli della fonte"):
+                    st.text(str(exc))
                 if STATE in st.session_state:
                     st.caption("Mostro l'ultima estrazione riuscita, non la richiesta fallita.")
+    from .entsog_vintages_page import panel as archive_panel
+    archive_panel()
     result=st.session_state.get(STATE)
     if result is None:
         st.info("Seleziona un'interconnessione e carica i dati. Nessun dato simulato.")

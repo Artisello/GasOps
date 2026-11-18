@@ -48,12 +48,16 @@ def join_power(d,batches,asof,*,strict,load):
     return d.join(pd.DataFrame(rows).set_index("target")),cols
 
 
-def evaluate(vintages,batches,horizon,asof,*,strict=True,load=True,forward=False,context=None):
+def evaluate(vintages,batches,horizon,asof,*,strict=True,load=True,forward=False,context=None,network=None):
     base_features=[*FEATURES,*EXTRA_FIELDS]
     if not set(base_features)<=set(vintages.columns):
         raise ValueError("Ricarica le annualità Jarvis con il modello esteso.")
     d=samples(vintages,horizon)
-    if context:
+    if network:
+        from .entsog_vintages import join_programmes
+        if not strict:raise ValueError("Serve cutoff originale.")
+        original,cols=join_programmes(d,batches,*network,asof)
+    elif context:
         from .terna_context import join_context
         if not strict:raise ValueError("Serve cutoff originale.")
         original,cols=join_context(d,batches,*context,asof)

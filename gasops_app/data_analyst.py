@@ -234,6 +234,21 @@ def catalog(state,now):
             "ENTSOG",ENTSOG,"Estratto; perimetro e metadati da verificare",r.acquired.isoformat(),
             ((x["gas_day"],x["value_gwh_d"]) for x in f),False)
     attempt("ENTSOG",network)
+    def transport():
+        from .entsog_vintages import STATE,SELECT,points,records
+        from .entsog_network import INDICATORS,NAMES
+        batches=state.get(STATE,[])
+        chosen=state.get(SELECT)
+        scopes=points(batches)
+        if chosen in scopes:scopes=[chosen]+[p for p in scopes if p!=chosen]
+        for point in scopes[:8]:
+            for indicator in INDICATORS:
+                rows=records(batches,point,indicator,now,strict=True)
+                if not rows:continue
+                ident=sha256((point+"|"+indicator).encode()).hexdigest()[:20]
+                add("entsog_"+ident,NAMES[indicator]+" · "+point,"GWh/giorno gas","gas_day",point,"ENTSOG TP Transport Data",ENTSOG,
+                    "Ultima versione acquisita; programmi storici non necessariamente ex ante",rows[-1]["acquired"],((r["day"],r["gwh"]) for r in rows),False)
+    attempt("ENTSOG storico",transport)
     return items,issues
 
 
@@ -279,7 +294,7 @@ def reference_facts():
             for r in benchmark_scores() if r.value is not None]
 
 
-def forecast_facts(state,now=None):
+def forecast_facts(state,now=None,*,include_restricted=False):
     """Only cached experiments matching the currently loaded source identities."""
     annual=state.get("snam_forecast_annual_v1",{})
     signatures=tuple(sorted((y,v["sha256"]) for y,v in annual.items()))
@@ -342,6 +357,10 @@ def forecast_facts(state,now=None):
     if saved and signatures and saved["signature"][0]==signatures and saved["signature"][1]==tuple(context_digest(b) for b in batches):
         r=saved["result"]
         facts.append({"id":"backtest_terna_context","source":"Terna + Snam Jarvis","url":PORTAL,"horizon":saved["signature"][2],"from":r["start"],"to":r["end"],"n":r["n"],"scores":r["scores"],"kind":saved["signature"][3],"scope":" / ".join(saved["signature"][4]),"limitation":"Acquisizioni anteriori al cutoff; singolo gruppo, consuntivo gas provvisorio, nessuna promozione."})
+    if include_restricted:
+        from .entsog_vintages import outlook as programmes
+        fact=programmes(state,asof)
+        if fact:facts.append(fact)
     return facts
 
 
