@@ -12,7 +12,7 @@ from .data import FIELDS, period_text
 from .forecast import AUTOMATIC, MODELS
 from .italiano import GRAVITA, MODALITA, MODELLI, data_it, numero
 from .models import AGENT_LABELS, Agent, Kind, Provider
-from .session import analysis_label, briefing_run, launch, preview_market, source_filters
+from .session import analysis_label, briefing_run, launch, preview_market, source_filters, market_scope
 from .reports import markdown
 from .visuals import AMBER, BLUE, ROSE, TEAL, breakdown_chart, chip, demand_chart, error_chart
 from .visuals import forecast_readout, heading, header, info, kind_tag, kpi_grid, local_time, mini_chart, plot, rows, steps
@@ -125,7 +125,7 @@ def _quality_panel(context: MarketContext) -> None:
                     st.caption(finding.detail)
 
 
-def _charts(context: MarketContext, horizon: int, page: str, height: int = 330) -> pd.DataFrame:
+def _charts(context: MarketContext, horizon: int, page: str, height: int = 330, *, readout=True) -> pd.DataFrame:
     origin = context.bundle.origin
     data = context.inspection.usable.tail(horizon)
     title = ("Consumo interno e disponibilità" if origin.grain == "monthly" else
@@ -135,7 +135,7 @@ def _charts(context: MarketContext, horizon: int, page: str, height: int = 330) 
     if not data["demand_gwh"].notna().any():
         st.info("Nessun consumo utilizzabile nel periodo selezionato.")
     else:
-        if projection.points:
+        if projection.points and readout:
             forecast_readout(projection.points[0], origin.grain, historical=origin.archive)
         plot(demand_chart(data, projection, origin.grain, height=height), key=f"{page}_demand")
         horizon_text = "14 giorni gas" if origin.grain == "daily" else "6 mesi"
@@ -323,69 +323,120 @@ def _model_comparison(context: MarketContext) -> None:
                 plot(error_chart(projection, context.bundle.origin.grain), "market_error")
 
 
-def market() -> None:
-    top, controls = st.container(), st.container()
-    with controls:
-        selection = source_filters("market")
-    with top:
-        header("Mercato e previsioni", selection.meta)
-    st.markdown("[Stoccaggi e forniture (Security of supply) — AGSI+, ALSI, IIP e Jarvis](/security-of-supply)")
-    if not selection.bundle:
-        return
-
-    context = preview_market(selection)
-    origin = context.bundle.origin
-    st.caption("Ultimo periodo osservato · " + context.facts.get("label", "Non disponibile"))
-    _metrics(context)
+def _market_headlines(context: MarketContext):
+    """A single comparable reading: observed period, change, and next model period."""
+    origin=context.bundle.origin
+    facts=context.facts
+    point=next(iter(context.projection.points),None)
+    unit="GWh/mese" if origin.grain=="monthly" else "GWh/giorno gas"
+    label=("Prelievi sulla rete SRG" if origin.grain=="daily" and not origin.archive
+           and origin.kind!=Kind.SYNTHETIC else "Gas consumato")
+    comparison=("Ultimi 7 giorni vs 7 precedenti" if origin.grain=="daily" else "Rispetto al mese precedente")
+    next_label="Stima successiva" if origin.archive or origin.kind==Kind.SYNTHETIC else "Consumo previsto"
+    kpi_grid([
+        (label,facts.get("demand_gwh"),unit,facts.get("label","Dato non disponibile"),1,"teal"),
+        ("Variazione dei consumi",facts.get("demand_gwh_change_pct"),"%",comparison,1,""),
+        (next_label,point.estimate if point else None,unit,
+         period_text(pd.Timestamp(point.period),origin.grain) if point else "Previsione non disponibile",1,"blue")
+    ])
     st.write(_plain_market(context))
-    with st.container(border=True, key="panel_market_chart"):
-        visible = _charts(context, selection.periods, "market", height=348)
-    from .weather_page import weather_panel
-    weather_panel(context)
-    _supporting_charts(context, visible, "market")
-    if st.checkbox("Mostra confronto dei modelli e backtest", key="market_show_models"):
-        _model_comparison(context)
-    sources, quality = st.columns([1.3, 1], gap="medium")
-    with sources:
-        with st.container(border=True, key="panel_market_notes"):
-            heading("Lettura del mercato")
-            facts = context.facts
-            if facts:
-                st.write(f"Variazione dei consumi {_change(facts, 'demand_gwh').lower()}.")
-                if "weekend_vs_weekday_pct" in facts:
-                    st.write(f"Consumi medi nel fine settimana {numero(facts['weekend_vs_weekday_pct'], signed=True)}% "
-                             "rispetto ai giorni feriali negli ultimi 84 giorni della serie.")
-                if "peak_month" in facts:
-                    st.write(f"Nei periodi disponibili, la media stagionale dei consumi è massima a "
-                             f"{facts['peak_month']} e minima a {facts['low_month']}.")
-                if origin.grain == "monthly":
-                    st.caption("La disponibilità contabile descrive il bilancio mensile nazionale. "
-                               "I saldi di trasporto richiedono osservazioni operative dedicate.")
-            with st.expander("Dettaglio delle fonti"):
-                _source_panel(context)
-                note = st.session_state.get("market_source_note")
-                if note:
-                    st.caption(note)
-                for feed in (origin, *origin.companions):
-                    st.caption(feed.description)
-                    if not origin.archive and origin.kind != Kind.SYNTHETIC:
-                        st.text(f"Acquisizione {feed.name} · {local_time(feed.retrieved_at)}")
-                st.text(f"Impronta dati SHA-256 · {context.bundle.fingerprint}")
-    with quality:
-        _quality_panel(context)
-    with st.expander("Osservazioni e previsioni"):
-        raw = context.bundle.rows
-        start = visible.index.min().date().isoformat() if len(visible) else ""
-        st.caption("Record originali nel periodo del grafico, incluse le note della fonte.")
-        headings = {**FIELDS, "period": "Periodo", "source_flag": "Flag della fonte", "timestamp_utc": "Inizio UTC"}
-        if origin.grain == "monthly":
-            headings["supply_gwh"] = "Disponibilità contabile"
-            headings["price_eur_mwh"] = "Prezzo CMEM,m (€/MWh)"
-        wanted = ["period", "timestamp_utc", *origin.fields, "source_flag"]
-        st.dataframe(raw.loc[raw["period"] >= start, wanted].rename(columns=headings), hide_index=True, width="stretch")
+
+
+def _market_quality_notice(context):
+    findings=[f for f in context.inspection.findings if f.severity!="info"]
+    if findings:
+        titles=" · ".join(f.title for f in findings if f.severity=="high")
+        urgent=[f for f in findings if f.id=="stale" or f.id.startswith("public-cache")]
+        for item in urgent:
+            st.warning(item.title+" — "+item.detail)
+        if titles:
+            st.warning(f"{len(findings)} rilievi sui dati. "+titles+". Consulta Modelli e dati.")
+        elif len(findings)>len(urgent):
+            st.warning(f"{len(findings)} rilievi sui dati. Consulta Modelli e dati.")
+    else:
+        st.caption("Controlli dati: nessun rilievo da rivedere.")
+
+
+def _market_data(context, visible):
+    origin=context.bundle.origin
+    with st.expander("Dati osservati e previsioni"):
+        raw=context.bundle.rows
+        start=visible.index.min().date().isoformat() if len(visible) else ""
+        headings={**FIELDS,"period":"Periodo","source_flag":"Flag della fonte","timestamp_utc":"Inizio UTC"}
+        if origin.grain=="monthly":
+            headings["supply_gwh"]="Disponibilità contabile"
+            headings["price_eur_mwh"]="Prezzo CMEM,m (€/MWh)"
+        wanted=["period","timestamp_utc",*origin.fields,"source_flag"]
+        st.caption("Record della fonte nel periodo selezionato.")
+        st.dataframe(raw.loc[raw["period"]>=start,wanted].rename(columns=headings),hide_index=True,width="stretch")
         if context.projection.points:
-            st.caption("PREVISIONE · GWh per periodo")
-            projected = [{"Periodo": period_text(pd.Timestamp(p.period), origin.grain), "Stima (GWh)": numero(p.estimate),
-                          "Estremo inferiore": numero(p.lower_80), "Estremo superiore": numero(p.upper_80)}
-                         for p in context.projection.points]
-            st.dataframe(projected, hide_index=True, width="stretch")
+            st.caption("Previsioni · GWh per periodo")
+            st.dataframe([{"Periodo":period_text(pd.Timestamp(p.period),origin.grain),
+                           "Stima (GWh)":p.estimate,"Estremo inferiore":p.lower_80,
+                           "Estremo superiore":p.upper_80} for p in context.projection.points],
+                         hide_index=True,width="stretch",column_config={
+                             name:st.column_config.NumberColumn(format="%.1f")
+                             for name in ("Stima (GWh)","Estremo inferiore","Estremo superiore")})
+    with st.expander("Provenienza e metodologia"):
+        _source_panel(context)
+        note=st.session_state.get("market_source_note")
+        if note:
+            st.caption(note)
+        for feed in (origin,*origin.companions):
+            st.caption(feed.description)
+        st.text("Impronta dati SHA-256 · "+context.bundle.fingerprint)
+
+
+def market() -> None:
+    top,controls=st.container(),st.container()
+    with controls:
+        selection=source_filters("market")
+    area,perimeter=market_scope(selection.name)
+    with top:
+        header("Mercato e previsioni", "")
+        st.markdown("**"+area+"** · "+perimeter)
+    if not selection.bundle:
+        st.markdown("[Stoccaggi e forniture (Security of supply)](/security-of-supply)")
+        return
+    context=preview_market(selection)
+    origin=context.bundle.origin
+    st.caption("Fonte: "+origin.name+" · "+("mensile" if origin.grain=="monthly" else "giornaliera"))
+    _market_headlines(context)
+    _market_quality_notice(context)
+    main,details,weather,methods=st.tabs(["Consumi e previsioni","Composizione e prezzi","Meteo","Modelli e dati"])
+    visible=context.inspection.usable.tail(selection.periods)
+    with main:
+        with st.container(border=True,key="panel_market_chart"):
+            _charts(context,selection.periods,"market",height=390,readout=False)
+            if context.projection.points:
+                p=context.projection.points[0]
+                if p.lower_80 is not None and p.upper_80 is not None:
+                    st.caption("Intervallo stimato (80%) per "+period_text(pd.Timestamp(p.period),origin.grain)+
+                               ": "+numero(p.lower_80)+" – "+numero(p.upper_80)+" GWh.")
+            info("Come leggere il grafico","Linea continua: consumi osservati. Tratteggio: stima del modello; la fascia rappresenta l’incertezza.",
+                 "La previsione parte dall’ultimo periodo utilizzabile, non necessariamente da oggi. GWh misura energia.")
+        st.markdown("[Stoccaggi e forniture (Security of supply)](/security-of-supply)")
+    with details:
+        st.caption(area+" · "+perimeter)
+        _metrics(context)
+        _supporting_charts(context,visible,"market")
+        facts=context.facts
+        with st.expander("Abitudini di consumo"):
+            if facts.get("weekend_vs_weekday_pct") is not None:
+                st.write("Consumi medi nel fine settimana: "+numero(facts["weekend_vs_weekday_pct"],signed=True)+
+                         "% rispetto ai feriali negli ultimi 84 giorni della serie.")
+            if facts.get("peak_month") and facts.get("low_month"):
+                st.write("Media stagionale massima: "+facts["peak_month"]+". Minima: "+facts["low_month"]+".")
+            if facts.get("weekend_vs_weekday_pct") is None and not facts.get("peak_month"):
+                st.caption("Dati insufficienti per descrivere le abitudini di consumo.")
+    with weather:
+        from .weather_page import weather_panel
+        if origin.grain=="daily" and origin.kind==Kind.HISTORICAL and not origin.archive and origin.name.startswith("ENTSOG"):
+            weather_panel(context)
+        else:
+            st.info("Per analizzare il meteo, seleziona Rete SRG · prelievi giornalieri (ENTSOG) nella fonte dati.")
+    with methods:
+        if st.checkbox("Confronta i modelli previsionali",key="market_show_models"):
+            _model_comparison(context)
+        _quality_panel(context)
+        _market_data(context,visible)
