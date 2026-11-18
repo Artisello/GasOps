@@ -46,3 +46,17 @@ def test_parser():
     with pytest.raises(ValueError):m.parse_csv((head+line+line.replace(",5,4,",",6,4,")).encode(),date(2026,2,1))
     with pytest.raises(ValueError):m.parse_csv((head+line.replace(",5,4,",",NaN,4,")).encode(),date(2026,2,1))
     with pytest.raises(ValueError):m.parse_csv((head+line).encode(),date(2025,12,31))
+
+
+def test_panel_no_default_demo():
+    from streamlit.testing.v1 import AppTest
+    app=AppTest.from_string("from gasops_app.incentives_page import panel\nfrom gasops_app.models import utc_now\npanel(utc_now())").run()
+    assert not app.exception
+    assert app.radio(key="incentive_mode").value=="Importati"
+    assert any("Nessun dato effettivo disponibile" in e.value for e in app.info)
+    app.radio(key="incentive_mode").set_value("Demo").run()
+    assert not app.exception
+    assert any("Dati sintetici" in e.value for e in app.caption)
+    assert len(app.dataframe)==1
+    app.checkbox(key="incentive_detail").set_value(True).run()
+    assert not app.exception and len(app.dataframe)==2

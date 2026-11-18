@@ -55,7 +55,7 @@ def panel(now):
         st.caption("Somme giornaliere grezze sulle sole osservazioni importate; non IA né premio maturato. I2 in tabella prima della correzione h.")
         if any(r.incentives[1] is not None and r.h is None for r in chosen):
             st.warning("Correzione I2 incompleta: servono quotazioni EEX high/low o stato non quotato esplicito.")
-        with st.expander("Dettaglio per giorno gas"):
+        if st.checkbox("Mostra dettaglio per giorno gas",key="incentive_detail"):
             st.dataframe([{"Giorno gas":r.day,"Fase":r.phase,**{f"p{k} ({model.UNITS[k-1]})":float(v) if v is not None else None for k,v in enumerate(r.p,1)},
                            **{f"I{k} (€)":float(v) if v is not None else None for k,v in enumerate(r.incentives,1)},
                            "h":float(r.h) if r.h is not None else None} for r in chosen],hide_index=True,width="stretch")
