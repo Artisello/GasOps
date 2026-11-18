@@ -150,6 +150,9 @@ def commercial_workbench(ledger_view):
     tabs=st.tabs(["Fatture","Garanzie","Scadenze","Prezzi","Bilanci e GNL"])
     with tabs[0]:
         invoice_rows,summary=_invoice_panel(sample_rows())
+        st.divider()
+        from .reconciliation_page import documents_panel
+        documents_panel()
     with tabs[1]:
         risk=_guarantee_panel()
     with tabs[2]:
