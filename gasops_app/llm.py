@@ -51,15 +51,19 @@ def configuration(secrets=None) -> LLMConfig | None:
         value=secrets.get(name) if secrets is not None else None
         return str(value if value is not None else os.environ.get(name,default)).strip()
     model=setting("GASOPS_LLM_MODEL")
-    url=setting("GASOPS_LLM_URL","http://127.0.0.1:11434/v1").rstrip("/")
+    explicit_url=setting("GASOPS_LLM_URL").rstrip("/")
     key=setting("GASOPS_LLM_API_KEY")
     groq_key=setting("GROQ_API_KEY")
-    if not model and (groq_key or key.startswith("gsk_")):
-        if groq_key or url in {"http://127.0.0.1:11434/v1","https://api.groq.com/openai/v1"}:
-            model,url="openai/gpt-oss-120b","https://api.groq.com/openai/v1"
+    groq_url="https://api.groq.com/openai/v1"
+    # A provider-specific key is enough for Groq; never reinterpret an
+    # explicitly configured remote provider or send a Groq token elsewhere.
+    if (groq_key or key.startswith("gsk_")) and explicit_url in {"",groq_url,groq_url+"/chat/completions"}:
+        model=model or "openai/gpt-oss-120b"
+        explicit_url=explicit_url or groq_url
+    url=explicit_url or "http://127.0.0.1:11434/v1"
     if not model:
-        if key:
-            raise ValueError("Chiave presente, ma modello non configurato. Imposta GASOPS_LLM_MODEL e GASOPS_LLM_URL.")
+        if key or groq_key or setting("GROK_API_KEY") or setting("XAI_API_KEY"):
+            raise ValueError("Chiave presente, ma modello non configurato. Imposta GASOPS_LLM_MODEL e GASOPS_LLM_URL. Groq e Grok/xAI sono distinti.")
         return None
     parsed=urlsplit(url)
     candidate=LLMConfig(model,url,key or None)
@@ -68,6 +72,8 @@ def configuration(secrets=None) -> LLMConfig | None:
         raise ValueError("Configura un endpoint LLM HTTPS o HTTP locale compatibile /v1.")
     if candidate.groq and not key:
         candidate=LLMConfig(model,url,groq_key or None)
+    if key.startswith("gsk_") and not candidate.groq:
+        raise ValueError("La chiave Groq richiede un endpoint api.groq.com. Controlla GASOPS_LLM_URL.")
     if not candidate.local and not candidate.api_key:
         raise ValueError("Chiave API del modello mancante.")
     if not candidate.local and not candidate.groq and setting("GASOPS_ALLOW_PAID_LLM").lower()!="true":

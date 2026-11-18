@@ -104,6 +104,8 @@ def ai_controls(*, prefix="sidebar") -> None:
     if problem:
         st.warning(problem)
     if config:
+        if st.session_state.get("execution_mode")=="Deterministic":
+            st.caption("Modello disponibile: selezionalo in Modalità di analisi per usarlo nel report.")
         st.caption(("Groq Cloud" if config.groq else "Ollama locale" if config.local else "Provider remoto")+
                    " · "+config.model)
     else:
@@ -125,7 +127,7 @@ def ai_controls(*, prefix="sidebar") -> None:
         if st.button("Test connessione AI",key=prefix+"_llm_probe"):
             try:
                 CompatibleReasoner(config,reserve=None if config.local else lambda:database().reserve_llm()).probe()
-                st.session_state["llm_probe_result"]=(config.model,True,"Connessione e risposta testate.")
+                st.session_state["llm_probe_result"]=(config.model,True,"Connessione e risposta JSON con riferimento verificate (test sintetico).")
             except ModelUnavailable as error:
                 st.session_state["llm_probe_result"]=(config.model,False,str(error))
             except Exception:
@@ -298,7 +300,7 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
         from .briefing_context import collect
         from .operational_sources import gie_key
         include_gie=bool(st.session_state.get("briefing_gie"))
-        include_weather=bool(st.session_state.get("briefing_weather") or st.session_state.get("weather_demo_consent"))
+        include_weather=bool(st.session_state.get("briefing_weather"))
         public_context={}
         if include_gie or include_weather:
             try:
