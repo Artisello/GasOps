@@ -93,7 +93,7 @@ def join_programmes(samples,batches,point,indicator,asof):
             if r["indicator"]==indicator and not r["assumed"]:groups.setdefault(r["day"],[]).append((at,digest(b),r["gwh"]))
     rows=[];col="entsog_programme"
     for target,r in samples.iterrows():
-        cutoff=r.origin+pd.Timedelta(hours=15)
+        cutoff=r.origin+pd.Timedelta(15, unit="h")
         candidates=[x for x in groups.get(target.date().isoformat(),[]) if x[0]<=cutoff]
         if not candidates:continue
         latest=max(x[0] for x in candidates);same=[x for x in candidates if x[0]==latest]

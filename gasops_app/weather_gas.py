@@ -118,9 +118,9 @@ def evaluate(demand,hist,future,previous=None):
     count=0
     fold_info=[]
     for fold in range(FOLDS):
-        stop=end-pd.Timedelta(days=(FOLDS-fold-1)*HOLDOUT)
-        start=stop-pd.Timedelta(days=HOLDOUT-1)
-        train=joined.loc[joined.index<start-pd.Timedelta(days=EMBARGO)]
+        stop=end-pd.Timedelta((FOLDS-fold-1)*HOLDOUT, unit="D")
+        start=stop-pd.Timedelta(HOLDOUT-1, unit="D")
+        train=joined.loc[joined.index<start-pd.Timedelta(EMBARGO, unit="D")]
         test=joined.loc[(joined.index>=start)&(joined.index<=stop)]
         if previous is not None:
             test=test.loc[test.index.intersection(previous.index)]

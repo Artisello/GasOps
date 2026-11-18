@@ -164,7 +164,7 @@ def daily_vintages(frame,asof):
     """One as-of selection per origin/sheet; ambiguous latest timestamp excluded."""
     if asof.tzinfo is not None:
         raise ValueError("Atteso orario locale senza offset")
-    f=frame[frame.origin+pd.Timedelta(hours=15)<=asof].copy()
+    f=frame[frame.origin+pd.Timedelta(15, unit="h")<=asof].copy()
     f=f.sort_values(["origin","h","published","row"])
     selected=[]
     conflicts=0
@@ -185,11 +185,11 @@ def samples(vintages,horizon):
     d["actual_published"]=actual.published.reindex(d.index)
     d["actual_sha256"]=actual.sha256.reindex(d.index)
     d["actual_row"]=actual.row.reindex(d.index)
-    d["weekly"]=actual.demand.reindex(d.index-pd.Timedelta(days=7)).to_numpy()
-    d["weekly_published"]=actual.published.reindex(d.index-pd.Timedelta(days=7)).to_numpy()
+    d["weekly"]=actual.demand.reindex(d.index-pd.Timedelta(7, unit="D")).to_numpy()
+    d["weekly_published"]=actual.published.reindex(d.index-pd.Timedelta(7, unit="D")).to_numpy()
     # A label is made available conservatively at 15:00 on G+1, even if
     # its selected G-1 publication was earlier.
-    d["label_cutoff"]=d.index+pd.Timedelta(days=1,hours=15)
+    d["label_cutoff"]=d.index+pd.Timedelta(39, unit="h")
     return d
 
 
@@ -206,14 +206,14 @@ def evaluate(vintages,horizon,asof):
     d=samples(vintages,horizon)
     complete=d.dropna(subset=[*FEATURES,"weekly","actual","actual_published","weekly_published"])
     complete=complete[(complete.label_cutoff<=asof)&
-        (complete.weekly_published<=complete.origin+pd.Timedelta(hours=15))]
+        (complete.weekly_published<=complete.origin+pd.Timedelta(15, unit="h"))]
     if complete.empty:
         raise ValueError("Nessuna coppia previsione/consuntivo")
     end=complete.index.max()
-    start=end-pd.Timedelta(days=HOLDOUT-1)
+    start=end-pd.Timedelta(HOLDOUT-1, unit="D")
     records=[]
     for target,row in complete.loc[start:end].iterrows():
-        cutoff=row.origin+pd.Timedelta(hours=15)
+        cutoff=row.origin+pd.Timedelta(15, unit="h")
         train=complete[(complete.label_cutoff<=cutoff)&(complete.actual_published<=cutoff)]
         if len(train)<MIN_TRAIN:continue
         records.append({"target":target.date().isoformat(),"origin":row.origin.date().isoformat(),
@@ -233,7 +233,7 @@ def evaluate(vintages,horizon,asof):
     candidate=None
     if not d.empty:
         target,row=next(iter(d.tail(1).iterrows()))
-        cutoff=row.origin+pd.Timedelta(hours=15)
+        cutoff=row.origin+pd.Timedelta(15, unit="h")
         train=complete[(complete.label_cutoff<=cutoff)&(complete.actual_published<=cutoff)]
         if len(train)>=MIN_TRAIN and row[FEATURES].notna().all():
             candidate={"target":target.date().isoformat(),"origin":row.origin.date().isoformat(),

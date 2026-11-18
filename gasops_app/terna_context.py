@@ -220,7 +220,7 @@ def join_context(samples,batches,kind,scope,asof):
     rows=[]
     col="context_"+kind
     for target,r in samples.iterrows():
-        cutoff=r.origin+pd.Timedelta(hours=15)
+        cutoff=r.origin+pd.Timedelta(15, unit="h")
         if kind=="industry":
             first=r.origin.replace(day=1)
             periods=[p for p in groups if pd.Timestamp(p)<first and (first-pd.Timestamp(p)).days<=93]

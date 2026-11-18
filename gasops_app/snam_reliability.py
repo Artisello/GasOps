@@ -37,18 +37,18 @@ def evaluate_extended(vintages,horizon,asof):
     d=samples(vintages,horizon)
     base=d.dropna(subset=[*FEATURES,"weekly","actual","actual_published","weekly_published"])
     base=base[(base.label_cutoff<=asof)&(base.actual_published<=asof)&
-              (base.weekly_published<=base.origin+pd.Timedelta(hours=15))]
+              (base.weekly_published<=base.origin+pd.Timedelta(15, unit="h"))]
     if base.empty:
         raise ValueError("Nessuna coppia di base confrontabile.")
     end=base.index.max()
-    start=end-pd.Timedelta(days=HOLDOUT-1)
+    start=end-pd.Timedelta(HOLDOUT-1, unit="D")
     complete=base.dropna(subset=features)
     complete=complete[np.isfinite(complete[features]).all(axis=1)&(complete[features]>=0).all(axis=1)&
                       (complete.actual>=0)&(complete.weekly>=0)]
     history=[];records=[]
-    warm=start-pd.Timedelta(days=CAL_WINDOW+45)
+    warm=start-pd.Timedelta(CAL_WINDOW+45, unit="D")
     for target,row in complete.loc[warm:end].iterrows():
-        cutoff=row.origin+pd.Timedelta(hours=15)
+        cutoff=row.origin+pd.Timedelta(15, unit="h")
         train=complete[(complete.label_cutoff<=cutoff)&(complete.actual_published<=cutoff)]
         if len(train)<MIN_TRAIN:continue
         r={"target":target.date().isoformat(),"origin":row.origin.date().isoformat(),
@@ -77,7 +77,7 @@ def evaluate_extended(vintages,horizon,asof):
     candidate=None
     if not d.empty:
         target,row=next(iter(d.tail(1).iterrows()))
-        cutoff=row.origin+pd.Timedelta(hours=15)
+        cutoff=row.origin+pd.Timedelta(15, unit="h")
         train=complete[(complete.label_cutoff<=cutoff)&(complete.actual_published<=cutoff)]
         if len(train)>=MIN_TRAIN and row[features].notna().all() and (row[features]>=0).all():
             candidate={"target":target.date().isoformat(),"origin":row.origin.date().isoformat(),
