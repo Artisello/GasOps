@@ -27,6 +27,16 @@ def markdown(run: Run, reviewed: dict[str, str]) -> str:
         refs = ", ".join(AGENT_LABELS[name] for name in run.interpretation_sources)
         lines.extend(["", f"**Interpretazione del modello** {_plain(run.interpretation)}", f"Strumenti consultati · {refs}"])
 
+    public=run.assumptions.get("public_operational_context") or {}
+    if public:
+        lines.extend(["", "## Contesto operativo pubblico", ""])
+        for name,item in public.items():
+            status={"available":"Disponibile","stale":"Non recente","unavailable":"Non disponibile"}.get(item.get("status"),"Stato non indicato")
+            lines.append(f"- **{_plain(str(item.get('source',name)))}** · {status} · {_plain(str(item.get('gas_day') or item.get('acquired') or 'data non indicata'))}")
+            if item.get("limitation") or item.get("reason"):
+                lines.append(f"  - {_plain(str(item.get('limitation') or item.get('reason')))}")
+        lines.append("Indicatori e metadati completi nelle ipotesi dell’analisi. Nessun record UMM originale.")
+
     lines.extend(["", "## Riscontri degli agenti", ""])
     for agent, result in run.results.items():
         lines.extend([f"### {AGENT_LABELS[agent]} · {ESITI[result.status]}", "", _plain(result.summary), ""])

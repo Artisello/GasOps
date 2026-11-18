@@ -64,6 +64,9 @@ def test_groq_http_briefing_context_and_structured_probe(monkeypatch):
     assert len(seen)==2 and seen[-1]["response_format"]=={"type":"json_object"}
     sent=seen[-1]["messages"][-1]["content"]
     assert "stock_twh" in sent and "Gas Infrastructure Europe" in sent
+    assert "EXECUTIVE_BRIEFING_V1" in sent and "Priorità di verifica" in sent
+    assert "EXECUTIVE_BRIEFING_V1" not in seen[0]["messages"][-1]["content"]
+    assert seen[-1]["max_completion_tokens"]==3072
     assert '"regulatory_intelligence"' not in sent and '"settlement"' not in sent
 
 
@@ -98,3 +101,13 @@ def test_summary_diagnostics_and_completion_budget(monkeypatch):
     monkeypatch.setattr("gasops_app.llm.requests.post",timeout)
     with pytest.raises(ModelUnavailable,match="Tempo di risposta"):
         CompatibleReasoner(config).interpret("Sintesi",{Agent.MARKET:result})
+
+
+def test_gie_missing_key_has_attributed_source_status_without_http(monkeypatch):
+    def fail(*args,**kwargs):
+        raise AssertionError("Missing key must not trigger a request")
+    for name in ("load_agsi","load_alsi","load_iip"):
+        monkeypatch.setattr("gasops_app.briefing_context."+name,fail)
+    result=collect(None,None,NOW,include_gie=True)
+    assert set(result)=={"AGSI+","ALSI","IIP"}
+    assert all(item["status"]=="unavailable" and item["source_url"] and "values" not in item for item in result.values())

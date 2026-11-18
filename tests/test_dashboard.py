@@ -19,6 +19,7 @@ def test_overview_button_completes_offline_run(monkeypatch, tmp_path):
     assert not app.exception
     assert app.title[0].value == "Panoramica del mercato"
     assert app.button(key="analysis_launch").label == "Genera bollettino di mercato"
+    assert app.checkbox(key="briefing_gie").value is True
     assert any("Nessun bollettino generato" in e.value for e in app.caption)
     assert app.selectbox(key="overview_model").value == AUTOMATIC
     app.button(key="analysis_launch").click().run()
@@ -666,3 +667,18 @@ def test_briefing_period_prefers_observed_and_fallback_is_not_monolithic(monkeyp
     assert sum(w.value=="Fixture AI failure" for w in app.warning)==1
     assert not any("MONOLITHIC_FIXTURE" in t.value for t in app.text)
     assert any("Verifica fixture" in m.value for m in app.markdown)
+
+
+def test_briefing_context_keeps_missing_gie_and_umm_separate():
+    app=AppTest.from_string("""from gasops_app.dashboard import _briefing_operational_context
+_briefing_operational_context({
+    "AGSI+":{"status":"available","gas_day":"2026-11-17","values":{"fill_pct":75.0,"stock_twh":100.0}},
+    "ALSI":{"status":"unavailable","reason":"Chiave non configurata"},
+    "IIP":{"status":"available","received_records":4,"coverage":"Parziale"},
+    "Open-Meteo":{"status":"available","points":[{"day":"2026-11-19","hdd":10.0,"temperature_c":8.0}]}
+})
+""").run()
+    assert not app.exception
+    assert any("Stoccaggi Italia" in e.proto.body and "75,0" in e.proto.body and "record, non eventi" in e.proto.body for e in app.get("html"))
+    assert any("Copertura incompleta" in e.value and "ALSI" in e.value for e in app.caption)
+    assert any("picco HDD" in e.value for e in app.caption)
