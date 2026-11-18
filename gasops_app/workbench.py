@@ -10,13 +10,13 @@ import pandas as pd
 from pydantic import ValidationError
 import streamlit as st
 
-from .agents import MarketContext, RegulationArguments, regulation_result
+from .agents import MarketContext
 from .finance import CommercialInput, ScenarioCase, ScenarioInput, SettlementInput, scenario, settle, settle_commercial, settlement_sensitivity
 from .italiano import ESITI, GRAVITA, MODALITA, numero
 from .models import AGENT_LABELS, Agent, Kind, Run, utc_now
-from .regulatory import MAX_DOCUMENTS, REGISTER, SETTLEMENT_NOTE
+from .regulatory import SETTLEMENT_NOTE
 from .reports import markdown
-from .session import analysis_label, assumptions, database, fixture, launch, library, reasoner, save_assumptions, source_filters
+from .session import analysis_label, assumptions, database, fixture, launch, save_assumptions, source_filters
 from .visuals import chip, evidence, header, heading, info, kind_tag, kpi, kpi_grid, local_time, rows, steps
 
 LOG = logging.getLogger(__name__)
@@ -227,114 +227,9 @@ def balancing() -> None:
         _scenario_panel()
 
 
-def _sync_uploads() -> None:
-    files = st.session_state.get("reg_upload") or []
-    st.session_state["pdf_uploads"] = tuple((item.name, item.getvalue()) for item in files[:MAX_DOCUMENTS])
-
-
-def _reg_register() -> None:
-    filters = {"all": "Tutti i rilievi", **GRAVITA}
-    severity = st.selectbox("Gravità", tuple(filters), format_func=filters.__getitem__, key="reg_severity")
-    cases = [entry for entry in REGISTER if severity == "all" or entry.finding.severity == severity]
-    st.dataframe(
-        [{"Rilievo": case.finding.title, "Gravità": GRAVITA[case.finding.severity],
-          "Classificazione": case.finding.category, "Verifica dell’edizione": case.review} for case in cases],
-        hide_index=True, width="stretch", height=40 + 36 * len(cases),
-    )
-    title = st.selectbox("Esamina il rilievo", [case.finding.title for case in cases], key="reg_finding")
-    case = next(entry for entry in cases if entry.finding.title == title)
-    with st.container(border=True, key="panel_reg_finding"):
-        heading(case.finding.title, chip(GRAVITA[case.finding.severity].upper(), case.finding.severity))
-        st.write(case.finding.detail)
-        st.caption(case.review)
-        evidence(case.finding.citations)
-
-
-def _reg_query(docs) -> None:
-    kind = st.radio("Modalità di ricerca", ["Fai una domanda", "Cerca nei documenti"], horizontal=True)
-    available = ["Tutti i materiali indicizzati", *docs.documents]
-    with st.form("reg_ask_form"):
-        document = st.selectbox("Documento", available, disabled=kind == "Fai una domanda")
-        query = st.text_input("Domanda o parole da cercare", placeholder="Come definisce il Codice di Rete il bilanciamento commerciale?",
-                              max_chars=600)
-        submitted = st.form_submit_button("Interroga l’analista" if kind == "Fai una domanda" else "Trova i riferimenti", type="primary")
-    if submitted and not query.strip():
-        st.warning("Inserisci una domanda o un termine di ricerca.")
-    if submitted and query.strip():
-        if kind == "Cerca nei documenti":
-            found = docs.search(query, document=None if document == available[0] else document)
-            st.session_state["reg_answer"] = (query, None, [hit.citation for hit in found], None, None)
-        else:
-            result = regulation_result(docs, RegulationArguments(query=query))
-            interpretation, warning = None, None
-            model = reasoner()
-            if model and model.config.local and result.evidence:
-                try:
-                    interpretation, _ = model.interpret(query, {Agent.REGULATORY: result})
-                except Exception as error:
-                    LOG.warning("Regulatory interpretation unavailable (%s)", type(error).__name__)
-                    warning = "Modello non disponibile. Puoi consultare i riferimenti qui sotto."
-            st.session_state["reg_answer"] = (query, result.summary, result.evidence, interpretation, warning)
-    answer = st.session_state.get("reg_answer")
-    if answer:
-        objective, summary, citations, narrative, warning = answer
-        with st.container(border=True, key="panel_reg_answer"):
-            heading("Riscontri nei documenti", chip(f"{len(citations)} RIFERIMENTI"))
-            st.text(objective)
-            if summary:
-                st.text(summary)
-            if warning:
-                st.warning(warning)
-            if narrative:
-                st.caption("Interpretazione del modello sulle edizioni citate, da rivedere")
-                st.text(narrative)
-            if citations:
-                evidence(citations)
-            else:
-                st.info("Nessun passaggio pertinente. Prova una frase del documento o carica un’edizione con testo ricercabile.")
-
-
-def _reg_explorer(docs) -> None:
-    if not docs.documents:
-        st.info("Carica un PDF con testo ricercabile per aprire le pagine originali. Il registro contiene le note sulle edizioni esaminate.")
-        return
-    selected = st.selectbox("Documento PDF", list(docs.documents), key="reg_doc")
-    document = docs.documents[selected]
-    # The document itself provides the page numbers, including covers and contents.
-    page = st.number_input("Pagina PDF", min_value=1, max_value=document.pages, step=1, value=1,
-                           key=f"reg_page_{document.digest[:10]}")
-    st.download_button("Scarica il PDF locale", document.data, file_name=document.name, mime="application/pdf",
-                       icon=":material/download:")
-    if st.button("Apri la pagina", type="primary", key="reg_open_page"):
-        st.session_state["opened_pdf"] = (document.digest, int(page))
-    if st.session_state.get("opened_pdf") == (document.digest, int(page)):
-        st.image(document.render(int(page)), caption=f"{selected} · PDF p. {page}", width=690)
-    with st.expander("Impronta dell’edizione"):
-        st.code(document.digest, language=None)
-
-
 def regulatory() -> None:
-    header("Norme e documenti", '<span>Edizioni esaminate · applicabilità attuale da verificare</span>')
-    left, right = st.columns([1.65, 1], gap="medium")
-    with left:
-        st.file_uploader("Aggiungi PDF con testo ricercabile", type=["pdf"], accept_multiple_files=True, key="reg_upload",
-                         on_change=_sync_uploads)
-    docs = library()
-    with right, st.container(border=True, key="panel_reg_library"):
-        heading("Archivio documenti", chip(f"{len(docs.documents)} PDFS"))
-        if docs.documents:
-            rows((title, f"{pdf.pages} pagine") for title, pdf in docs.documents.items())
-        else:
-            st.caption("Le note sulle edizioni esaminate sono disponibili offline.")
-        for warning in docs.errors:
-            st.warning(warning)
-    register, ask, explorer = st.tabs(["Punti da verificare", "Ricerca e domande", "Leggi i documenti"])
-    with register:
-        _reg_register()
-    with ask:
-        _reg_query(docs)
-    with explorer:
-        _reg_explorer(docs)
+    from .document_page import document_page
+    document_page()
 
 
 def _example_question() -> None:

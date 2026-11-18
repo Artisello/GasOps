@@ -141,7 +141,9 @@ class Pdf:
 
     def render(self, page: int) -> bytes:
         with pymupdf.open(stream=self.data, filetype="pdf") as document:
-            return document[page - 1].get_pixmap(matrix=pymupdf.Matrix(1.35, 1.35)).tobytes("png")
+            selected=document[page-1]
+            scale=min(1.35,1400/max(1.,selected.rect.width,selected.rect.height))
+            return selected.get_pixmap(matrix=pymupdf.Matrix(scale,scale)).tobytes("png")
 
 
 @dataclass(frozen=True)
@@ -164,13 +166,15 @@ ALIASES = {
 
 
 class Library:
-    def __init__(self, inputs: tuple[tuple[str, bytes], ...] = ()):
+    def __init__(self, inputs: tuple[tuple[str, bytes], ...] = (), *, include_notes: bool = True):
         self.documents: dict[str, Pdf] = {}
         self.errors: list[str] = []
         passages = [Passage(BALANCING_NOTE, "commercial balancing bilanciamento commerciale definizione definition"),
                     Passage(SETTLEMENT_NOTE, "settlement imbalance formula buy sell disequilibrio")]
         passages.extend(Passage(c, f"{case.finding.title} {case.search}") for case in REGISTER
                         for c in case.finding.citations)
+        if not include_notes:
+            passages=[]
 
         for name, data in inputs[:MAX_DOCUMENTS]:
             name = Path(name).name
@@ -187,9 +191,14 @@ class Library:
             ngram_range=(1, 2), strip_accents="unicode", sublinear_tf=True, max_features=45000,
             token_pattern=r"(?u)\b[\w-]{2,}\b",
         )
-        self.matrix = self.index.fit_transform(
-            [f"{p.search} {p.citation.evidence}" for p in passages]
-        )
+        self.matrix = None
+        if passages:
+            try:
+                self.matrix = self.index.fit_transform([f"{p.search} {p.citation.evidence}" for p in passages])
+            except ValueError as error:
+                if "empty vocabulary" not in str(error):
+                    raise
+                self.errors.append("Testo senza termini indicizzabili; prova la ricerca esatta.")
 
     @staticmethod
     def _extract(name: str, data: bytes) -> tuple[Pdf, list[Passage]]:
@@ -216,11 +225,11 @@ class Library:
             raise ValueError("Testo non estraibile. Usa un PDF con testo ricercabile.")
         return pdf, passages
 
-    def search(self, query: str, limit: int = 5, document: str | None = None) -> list[Passage]:
+    def search(self, query: str, limit: int = 5, document: str | None = None, *, expand_aliases: bool = True) -> list[Passage]:
         query = query.strip()[:600]
-        if not query:
+        if not query or self.matrix is None:
             return []
-        expanded = " ".join(extra for pattern, extra in ALIASES.items() if re.search(pattern, query, re.I))
+        expanded = " ".join(extra for pattern, extra in ALIASES.items() if re.search(pattern, query, re.I)) if expand_aliases else ""
         vector = self.index.transform([f"{query} {expanded}"])
         scores = (self.matrix @ vector.T).toarray().ravel()
         matches: list[Passage] = []

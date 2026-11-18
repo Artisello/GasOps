@@ -108,14 +108,14 @@ class CompatibleReasoner:
         self.messages: list[dict] = [{"role": "system", "content": SYSTEM}]
         self.pending: list[tuple[str, Agent]] = []
 
-    def _chat(self, messages: list[dict], tools: Mapping[Agent, Tool] | None = None) -> dict:
+    def _chat(self, messages: list[dict], tools: Mapping[Agent, Tool] | None = None, *, structured=False) -> dict:
         body = {"model": self.config.model, "messages": messages, "stream": False, "max_tokens": 1024}
         if self.config.groq:
             body.pop("max_tokens")
             body["max_completion_tokens"]=1024
             if self.config.model in {"openai/gpt-oss-120b","openai/gpt-oss-20b"}:
                 body["reasoning_effort"]="low"
-            if not tools and "verified_tool_results" in messages[-1].get("content",""):
+            if not tools and (structured or "verified_tool_results" in messages[-1].get("content","")):
                 body["response_format"]={"type":"json_object"}
         if tools:
             body["tools"] = [{
