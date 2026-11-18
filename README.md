@@ -297,3 +297,7 @@ Assistente AI → Analista dati → Automatica (AI): il modello seleziona fonti,
 ### Forecasting bayesiano multi-fonte
 
 Laboratorio previsionale: regressione bayesiana con covariate storiche. Forecasting Snam: correzione bayesiana dei residui e gruppi di vintage Terna/ENTSOG su campioni comuni. [Metodo e limiti](docs/BAYESIAN_MULTISOURCE.md).
+
+### Sessioni di aggiustamento
+
+Bilanciamento → Controllo giornaliero: archivio economico separato per sessioni annuali e pluriennali, otto componenti, controlli delle differenze. [Metodo e limiti](docs/ADJUSTMENT_ENGINE.md).

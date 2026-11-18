@@ -598,6 +598,8 @@ def test_daily_settlement_desk_and_jarvis_no_implicit_fetch():
     from streamlit.testing.v1 import AppTest
     app=AppTest.from_string("from gasops_app.settlement_desk_page import panel\npanel()",default_timeout=30).run()
     assert not app.exception
+    assert not app.get("html") or not any("172.200,00" in x.proto.body for x in app.get("html"))
+    app.checkbox(key="daily_desk_demo").check().run()
     assert any("30/30 giorni" in x.value for x in app.caption)
     assert any("172.200,00" in x.proto.body for x in app.get("html"))
     app.radio(key="daily_desk_filter").set_value("Rettifiche").run()

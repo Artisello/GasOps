@@ -42,6 +42,9 @@ def panel():
             st.session_state.pop(STATE,None)
             st.rerun()
     uploaded=st.session_state.get(STATE)
+    if not uploaded and not st.checkbox("Mostra demo sintetica",key="daily_desk_demo"):
+        st.caption("Importa un registro autorizzato per eseguire il controllo mensile.")
+        return
     rows=uploaded["rows"] if uploaded else sample_rows()
     st.caption("CSV utente · non verificato dalla fonte · sessione corrente" if uploaded else "Demo sintetica · settembre 2026")
     if uploaded:
@@ -57,10 +60,11 @@ def panel():
         st.warning("Chiusura mensile non pronta per verifica: giorni mancanti o eccezioni. Importi sotto solo parziali, non totale del mese.")
     else:
         st.caption("Controlli superati · validazione specialistica necessaria.")
-    kpi_grid([("Addebiti utente",summary["debits"],"€","Solo giorni utilizzabili",2,""),
+    cards=[("Addebiti utente",summary["debits"],"€","Solo giorni utilizzabili",2,""),
               ("Crediti utente",summary["credits"],"€","Solo giorni utilizzabili",2,""),
               ("Giorni con eccezioni",summary["exceptions"],"","Da verificare",0,""),
-              ("Impatto assoluto rettifiche",summary["revision_abs"],"€",str(summary["comparable"])+" coppie valorizzabili",2,"")])
+              ("Impatto assoluto rettifiche",summary["revision_abs"],"€",str(summary["comparable"])+" coppie valorizzabili",2,"")]
+    kpi_grid([c for c in cards if c[1] is not None])
     a,b=st.columns(2)
     with a:
         st.caption("Sbilanciamenti (MWh)")
