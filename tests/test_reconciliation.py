@@ -60,3 +60,13 @@ def test_documents_no_netting_multiple_or_incomplete():
     assert r[0]["status"]=="MULTIPLA · VERIFICA" and r[0]["delta"] is None
     assert all(r["expected"] is None for r in m.reconcile_documents(balances[:-2],docs,USER,2026,9,CLOSE))
     assert all(r["expected"] is None for r in m.reconcile_documents(balances,docs,USER,2026,9,date(2026,9,29)))
+
+
+def test_document_date_and_duplicate():
+    line="DEMO-001,2026-09,short,F1,100,2026-10-29\n"
+    h=m.template(m.DOCUMENT_FIELDS)
+    assert len(m.parse_documents((h+line+line).encode(),date(2026,11,18))["rows"])==1
+    with pytest.raises(ValueError):
+        m.parse_documents((h+line.replace("2026-10-29","2026-09-29")).encode(),date(2026,11,18))
+    with pytest.raises(ValueError):
+        m.parse_documents((h+line+line.replace(",100,",",101,")).encode(),date(2026,11,18))

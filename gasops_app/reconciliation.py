@@ -1,6 +1,6 @@
 """Independent, session-only reconciliation of declared definitive settlement extracts."""
 from dataclasses import dataclass
-from datetime import date,timedelta
+from datetime import date
 from decimal import Decimal as D
 from hashlib import sha256
 from collections import defaultdict
@@ -88,7 +88,8 @@ def parse_documents(raw,today):
         month=_day(r["month"]+"-01")
         issue=_day(r["issue_date"])
         amount=_amount(r["amount_eur"],money=True)
-        if r["group"] not in ("short","long") or amount<0 or not month<issue<=today:
+        next_month=date(month.year+int(month.month==12),month.month%12+1,1)
+        if r["group"] not in ("short","long") or amount<0 or not next_month<=issue<=today:
             raise ValueError("Gruppo, importo o data emissione non validi.")
         # Only ordinary monthly original DS documents; no correction notes.
         x=Invoice(ref,user,month.year,month.month,r["group"],amount,issue)
