@@ -1,4 +1,4 @@
-"""GasOps AI: read-only educational workflow. No external connectivity by default."""
+"""I.G.O.R.: read-only educational workflow. No external connectivity by default."""
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, date, time, timedelta, timezone
 from zoneinfo import ZoneInfo

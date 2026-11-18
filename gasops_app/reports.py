@@ -13,7 +13,7 @@ def _plain(text: str) -> str:
 def markdown(run: Run, reviewed: dict[str, str]) -> str:
     source = run.source
     lines = [
-        "# GasOps AI — rapporto operativo", "", f"**Obiettivo** {_plain(run.question)}",
+        "# I.G.O.R. — rapporto operativo", "", f"**Obiettivo** {_plain(run.question)}",
         f"**Analisi** `{run.id}` · {run.started_at.isoformat()} UTC · {MODALITA[run.mode]}",
         f"**Fonte** {_plain(source.name)} · {TIPI[source.kind]} · {GRANULARITA[source.grain]}",
         f"**Impronta dei dati SHA-256** `{run.input_sha256}`", "", "## Sintesi operativa", "", _plain(run.summary),

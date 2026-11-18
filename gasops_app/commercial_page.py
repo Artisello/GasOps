@@ -58,7 +58,7 @@ def _invoice_panel(records):
             if r["due"]:
                 st.caption("Data di pagamento indicativa: "+data_it(r["due"]))
     st.download_button("Scarica riconciliazione CSV",_csv([{**r,"mode":"SIMULAZIONE"} for r in rows]),
-                       "gasops-riconciliazione.csv","text/csv",key="commercial_reconcile_export")
+                       "igor-riconciliazione.csv","text/csv",key="commercial_reconcile_export")
     info("Info fatture",BILL_REF,"Le due partite sono separate. Una differenza non è una nota di credito. Fatture multiple, IVA e rettifiche richiedono verifica. Non vengono emesse fatture.")
     return rows,summary
 
@@ -145,7 +145,7 @@ def _guarantee_panel():
     info("Info garanzie",EPS_REF,"I componenti EPSu e MEPSu devono essere già validati. Non vengono calcolati automaticamente. Lo scenario varia solo Patt; non modifica l’esposizione attuale.")
     st.download_button("Scarica controllo garanzie CSV",_csv([
         {"scenario":name,"eps":r["eps"],"meps":r["meps"],"headroom":r["headroom"],"ratio":r["ratio"],"status":r["status"],"mode":"SIMULAZIONE","reference":EPS_REF}
-        for name,r in (("base",risk),("ipotetico",projected))]),"gasops-garanzie.csv","text/csv",key="guarantee_export")
+        for name,r in (("base",risk),("ipotetico",projected))]),"igor-garanzie.csv","text/csv",key="guarantee_export")
     return risk
 
 
@@ -179,7 +179,7 @@ def _calendar_panel(invoice_rows):
               ("Date trascorse",len(past),"","Non implica mancato pagamento",0,"")])
     st.dataframe([{"Adempimento":r["task"],"Data":r["due"],"Giorni residui":r["days_left"],"Stato data":r["status"]}
                   for r in result],hide_index=True,width="stretch")
-    st.download_button("Scarica scadenze CSV",_csv(result),"gasops-scadenze.csv","text/csv",key="commercial_calendar_export")
+    st.download_button("Scarica scadenze CSV",_csv(result),"igor-scadenze.csv","text/csv",key="commercial_calendar_export")
     info("Info scadenze",BILL_REF,LNG_REF,"I pagamenti usano giorni di calendario; le scadenze GNL escludono weekend e festività inserite. Convenzioni ed effettiva vigenza da verificare. Nessun promemoria automatico.")
     return result
 

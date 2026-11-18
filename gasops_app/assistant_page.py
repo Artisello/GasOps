@@ -130,10 +130,10 @@ def _report(report:Run,selection):
         st.text("ID analisi · "+report.id)
     with st.popover("Scarica analisi",icon=":material/download:"):
         suffix=report.id[:10]
-        st.download_button("Rapporto Markdown",markdown(report,reviewed),f"gasops-{suffix}.md",
+        st.download_button("Rapporto Markdown",markdown(report,reviewed),f"igor-{suffix}.md",
                            "text/markdown",key="assistant_md_"+report.id)
         st.download_button("Dati JSON",json.dumps({**report.model_dump(mode="json"),"acknowledged_findings":reviewed},ensure_ascii=False,indent=2),
-                           f"gasops-{suffix}.json","application/json",key="assistant_json_"+report.id)
+                           f"igor-{suffix}.json","application/json",key="assistant_json_"+report.id)
 
 
 def _history():

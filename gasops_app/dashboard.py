@@ -256,10 +256,10 @@ def _briefing_panel(selection) -> None:
                     st.text(item.summary)
                 st.html(steps(run))
             d1,d2=st.columns(2)
-            d1.download_button("Scarica bollettino",markdown(run,{}),f"gasops-{run.id[:10]}.md",
+            d1.download_button("Scarica bollettino",markdown(run,{}),f"igor-{run.id[:10]}.md",
                                mime="text/markdown",key="overview_brief_md",width="stretch")
             d2.download_button("Scarica dati JSON",json.dumps(run.model_dump(mode="json"),ensure_ascii=False,indent=2),
-                               f"gasops-{run.id[:10]}.json",mime="application/json",key="overview_brief_json",width="stretch")
+                               f"igor-{run.id[:10]}.json",mime="application/json",key="overview_brief_json",width="stretch")
             st.markdown("[Continua nell’Assistente AI](/operations)")
         # AI connection controls are in the sidebar.
 

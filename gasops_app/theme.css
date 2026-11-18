@@ -29,9 +29,9 @@
 [data-testid="stSidebarUserContent"] { padding: 0.40rem 0 1.25rem; }
 [data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: 0.45rem; }
 .gas-brand { display: flex; gap: 0.72rem; align-items: center; padding: 0 0.3rem 1.45rem; }
-.gas-brand strong { font-size: 1.24rem; color: var(--gas-text); letter-spacing: -0.04em; }
+.gas-brand strong { font-size: 1.35rem; color: var(--gas-text); letter-spacing: 0.035em; }
 .gas-brand em { color: var(--gas-teal); font-style: normal; }
-.gas-brand small { display: block; color: var(--gas-muted); font-size: 0.70rem; white-space: nowrap; }
+.gas-brand small { display: block; color: var(--gas-muted); font-size: 0.70rem; line-height: 1.35; white-space: normal; }
 .gas-mark {
   display: flex; gap: 3px; width: 34px; height: 34px; flex: 0 0 34px;
   justify-content: center; align-items: center; background: #122c31;
