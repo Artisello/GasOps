@@ -14,3 +14,5 @@ Attribution includes ENTSOG TP Transport Data, extraction date and URL on charts
 CI: synthetic regression tests, not a verified live contract. The external tool could not open a live request in this session. Before production relying on the data, test multiple ITPs, inspect actual indicator/unit/labels/status and verify coverage; don't equate absence with zero.
 
 Run python -m pytest -q tests/test_entsog_network.py
+
+Opt-in probe: `python -m gasops_app.entsog_network_probe` performs one three-day request for the first candidate using a temporary cache, logs only identity/coverage, and exits nonzero on unavailable physical flow. CI invokes this non-blocking only for this PR branch, not as a scheduled job. A passing probe does not validate all points/indicators.
