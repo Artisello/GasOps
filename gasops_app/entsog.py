@@ -89,13 +89,19 @@ def parse_month(payload: dict, first: date, last: date, retrieved_at: datetime,
     if offset!=0 or (count is not None and count!=len(items)):
         raise SourceSchemaError("Conteggio o offset di pagina incoerente")
     if total is not None and total!=len(items):
-        # Observed API example: count 7, total 8 despite a nonbinding limit.
-        # Only accept the one-record discrepancy with an exact count and
-        # offset=0; flag every accepted day. Never invent the missing record.
-        if total==len(items)+1 and count==len(items):
-            metadata_warning=True
-        else:
-            raise SourceSchemaError("Risposta ENTSOG incompleta: conteggio totale incoerente")
+        # Live probe (2026-11-18): count=21, total=24, offset=0, limit=500
+        # for seven gas days and three points. The total is not sufficient
+        # to establish whether this particular requested grid is incomplete.
+        # Do not accept a saturated page, a smaller total or a mismatched
+        # page count; only a fully validated grid may override the total.
+        try:
+            limit=int(meta["limit"]) if meta.get("limit") is not None else 500
+        except (ValueError,TypeError,OverflowError) as exc:
+            raise SourceSchemaError("Limite pagina ENTSOG non valido") from exc
+        if (total<len(items) or count!=len(items) or
+                (limit!=-1 and limit<=len(items))):
+            raise SourceSchemaError("Risposta ENTSOG incompleta: conteggio o limite di pagina incoerente")
+        metadata_warning=True
     grouped, notes = {}, {}
     for item in items:
         required={"operatorKey","pointKey","directionKey","indicator","periodType","unit","periodFrom","periodTo"}
@@ -143,6 +149,16 @@ def parse_month(payload: dict, first: date, last: date, retrieved_at: datetime,
         else:
             values[key]=None
             notes[key[0]].add("versioni_in_conflitto")
+    if metadata_warning:
+        # Require a real, non-conflicting observation for every requested
+        # day and sector. Counts alone cannot detect a missing point/day
+        # hidden by duplicate records. No partial window is treated as full.
+        expected={(first+timedelta(days=i),field)
+                  for i in range((last-first).days+1) for field in FIELDS}
+        complete=sum(values.get(key) is not None for key in expected)
+        if complete!=len(expected):
+            raise SourceSchemaError(f"Copertura ENTSOG incompleta: {complete}/{len(expected)} valori giorno-settore validi; "
+                                    f"ricevuti {len(items)}, totale dichiarato {total}")
     if not any(all(values.get((day,field)) is not None for field in FIELDS)
                for day in notes):
         raise SourceSchemaError("Nessun giorno con i tre aggregati ENTSOG completi.")
@@ -224,7 +240,7 @@ def load(store: Store, *, refresh=False, now: datetime|None=None) -> tuple[Bundl
         def parse(text,when,**kwargs):
             return parse_month(json.loads(text),first,end,when,**kwargs)
         try:
-            month=retrieve(store,key=f"entsog-srg-three-v3-{first:%Y-%m}",name="ENTSOG",
+            month=retrieve(store,key=f"entsog-srg-three-v4-{first:%Y-%m}",name="ENTSOG",
                 url=URL,parse=parse,ttl=timedelta(hours=12 if i<2 else 24*30),
                 refresh=refresh and i<2,attempts=1,timeout=(5,20),diagnostics=True,
                 params=query_params(first,end))
@@ -242,7 +258,7 @@ def load(store: Store, *, refresh=False, now: datetime|None=None) -> tuple[Bundl
     if len(loaded)<MAX_MONTHS:
         warnings.append("Storico parziale: nessuna sostituzione con dati di esempio.")
     if any("metadati_totale_discordante" in str(flag) for flag in bundle.rows["source_flag"]):
-        warnings.append("ENTSOG: metadati del totale discordanti di un record; conservati solo i giorni con tre aggregati validi. Verificare la fonte.")
+        warnings.append("ENTSOG: totale dichiarato discordante; griglia giorno-settore richiesta verificata integralmente. Completezza delle eventuali revisioni non certificata.")
     if bundle.origin.refresh_failed:
         warnings.append("Una o più finestre usano l’ultima cache valida.")
     if (last-date.fromisoformat(bundle.origin.latest_period)).days>2:

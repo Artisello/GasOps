@@ -29,6 +29,8 @@ def main():
             meta=payload.get("meta")
             if isinstance(items,list):
                 print("Records:",len(items))
+                if items and isinstance(items[0],dict):
+                    print("Required fields present:", sorted(set(items[0]) & {"operatorKey","pointKey","directionKey","periodType","periodFrom","periodTo","unit","value","indicator"}))
             if isinstance(meta,dict):
                 print("Numeric metadata:",{k:meta[k] for k in ("count","total","offset","limit")
                       if isinstance(meta.get(k),int)})

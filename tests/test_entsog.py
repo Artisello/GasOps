@@ -74,19 +74,44 @@ def test_request_uses_documented_point_keys_and_bounded_window(monkeypatch):
     assert calls[0]["diagnostics"] is True
 
 
-def test_live_style_metadata_off_by_one_flagged_without_filling_missing():
+def test_live_metadata_count_21_total_24_accepts_complete_grid():
+    first=date(2026,11,8)
+    last=date(2026,11,14)
+    rows=[record(p,first+timedelta(days=i)) for i in range(7) for p in POINTS]
+    meta={"count":21,"total":24,"offset":0,"limit":500}
+    month=parse_month({"meta":meta,"operationalData":rows},first,last,NOW)
+    bundle=combine([month],first,last)
+    assert len(bundle.rows)==7
+    assert inspect(bundle,NOW).usable["demand_gwh"].eq(3).all()
+    assert bundle.rows["source_flag"].str.contains("metadati_totale_discordante").all()
+
+
+@pytest.mark.parametrize("case",["missing","duplicate","conflict","null"])
+def test_discrepant_total_rejects_incomplete_grid_even_with_matching_count(case):
+    last=DAY+timedelta(days=1)
+    rows=[record(p,d) for d in (DAY,last) for p in POINTS]
+    if case=="missing":
+        rows.pop()
+    elif case=="duplicate":
+        rows[-1]=dict(rows[0])
+    elif case=="conflict":
+        rows.append(record(next(iter(POINTS)),DAY,2_000_000))
+    else:
+        rows[-1]["value"]=None
+    meta={"count":len(rows),"total":len(rows)+3,"offset":0,"limit":500}
+    with pytest.raises(ValueError,match="Copertura ENTSOG incompleta"):
+        parse_month({"meta":meta,"operationalData":rows},DAY,last,NOW)
+
+
+def test_discrepant_total_only_accepted_on_unsaturated_count_matched_page():
     rows=[record(p) for p in POINTS]
-    next_day=DAY+timedelta(days=1)
-    rows.append(record(next(iter(POINTS)),next_day))
-    meta={"count":4,"total":5,"offset":0,"limit":500}
-    month=parse_month({"meta":meta,"operationalData":rows},DAY,next_day,NOW)
-    bundle=combine([month],DAY,next_day)
-    assert inspect(bundle,NOW).usable["demand_gwh"].isna().sum()==1
-    assert "metadati_totale_discordante" in bundle.rows.iloc[0]["source_flag"]
-    for bad in ({"count":4,"total":20,"offset":0},{"count":3,"total":5,"offset":0},
-                {"count":4,"total":5,"offset":1},{"total":5}):
+    for bad in ({"count":2,"total":6,"offset":0},
+                {"count":3,"total":6,"offset":1},
+                {"total":6},
+                {"count":3,"total":6,"offset":0,"limit":3},
+                {"count":3,"total":2,"offset":0,"limit":500}):
         with pytest.raises(ValueError):
-            parse_month({"meta":bad,"operationalData":rows},DAY,next_day,NOW)
+            parse_month({"meta":bad,"operationalData":rows},DAY,DAY,NOW)
 
 
 def test_controlled_diagnostics_distinguish_empty_from_incomplete():
