@@ -13,6 +13,8 @@ import sqlite3
 
 import requests
 
+from .mase_archive import REPORTS, report_rows, read_report, PUBLISHER
+
 ROOT = Path(__file__).resolve().parents[1]
 MAX_BYTES = 20 * 1024 * 1024
 JRC = "jrc_enagad_it_v1_1"
@@ -24,6 +26,7 @@ LICENSE = "https://creativecommons.org/licenses/by/4.0/"
 SOURCES = {
     JRC: ("Joint Research Centre (Zaccarelli, Giaccaria, Feofilovs, Bolado-Lavín)", JRC_URL),
     MASE: ("MASE – UNMIG", MASE_URL),
+    **{key: (PUBLISHER, report.url) for key, report in REPORTS.items()},
 }
 FIELDS = {"TOT": "demand", "IND": "industry", "GPP": "power", "DIS": "distribution"}
 SCHEMA = """
@@ -136,6 +139,9 @@ class Warehouse:
         publisher, url = SOURCES[source]
         if source == JRC:
             rows, status, file_ref = jrc_rows(raw), "validated", "data/jrc/IT.v1.1.csv"
+        elif source in REPORTS:
+            rows = report_rows(source, raw)
+            status, file_ref = "validated", "data/mase/" + REPORTS[source].filename
         else:
             inspect_csv(raw)
             rows, status, file_ref = [], "raw_pending", MASE_CSV
@@ -186,6 +192,7 @@ def main():
     parser.add_argument("--db", type=Path, default=default_path())
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("seed-jrc")
+    sub.add_parser("seed-mase-reports")
     sub.add_parser("fetch-mase")
     manual = sub.add_parser("inspect-mase")
     manual.add_argument("file", type=Path)
@@ -195,6 +202,8 @@ def main():
         warehouse = Warehouse(args.db)
         if args.command == "seed-jrc":
             result = warehouse.ingest(JRC, read_local(ROOT / "data/jrc/IT.v1.1.csv"))
+        elif args.command == "seed-mase-reports":
+            result = [warehouse.ingest(source, read_report(source)) for source in REPORTS]
         elif args.command == "fetch-mase":
             raw = fetch_mase()
             result = {"snapshot": warehouse.ingest(MASE, raw), "structure": inspect_csv(raw)}
