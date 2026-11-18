@@ -71,6 +71,9 @@ def panel():
         st.markdown("[Rete Snam · importazione nativa e stime Jarvis](/security-of-supply) · [Terna e ACER](/market)")
         st.caption("I dati acquisiti nelle viste dedicate o con Aggiorna fonti reali sono riutilizzati nella stessa sessione. Gli archivi storici restano consultabili senza credenziali.")
     st.divider()
+    from .incentives_page import panel as incentives_panel
+    incentives_panel(now)
+    st.divider()
     st.markdown("**Controlli operativi interni**")
     chosen=st.date_input("Mese delle attività e dei bilanci",value=now.date().replace(day=1),
                          min_value=date(2000,1,1),max_value=now.date(),key="advanced_kpi_month")
