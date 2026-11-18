@@ -78,6 +78,8 @@ def panel():
     chosen=st.date_input("Mese delle attività e dei bilanci",value=now.date().replace(day=1),
                          min_value=date(2000,1,1),max_value=now.date(),key="advanced_kpi_month")
     year,month=chosen.year,chosen.month
+    from .market_efficiency_page import panel as market_efficiency_panel
+    market_efficiency_panel(now,year,month)
     archive=state.get("jarvis_aggregate_archive_v1",{}).get("records",())
     series=sorted({(r.metric,r.unit) for r in archive if r.family=="balance" and (r.gas_day.year,r.gas_day.month)==(year,month)})
     saved=state.get("settlement_desk_csv_v1",{})
