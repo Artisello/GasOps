@@ -72,6 +72,8 @@ def test_groq_http_briefing_context_and_structured_probe(monkeypatch):
     assert "EXECUTIVE_BRIEFING_V1" not in seen[0]["messages"][-1]["content"]
     assert seen[-1]["max_completion_tokens"]==3072
     assert '"regulatory_intelligence"' not in sent and '"settlement"' not in sent
+    assert '"scenario"' not in sent and "CVaR 95% del costo lordo" not in sent
+    assert Agent.SCENARIO in run.results
 
 
 def test_summary_diagnostics_and_completion_budget(monkeypatch):
@@ -354,3 +356,37 @@ def test_editorial_length_is_not_a_validation_failure():
     sections,refs=parse_sections([{"id":"answer","text":"x"*2400,"references":["market_intelligence"]}],
                                  ("answer","evidence"),["market_intelligence"],[],6000)
     assert len(sections[0]["text"])==2400 and refs==["market_intelligence"]
+
+
+def test_gie_freshness_respects_gas_day_at_midnight():
+    from gasops_app.ai_response import compact_context
+    # 18 Nov 23:02 UTC = 19 Nov 00:02 CET, current gas day remains 18 Nov.
+    from datetime import date
+    now=datetime(2026,11,18,23,2,tzinfo=timezone.utc)
+    frame=pd.DataFrame([{"gas_day":date(2026,11,16),"status":"C","stock_twh":176.6,"fill_pct":86.8}])
+    result={"frame":frame,"scope":"IT","acquired":now-timedelta(hours=1),"failed":False}
+    fresh=inventory_context(result,now,"AGSI+")
+    assert fresh["status"]=="available" and fresh["values"]["fill_pct"]==86.8
+    stale=inventory_context(result,now+timedelta(hours=7),"AGSI+")
+    assert stale["status"]=="stale" and "values" not in stale
+    assert stale["last_observed_values"]["fill_pct"]==86.8
+    assert "last_observed_values" not in compact_context({"AGSI+":stale})["AGSI+"]
+    failed=inventory_context({**result,"failed":True},now,"AGSI+")
+    assert failed["status"]=="stale" and "non riuscito" in failed["reason"]
+
+
+def test_acer_semantics_keep_price_and_spread_distinct():
+    from types import SimpleNamespace
+    from gasops_app.briefing_market_sources import acer_context
+    entry=acer_context(SimpleNamespace(rows=[{"date":"2026-11-17","eu":86.09,"benchmark":5.24}],
+                                       failed=False,acquired=NOW),NOW)
+    assert entry["values"]["eu"]["definition"]=="Valutazione prezzo GNL UE"
+    assert "differenziale" in entry["values"]["benchmark"]["definition"]
+    assert "non riserve" in entry["limitation"]
+
+
+def test_executive_section_does_not_repeat_title():
+    from gasops_app.ai_response import parse_sections
+    sections,_=parse_sections([{"id":"market","text":"Mercato: domanda in aumento.","references":["market_intelligence"]}],
+                             ("summary","market"),["market_intelligence"],[],6000)
+    assert sections[0]["text"]=="domanda in aumento."

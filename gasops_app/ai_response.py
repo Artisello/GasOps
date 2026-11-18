@@ -1,4 +1,5 @@
 """Bounded evidence projection and structured response validation."""
+import re
 from .supervisor import ModelUnavailable
 from .models import AGENT_LABELS, Agent
 
@@ -78,6 +79,15 @@ def parse_sections(raw, ids, agents, sources, limit, *, aliases=None):
             raise InvalidSynthesis("Sezione AI sconosciuta o duplicata.")
         if not isinstance(content,str) or not content.strip():
             raise InvalidSynthesis("Testo della sezione AI mancante.")
+        # Strip only redundant, exact section headings (not substantive text).
+        prefix=[SECTION_TITLES[key],key]
+        if key=="summary":prefix+=["Conclusioni","Executive summary"]
+        if key=="supply":prefix+=["Offerta"]
+        if key=="balancing":prefix+=["Bilanciamento"]
+        if key=="risk":prefix+=["Rischio"]
+        content=content.strip()
+        clean=re.sub(r"^(?:"+"|".join(re.escape(x) for x in prefix)+r")\s*:\s*","",content,count=1,flags=re.I)
+        if clean.strip():content=clean
         size+=len(content.strip())
         if size>limit:
             raise InvalidSynthesis("Sintesi AI troppo lunga.")
@@ -104,7 +114,13 @@ def reference_labels(run,references):
             if item.get("status") in ("stale","unavailable"):
                 label+=" · "+("non recente" if item["status"]=="stale" else "non disponibile")
         else:
-            try:label=AGENT_LABELS[Agent(ref)]
+            try:
+                agent=Agent(ref)
+                label=AGENT_LABELS[agent]
             except (ValueError,KeyError):continue
+            result=run.results.get(agent)
+            if result and agent in (Agent.MARKET,Agent.FORECAST,Agent.QUALITY):
+                docs=list(dict.fromkeys(cite.document for cite in result.evidence))
+                if docs:label+=" ("+"; ".join(docs)+")"
         if label not in labels:labels.append(label)
     return labels

@@ -264,6 +264,30 @@ def _briefing_highlights(run):
         st.caption(forecast.summary)
 
 
+def _briefing_market_context(public):
+    """Expose validated observations separately from generative interpretation."""
+    daily=public.get("ENTSOG · SRG",{})
+    acer=public.get("ACER · GNL",{})
+    if daily.get("status")=="available":
+        value=daily.get("values",{}).get("demand_gwh")
+        if value is not None:
+            text=f"ENTSOG · {daily.get('period','data non indicata')} · Prelievi dei tre aggregati SRG: {numero(value)} GWh"
+            change=daily.get("changes_pct",{}).get("demand_gwh")
+            if change is not None:
+                text+=" · "+numero(change,1,signed=True)+"% (medie delle due finestre da 7 giorni)"
+            st.caption(text+".")
+    if acer.get("status")=="available":
+        values=acer.get("values",{})
+        eu=values.get("eu",{})
+        spread=values.get("benchmark",{})
+        parts=[]
+        if eu.get("status")=="available" and eu.get("value") is not None:
+            parts.append("Prezzo GNL UE "+numero(eu["value"],2)+" €/MWh ("+eu["period"]+")")
+        if spread.get("status")=="available" and spread.get("value") is not None:
+            parts.append("Differenziale GNL–TTF "+numero(spread["value"],2,signed=True)+" €/MWh ("+spread["period"]+")")
+        if parts:st.caption("ACER · "+" · ".join(parts)+".")
+
+
 def _briefing_operational_context(public):
     """Keep source scope, availability and units beside each indicator."""
     if not public:
@@ -365,6 +389,7 @@ def _briefing_panel(selection) -> None:
                 st.caption(str(run.assumptions["ai_mode_reason"])+".")
             _briefing_highlights(run)
             public=run.assumptions.get("public_operational_context") or {}
+            _briefing_market_context(public)
             _briefing_operational_context(public)
             if actual_ai:
                 st.markdown("**Sintesi AI**")

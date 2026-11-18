@@ -738,3 +738,19 @@ def test_registered_citation_resolves_by_revision_digest_not_filename():
     exact=SimpleNamespace(digest=digest,pages=200)
     assert matching_edition(SimpleNamespace(documents={PIOMBINO:fake}),cite) is None
     assert matching_edition(SimpleNamespace(documents={"renamed.pdf":exact}),cite) is exact
+
+
+def test_briefing_shows_dated_market_signals_and_stale_inventory():
+    app=AppTest.from_string("""from gasops_app.dashboard import _briefing_market_context,_briefing_operational_context
+_briefing_market_context({
+    "ENTSOG · SRG":{"status":"available","period":"2026-11-17","values":{"demand_gwh":2260.7},"changes_pct":{"demand_gwh":-12}},
+    "ACER · GNL":{"status":"available","values":{
+        "eu":{"status":"available","period":"2026-11-18","value":86.09},
+        "benchmark":{"status":"available","period":"2026-11-18","value":5.24}}}
+})
+_briefing_operational_context({"AGSI+":{"status":"stale","gas_day":"2026-11-16","last_observed_values":{"fill_pct":86.8,"stock_twh":176.6}}})
+""").run()
+    assert not app.exception
+    assert any("Prelievi dei tre aggregati SRG" in c.value and "medie delle due finestre" in c.value for c in app.caption)
+    assert any("Prezzo GNL UE" in c.value and "Differenziale" in c.value for c in app.caption)
+    assert any("ultimo dato non recente" in h.proto.body and "86,8" in h.proto.body for h in app.get("html"))
