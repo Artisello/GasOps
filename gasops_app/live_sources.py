@@ -20,13 +20,23 @@ STATUS="live_public_refresh_v1"
 LABELS={"monthly":"Eurostat + ARERA","daily":"ENTSOG · SRG","agsi":"GIE · AGSI+","alsi":"GIE · ALSI","terna":"Terna · consuntivi","terna_forward":"Terna · previsioni MSD1","terna_capacity":"Terna · capacità disponibile","terna_industry":"Terna · IMCEI","acer":"ACER","weather":"Open-Meteo · temperature e HDD"}
 
 
-def valid_bundle(bundle,now,kind):
+def validated_inspection(bundle,now,kind,*,inspections=None):
     origin=bundle.origin
     if origin.archive or origin.kind not in (Kind.HISTORICAL,Kind.LIVE) or origin.grain!=kind:
         raise ValueError("Perimetro non valido")
-    frame=inspect(bundle,now).usable
+    key=id(bundle)
+    checked=inspections.get(key) if inspections is not None else None
+    if checked is None:
+        checked=inspect(bundle,now)
+        if inspections is not None:inspections[key]=checked
+    frame=checked.usable
     if frame.empty or not frame["demand_gwh"].notna().any():
         raise ValueError("Nessun consumo utilizzabile")
+    return checked
+
+
+def valid_bundle(bundle,now,kind):
+    validated_inspection(bundle,now,kind)
     return bundle
 
 
@@ -140,13 +150,13 @@ def remember_bundle(state,bundle,now):
         return
 
 
-def market_scores(state,now):
+def market_scores(state,now,*,inspections=None):
     out=[]
     bundles=state.get(BUNDLES,{})
     for k,b in bundles.items():
         if k not in ("monthly","daily"):continue
         try:
-            f=inspect(valid_bundle(b,now,k),now)
+            f=validated_inspection(b,now,k,inspections=inspections)
             daily=k=="daily"
             specs=[("demand_gwh","srg_withdrawals" if daily else "national_demand","Prelievi SRG" if daily else "Consumo nazionale",
                     "GWh/giorno gas" if daily else "GWh/mese")]

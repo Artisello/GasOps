@@ -109,3 +109,15 @@ def test_decision_support_replay_no_future():
     r=decision_support(frame,d,tomorrow,as_of=NOW)
     assert r["historical"] and r["published"]==-2. and r["candidate"]["estimate"]==3.
     with pytest.raises(ValueError):decision_support(frame,d,NOW,as_of=NOW)
+
+
+def test_intraday_history_rejects_pre_gas_day_publication():
+    from gasops_app.intraday import _pairs,gas_end
+    # Equivalent cutoff on a normal day can precede its start when target day is 25 h.
+    target=date(2026,10,24)
+    prior=target-timedelta(days=2)
+    issued=gas_end(target)-timedelta(hours=25)
+    historical_start=gas_end(prior-timedelta(days=1))
+    f=pd.DataFrame([{"gas_day":prior,"published_at":historical_start-timedelta(hours=1),"sas_gwh":2.},
+                    {"gas_day":prior,"published_at":gas_end(prior)-timedelta(minutes=30),"sas_gwh":3.}])
+    assert _pairs(f,"sas_gwh",target,issued,issued)==[]

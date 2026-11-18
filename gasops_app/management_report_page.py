@@ -1,10 +1,10 @@
 """Management report embedded in the existing KPI overview, read-only."""
 import streamlit as st
-from .management_report import report,markdown,display_value
+from .management_report import report,markdown
 from .visuals import kpi_grid
 
-def panel(state,now,year,month,user):
-    r=report(state,now,year,month,user)
+def panel(state,now,year,month,user,*,inspections=None):
+    r=report(state,now,year,month,user,inspections=inspections)
     st.subheader("Report direzionale")
     st.caption(f'{r["month"]} · {r["generated_at"]} · {r["closed_days"]} giorni gas conclusi nel mese')
     high=sum(s["priority"]=="Alta" for s in r["signals"])

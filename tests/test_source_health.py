@@ -37,3 +37,31 @@ def test_same_entsog_scope_delta():
     r=h.compare_srg(state,NOW)
     assert len(r)==2 and r[0]["status"]=="Coincide" and r[1]["delta_gwh"]==D(1)
     assert h.session_health(state,NOW)[2]["valid"]==2
+
+
+def test_future_acquisition_not_counted():
+    d=date(2026,11,17)
+    r=h.row("x","scope","Osservato",{d:1},[d],NOW,acquired=NOW+timedelta(minutes=1))
+    assert r["status"]=="Timestamp futuro" and r["valid"]==0 and r["latest"] is None
+
+
+def test_monthly_inspection_reused(monkeypatch):
+    from gasops_app import live_sources as ls
+    index=pd.DatetimeIndex(["2026-09-01","2026-10-01"])
+    f=pd.DataFrame({"period":index.strftime("%Y-%m-%d"),"timestamp_utc":[x.isoformat() for x in utc_starts(index,"monthly")],
+                    "energy_unit":"GWh","price_unit":"EUR/MWh","source_flag":"","demand_gwh":[50,60],"price_eur_mwh":[10,20]})
+    b=frame_bundle(f,Origin(name="fixture",kind=Kind.HISTORICAL,fields=("demand_gwh","price_eur_mwh"),
+                           grain="monthly",description="fixture",retrieved_at=NOW))
+    state={ls.BUNDLES:{"monthly":b}}
+    original=ls.inspect
+    calls=[]
+    def counted(*args):
+        calls.append(1)
+        return original(*args)
+    monkeypatch.setattr(ls,"inspect",counted)
+    cache={}
+    assert len(ls.market_scores(state,NOW,inspections=cache))==2
+    assert h.session_health(state,NOW,inspections=cache)[1]["valid"]==2
+    assert len(calls)==1
+    h.session_health(state,NOW)
+    assert len(calls)==2

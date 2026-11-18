@@ -52,7 +52,10 @@ def row(label,scope,kind,values,expected,now,*,acquired=None,failed=False,review
         if last_attempt>now:review=True
         if (at is None or last_attempt>=at) and attempt["status"]=="Da aggiornare":failed=True
         if (at is None or last_attempt>=at) and attempt["status"]=="Da verificare":review=True
-    if at and at>now:status="Timestamp futuro"
+    if at and at>now:
+        status="Timestamp futuro"
+        count=0
+        latest=None
     elif failed:status="Aggiornamento fallito · ultimo dato" if latest else "Aggiornamento fallito"
     elif not latest or not count:status="Non disponibile nel periodo"
     elif age_limit is not None and (now-at>age_limit if forecast and at else age>age_limit.days if not forecast else True):
@@ -73,8 +76,8 @@ def _values(frame,field):
     return {d:next(iter(v)) for d,v in grouped.items() if len(v)==1}
 
 
-def _bundle(state,key,now,field,label,scope):
-    from .live_sources import BUNDLES,STATUS
+def _bundle(state,key,now,field,label,scope,inspections=None):
+    from .live_sources import BUNDLES,STATUS,validated_inspection
     bundle=state.get(BUNDLES,{}).get(key)
     daily=key=="daily"
     end=closed_gas_day(now) if daily else now.astimezone(ROME).date().replace(day=1)-timedelta(days=1)
@@ -87,7 +90,7 @@ def _bundle(state,key,now,field,label,scope):
     if field not in o.fields:
         return row(label,scope,"Osservato",{},default,now,attempt=attempt,period_limit=limit)
     provider=next((p for p in o.companions if field in p.fields),o)
-    checked=inspect(bundle,now)
+    checked=validated_inspection(bundle,now,key,inspections=inspections)
     values={d:v for d,v in _values(checked.usable,field).items() if d<=limit}
     latest=max(values,default=None)
     # For monthly data, assess six periods ending at the latest received month,
@@ -177,12 +180,13 @@ def _acer(state,now):
                period_limit=now.astimezone(ROME).date(),note="Ultime 14 righe ricevute, non calendario atteso della fonte")
 
 
-def session_health(state,now):
+def session_health(state,now,*,inspections=None):
+    if inspections is None:inspections={}
     # The availability of a source is not its configured/connected status.
     adapters=[
-        ("Eurostat · consumo","Italia",lambda:_bundle(state,"monthly",now,"demand_gwh","Eurostat · consumo","Italia")),
-        ("ARERA · PSV","Italia",lambda:_bundle(state,"monthly",now,"price_eur_mwh","ARERA · PSV","Italia")),
-        ("ENTSOG · prelievi","SRG",lambda:_bundle(state,"daily",now,"demand_gwh","ENTSOG · prelievi","SRG · tre aggregati")),
+        ("Eurostat · consumo","Italia",lambda:_bundle(state,"monthly",now,"demand_gwh","Eurostat · consumo","Italia",inspections)),
+        ("ARERA · PSV","Italia",lambda:_bundle(state,"monthly",now,"price_eur_mwh","ARERA · PSV","Italia",inspections)),
+        ("ENTSOG · prelievi","SRG",lambda:_bundle(state,"daily",now,"demand_gwh","ENTSOG · prelievi","SRG · tre aggregati",inspections)),
         ("GIE · AGSI+","Italia",lambda:_inventory(state,now,"AGSI+","stock_twh","GIE · AGSI+")),
         ("GIE · ALSI","Italia",lambda:_inventory(state,now,"ALSI","sendout_gwh_d","GIE · ALSI")),
         ("Terna · generazione termica","Italia",lambda:_terna(state,now,"Thermal")),
@@ -205,6 +209,7 @@ def compare_srg(state,now):
     b=state.get(BUNDLES,{}).get("daily")
     gas=state.get("terna_power_v1",{}).get("gas")
     if (b is None or not gas or b.origin.url!=ENTSOG_SOURCE or b.origin.archive
+            or b.origin.kind not in (Kind.LIVE,Kind.HISTORICAL)
             or b.origin.grain!="daily" or "power_gwh" not in b.origin.fields):return []
     if b.origin.retrieved_at>now or stamp(gas["acquired"])>now:return []
     f=inspect(b,now).usable

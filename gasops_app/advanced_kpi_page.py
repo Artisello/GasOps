@@ -31,15 +31,40 @@ def panel():
     from .live_sources_page import controls
     from .live_sources import market_scores
     controls("bso")
-    context=network_scores(state.get("entsog_network_result_v1"),now)+storage_scores(state.get("AGSI+_IT"),now)+power_scores(state.get("terna_power_v1"))
-    context+=market_scores(state,now)
-    context+=latest_power_scores(state.get("terna_power_v1"),now)+native_balance_scores(state.get("jarvis_native_v1"),now)
-    for getter in (lambda:historical_scores(state.get("acer_lng_result_v1"),now),benchmark_scores):
+    now=utc_now().astimezone(ROME)  # after explicit source refresh
+    inspections={}
+    chosen=st.date_input("Mese delle attività e dei bilanci",value=now.date().replace(day=1),
+                         min_value=date(2000,1,1),max_value=now.date(),key="advanced_kpi_month")
+    year,month=chosen.year,chosen.month
+    archive=state.get("jarvis_aggregate_archive_v1",{}).get("records",())
+    series=sorted({(r.metric,r.unit) for r in archive if r.family=="balance" and (r.gas_day.year,r.gas_day.month)==(year,month)})
+    saved=state.get("settlement_desk_csv_v1",{})
+    rows=saved.get("rows")
+    users=sorted({r.user for r in rows}) if rows else []
+    metric,unit="withdrawals","GWh"
+    user=None
+    if series or users:
+        with st.expander("Perimetro settlement"):
+            if series:
+                metric,unit=st.selectbox("Serie pubblica Jarvis",series,format_func=lambda x:f"{x[0]} · {x[1]}",key="advanced_balance_series")
+            if users:
+                user=st.selectbox("Partecipante (registro importato)",[None,*users],
+                                  format_func=lambda x:x if x is not None else "Non selezionato",key="advanced_participant")
+    summary=st.container()
+    st.divider()
+    context=[]
+    unavailable=0
+    for getter in (lambda:network_scores(state.get("entsog_network_result_v1"),now),
+                   lambda:storage_scores(state.get("AGSI+_IT"),now),lambda:power_scores(state.get("terna_power_v1")),
+                   lambda:market_scores(state,now,inspections=inspections),
+                   lambda:latest_power_scores(state.get("terna_power_v1"),now),lambda:native_balance_scores(state.get("jarvis_native_v1"),now),
+                   lambda:historical_scores(state.get("acer_lng_result_v1"),now),benchmark_scores):
         try:
             context+=getter()
-        except (OSError,ValueError,KeyError,StopIteration):
-            with st.expander("Copertura archivio"):
-                st.caption("Un archivio pubblico non è disponibile o validabile.")
+        except (OSError,ValueError,KeyError,StopIteration,TypeError,AttributeError,ArithmeticError,IndexError):
+            unavailable+=1
+    if unavailable:
+        st.caption(f"{unavailable} gruppi di indicatori non elaborabili; verificare le fonti dedicate.")
     context_by={r.code:r for r in context}
     def current(r):
         try:
@@ -73,30 +98,13 @@ def panel():
     st.divider()
     from .incentives_page import panel as incentives_panel
     incentives_panel(now)
-    st.divider()
-    st.markdown("**Controlli operativi interni**")
-    chosen=st.date_input("Mese delle attività e dei bilanci",value=now.date().replace(day=1),
-                         min_value=date(2000,1,1),max_value=now.date(),key="advanced_kpi_month")
-    year,month=chosen.year,chosen.month
-    archive=state.get("jarvis_aggregate_archive_v1",{}).get("records",())
-    series=sorted({(r.metric,r.unit) for r in archive if r.family=="balance" and (r.gas_day.year,r.gas_day.month)==(year,month)})
-    saved=state.get("settlement_desk_csv_v1",{})
-    rows=saved.get("rows")
-    users=sorted({r.user for r in rows}) if rows else []
-    metric,unit="withdrawals","GWh"
-    user=None
-    if series or users:
-        with st.expander("Perimetro settlement"):
-            if series:
-                metric,unit=st.selectbox("Serie pubblica Jarvis",series,format_func=lambda x:f"{x[0]} · {x[1]}",key="advanced_balance_series")
-            if users:
-                user=st.selectbox("Partecipante (registro importato)",[None,*users],
-                                  format_func=lambda x:x if x is not None else "Non selezionato",key="advanced_participant")
-    from .management_report_page import panel as management_panel
-    management_panel(state,now,year,month,user)
-    st.divider()
     from .market_efficiency_page import panel as market_efficiency_panel
     market_efficiency_panel(now,year,month)
+    # Fill the earlier visual slot after import handlers complete.
+    with summary:
+        from .management_report_page import panel as management_panel
+        management_panel(state,now,year,month,user,inspections=inspections)
+    st.divider()
     ops=state.get("bso_tasks_v1")
     operational=(operations_scores(ops["tasks"] if ops else None,now,year,month)+
                  balancing_scores(state.get("jarvis_public_snapshot_v1"),now,year,month)+
@@ -108,12 +116,10 @@ def panel():
     missing=[area for area in ("Operations","Balancing","Settlement") if not any(r.area==area and r.value is not None for r in operational)]
     available=sum(r.value is not None for r in operational)
     st.caption(f"{available}/{len(operational)} KPI interni e controlli aggregati misurabili · KPI proposti, non SLA Snam.")
-    if by["overdue"].value is not None and by["overdue"].value>0:
-        st.warning("Attività oltre termine nel registro: verifica l'agenda in Scadenze.")
     if available<len(operational):
         st.info(("Registri da alimentare: "+", ".join(missing)+". " if missing else "")+
                 "Importa i registri autorizzati nelle viste dedicate. Le assenze non valgono zero.")
-    with st.expander("Dettaglio operativo · mese selezionato",expanded=bool(available)):
+    with st.expander("Dettaglio operativo · mese selezionato",expanded=False):
         st.dataframe([{"Area":r.area,"KPI":r.label,"Valore":r.value,"Unità":r.unit,"Periodo":r.period,
                        "Copertura":r.coverage,"Stato":r.status} for r in operational],hide_index=True,width="stretch")
         st.markdown("[Bilanci e stime Jarvis](/security-of-supply) · [Settlement](/balancing) · Scadenze nella vista Registro operativo.")
