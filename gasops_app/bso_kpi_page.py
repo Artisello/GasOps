@@ -174,7 +174,11 @@ def _settlement(demo,now):
 def page():
     st.title("KPI operativi")
     st.caption("Balancing · Settlement · Operations")
-    view=st.radio("Vista KPI",["Panoramica","Registro operativo","Monitoraggio fonti","Executive demo"],horizontal=True,label_visibility="collapsed",key="bso_view")
+    view=st.radio("Vista KPI",["Panoramica","Registro operativo","Monitoraggio fonti","Executive demo","Centro operativo"],horizontal=True,label_visibility="collapsed",key="bso_view")
+    if view=="Centro operativo":
+        from .agentic_operations_page import panel
+        panel()
+        return
     if view=="Executive demo":
         from .executive_demo import panel
         panel()
