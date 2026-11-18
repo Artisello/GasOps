@@ -97,3 +97,25 @@ def test_remote_hash_mismatch_is_rejected(monkeypatch):
     monkeypatch.setattr(mod.requests,"request",fake)
     with pytest.raises(ArchiveError,match="SHA-256"):
         Archive(CONFIG).read()
+
+
+
+def test_authorized_contributor_can_publish_but_not_delete(monkeypatch):
+    from gasops_app import document_archive as mod
+    contributor="00000000-0000-4000-8000-000000000002"
+    cfg=ArchiveConfig(CONFIG.url,CONFIG.publishable_key,ADMIN,(contributor,))
+    called=[]
+    session=AdminSession("jwt",time()+100,contributor)
+    assert session.valid(cfg) and not session.is_admin(cfg)
+    backend=Archive(cfg)
+    monkeypatch.setattr(backend,"read",lambda session:())
+    def fake(method,path,**kwargs):
+        called.append(method)
+        return Response({})
+    monkeypatch.setattr(backend,"_request",fake)
+    assert backend.publish(session,(("public.pdf",pdf("Documento pubblico.")),))[0]==1
+    with pytest.raises(ArchiveError):
+        backend.remove(session,"public.pdf")
+    assert called==["POST"]
+    with pytest.raises(ValueError):
+        ArchiveConfig(CONFIG.url,CONFIG.publishable_key,ADMIN,("invalid",))

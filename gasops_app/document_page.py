@@ -7,7 +7,7 @@ from pathlib import Path
 import streamlit as st
 
 from .data import ROOT
-from .document_desk import build, identity, search, searchable_pages, bookmark, page_text, MAX_RESULTS, MAX_TOTAL_BYTES
+from .document_desk import build, identity, search, searchable_pages, bookmark, page_text, extend_uploads, MAX_RESULTS, MAX_TOTAL_BYTES
 from .regulatory import read_local_pdfs, MAX_DOCUMENTS, MAX_PDF_BYTES
 from .visuals import info
 from .session import reasoner
@@ -16,6 +16,10 @@ from .supervisor import ModelUnavailable
 from .document_archive import Archive, ArchiveConfig, ArchiveError, display_name
 
 STATE="document_desk_v1"
+VISITOR_STATE="document_visitor_index_v1"
+VISITOR_UPLOADS="document_visitor_uploads_v1"
+VISITOR_NOTICE="document_visitor_notice_v1"
+SCOPE="document_archive_scope"
 ADMIN="gasops_document_admin"
 NOTICE="gasops_document_notice"
 WRITE_LOCK=Lock()
@@ -28,9 +32,10 @@ def _archive_config():
         except (FileNotFoundError,KeyError):
             return os.environ.get(name,"").strip()
     url,key,admin=(value(k) for k in ("GASOPS_DOCUMENTS_URL","GASOPS_DOCUMENTS_KEY","GASOPS_DOCUMENTS_ADMIN_ID"))
-    if not any((url,key,admin)):
+    contributors=tuple(v.strip() for v in value("GASOPS_DOCUMENTS_CONTRIBUTOR_IDS").split(",") if v.strip())
+    if not any((url,key,admin,contributors)):
         return None
-    return ArchiveConfig(url.rstrip("/"),key,admin)
+    return ArchiveConfig(url.rstrip("/"),key,admin,contributors)
 
 
 @st.cache_data(ttl=30,max_entries=3,show_spinner=False)
@@ -40,17 +45,18 @@ def _read_remote(config):
 
 
 def _admin_panel(config,archive,local,remote):
-    if not config.admin_id:
+    if not (config.admin_id or config.contributor_ids):
         return
-    with st.expander("Gestisci archivio"):
+    with st.expander("Pubblica nell’archivio condiviso"):
         saved=st.session_state.get(ADMIN)
         session=saved[1] if saved and saved[0]==config and saved[1].valid(config) else None
         if not session:
             st.session_state.pop(ADMIN,None)
             with st.form("document_admin_login",clear_on_submit=True):
-                email=st.text_input("Email amministratore",max_chars=254)
+                email=st.text_input("Email account autorizzato",max_chars=254)
                 password=st.text_input("Password",type="password",max_chars=256)
                 login=st.form_submit_button("Accedi")
+                st.caption("Account GasOps autorizzato · nessun account GitHub richiesto.")
             if login:
                 try:
                     st.session_state[ADMIN]=(config,archive.login(email,password))
@@ -83,7 +89,7 @@ def _admin_panel(config,archive,local,remote):
                 finally:
                     _read_remote.clear()
                 st.rerun()
-        if remote:
+        if remote and session.is_admin(config):
             labels={k:display_name(k) for k,_ in remote}
             with st.form("document_remove",clear_on_submit=True):
                 key=st.selectbox("Documento da rimuovere",list(labels),format_func=labels.__getitem__)
@@ -104,9 +110,9 @@ def _admin_panel(config,archive,local,remote):
                     st.rerun()
 
 
-def _update_index(inputs,docs=None):
+def _update_index(inputs,docs=None,*,state_key=STATE):
     key=identity(inputs)
-    cached=st.session_state.get(STATE)
+    cached=st.session_state.get(state_key)
     if cached and cached["identity"]==key:
         return cached
     if docs is None:
@@ -118,8 +124,53 @@ def _update_index(inputs,docs=None):
     refs=[item for item in (cached or {}).get("reference_list",[])
           if (item["document"],item["sha256"]) in editions]
     cached={"identity":key,"docs":docs,"reference_list":refs}
-    st.session_state[STATE]=cached
+    st.session_state[state_key]=cached
     return cached
+
+
+def _visitor_upload_panel():
+    """Never write visitor bytes to disk, shared cache, or the public bucket."""
+    personal=st.session_state.get(VISITOR_UPLOADS,())
+    message,notices=st.session_state.pop(VISITOR_NOTICE,("",[]))
+    if message:
+        st.success(message)
+    for notice in notices:
+        st.warning(notice)
+    with st.expander("Carica PDF",expanded=not personal):
+        st.caption("Nessun account richiesto. I PDF restano disponibili mentre navighi in questa sessione; ricaricando la pagina potrebbero andare persi. Non sono visibili agli altri visitatori.")
+        st.caption("Usa solo documenti pubblici o autorizzati; non caricare materiale riservato sul prototipo pubblico.")
+        with st.form("document_visitor_add",clear_on_submit=True):
+            files=st.file_uploader("Seleziona PDF",type=["pdf"],accept_multiple_files=True,
+                help="8 PDF, massimo 24 MB per file, 64 MB e 2.000 pagine in totale; PDF con testo ricercabile.")
+            submit=st.form_submit_button("Aggiungi ai miei PDF",type="primary")
+        if submit:
+            if not files:
+                st.warning("Seleziona almeno un PDF.")
+            elif len(files)>MAX_DOCUMENTS or any(f.size>MAX_PDF_BYTES for f in files) or sum(f.size for f in files)>MAX_TOTAL_BYTES:
+                st.warning("Limiti di caricamento superati.")
+            else:
+                try:
+                    with st.spinner("Indicizzazione dei PDF…"):
+                        retained,docs,notes=extend_uploads(personal,tuple((f.name,f.getvalue()) for f in files))
+                    added=len(retained)-len(personal)
+                    st.session_state[VISITOR_UPLOADS]=retained
+                    _update_index(retained,docs,state_key=VISITOR_STATE)
+                    if retained:
+                        st.session_state[SCOPE]="I miei PDF"
+                    st.session_state[VISITOR_NOTICE]=(f"{added} PDF aggiunti." if added else "",notes+docs.errors)
+                    st.rerun()
+                except (ValueError,RuntimeError):
+                    st.warning("Importazione non completata. I PDF già caricati restano disponibili.")
+        if personal:
+            with st.form("document_visitor_remove",clear_on_submit=True):
+                index=st.selectbox("Rimuovi dai miei PDF",range(len(personal)),format_func=lambda i:personal[i][0])
+                remove=st.form_submit_button("Rimuovi")
+            if remove:
+                retained=tuple(item for i,item in enumerate(personal) if i!=index)
+                st.session_state[VISITOR_UPLOADS]=retained
+                _update_index(retained,state_key=VISITOR_STATE)
+                st.session_state[VISITOR_NOTICE]=("PDF rimosso dalla sessione.",[])
+                st.rerun()
 
 
 def _archive():
@@ -131,8 +182,7 @@ def _archive():
     except OSError:
         local=()
         st.warning("Archivio predisposto sul server non leggibile.")
-    st.subheader("Archivio documentale pubblico")
-    st.caption("Documenti consultabili da tutti. Le ricerche e i riferimenti salvati restano nella singola sessione.")
+    _visitor_upload_panel()
     config=None
     try:
         config=_archive_config()
@@ -149,18 +199,33 @@ def _archive():
         else:
             _admin_panel(config,archive,local,remote)
     else:
-        st.caption("Archivio remoto non configurato · pubblicazione tramite repository disponibile.")
-        with st.expander("Come aggiungere un PDF",expanded=not local):
-            st.write("Per il prototipo puoi pubblicare i PDF autorizzati direttamente nel repository. Saranno visibili a tutti dopo il deployment, senza configurare Supabase.")
-            st.link_button("Carica PDF su GitHub","https://github.com/Artisello/GasOps/upload/main/data/public-regulatory",icon=":material/upload_file:")
-            st.caption("Accesso GitHub con permesso di scrittura richiesto. Solo PDF pubblici o autorizzati; massimo 24 MB per file. Per caricare da GasOps, configura Supabase Storage.")
+        st.caption("Archivio remoto non configurato · caricamento personale disponibile.")
+        with st.expander("Pubblicazione permanente · configurazione",expanded=False):
+            st.write("Per rendere un PDF visibile a tutti anche dopo un riavvio serve l’archivio remoto. Gli utenti autorizzati potranno pubblicare qui senza accesso a GitHub.")
             st.markdown("[Configurazione archivio remoto](https://github.com/Artisello/GasOps#archivio-pubblico-persistente-supabase-storage)")
+            st.caption("Solo per gestori del progetto: è ancora possibile predisporre PDF pubblici nel repository.")
+            st.link_button("Apri cartella pubblica","https://github.com/Artisello/GasOps/tree/main/data/public-regulatory")
     message,notices=st.session_state.pop(NOTICE,("",[]))
     if message:
         st.success(message)
     for notice in notices:
         st.warning(notice)
-    cached=_update_index(tuple((display_name(k),v) for k,v in remote)+local)
+    public_inputs=tuple((display_name(k),v) for k,v in remote)+local
+    cached_public=_update_index(public_inputs)
+    personal=st.session_state.get(VISITOR_UPLOADS,())
+    selected=st.radio("Archivio",["Archivio pubblico","I miei PDF"],horizontal=True,key=SCOPE,
+                      label_visibility="collapsed")
+    if selected=="I miei PDF":
+        cached=_update_index(personal,state_key=VISITOR_STATE)
+        st.caption("PDF di lavoro · solo in questa sessione, non pubblicati.")
+    else:
+        cached=cached_public
+        st.caption("Archivio pubblico · documenti consultabili da tutti.")
+    _render_documents(cached)
+    return cached
+
+
+def _render_documents(cached):
     docs=cached["docs"]
     for warning in docs.errors:
         st.warning(warning)
@@ -181,7 +246,8 @@ def _archive():
                                            icon=":material/download:",on_click="ignore")
                         st.caption("SHA-256")
                         st.text(pdf.digest)
-    return cached
+
+
 
 
 def _preview(pdf,page,label):
@@ -388,10 +454,10 @@ def document_page():
     st.title("Norme e documenti")
     st.caption("Cerca, interroga e confronta i documenti dell’archivio.")
     info("Info archivio","La ricerca mostra testo estratto dalle pagine dei PDF presenti, non note precompilate. Le corrispondenze per parole chiave non sono un parere legale.",
-         "Usa solo copie pubbliche o autorizzate. I PDF autorizzati pubblicati nel repository o in Storage sono condivisi tra tutti i visitatori e conservati indipendentemente dalla sessione Streamlit. Solo chi ha permessi di scrittura nel repository o l’amministratore Storage può pubblicare e rimuovere documenti. Non caricare dati riservati. I PDF non entrano nel bollettino; la ricerca è sul server. Con Chiedi all’AI, soltanto la domanda e gli estratti sono inviati al modello selezionato, previo consenso per provider remoti. Non caricare documenti riservati su un deployment pubblico. Nessun OCR. La vigenza delle edizioni non è verificata.")
+         "Usa solo copie pubbliche o autorizzate. I PDF autorizzati pubblicati nel repository o in Storage sono condivisi tra tutti i visitatori e conservati indipendentemente dalla sessione Streamlit. Chiunque può caricare PDF nel proprio spazio di sessione senza account. Solo gli account GasOps autorizzati possono pubblicare nell’archivio condiviso; la rimozione dei documenti condivisi è riservata all’amministratore. Non caricare dati riservati. I PDF non entrano nel bollettino; la ricerca è sul server. Con Chiedi all’AI, soltanto la domanda e gli estratti sono inviati al modello selezionato, previo consenso per provider remoti. Non caricare documenti riservati su un deployment pubblico. Nessun OCR. La vigenza delle edizioni non è verificata.")
     cached=_archive()
     if not cached["docs"].documents:
-        st.info("Aggiungi almeno un PDF per iniziare. Usa le istruzioni di pubblicazione qui sopra. Non vengono mostrati rilievi o citazioni in assenza di documenti.")
+        st.info("Aggiungi almeno un PDF per iniziare. Usa Carica PDF oppure consulta l’archivio pubblico. Non vengono mostrati rilievi o citazioni in assenza di documenti.")
         return
     action=st.radio("Strumento",["Cerca","Chiedi all’AI","Leggi PDF","Confronta","Riferimenti salvati"],
                     horizontal=True,label_visibility="collapsed",key="desk_mode")

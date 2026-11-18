@@ -500,13 +500,14 @@ def test_shared_document_archive_visible_to_fresh_sessions(monkeypatch,tmp_path)
     assert not second.session_state[desk.STATE]["reference_list"]
 
 
-def test_document_archive_unconfigured_does_not_offer_ephemeral_uploads(monkeypatch,tmp_path):
+def test_document_archive_unconfigured_offers_session_uploads(monkeypatch,tmp_path):
     from gasops_app import document_page as desk
     monkeypatch.setenv("GASOPS_PDF_DIR",str(tmp_path))
     monkeypatch.setattr(desk,"_archive_config",lambda:None)
     app=AppTest.from_string("from gasops_app.document_page import document_page\ndocument_page()").run()
     assert not app.exception
     assert any("Archivio remoto non configurato" in e.value for e in app.caption)
+    assert any(b.label=="Aggiungi ai miei PDF" for b in app.button)
     assert not any(b.label=="Pubblica documenti" for b in app.button)
 
 
@@ -528,7 +529,34 @@ def test_repository_document_import_instructions_and_bundled_pdf(monkeypatch,tmp
             pdf.save(directory/name)
     app=AppTest.from_string("from gasops_app.document_page import document_page\ndocument_page()").run()
     assert not app.exception
-    assert any(e.label=="Come aggiungere un PDF" for e in app.expander)
+    assert any(e.label=="Carica PDF" for e in app.expander)
     assert any(e.value=="public.pdf" for e in app.text)
     assert not any(e.value=="private.pdf" for e in app.text)
     assert search(app.session_state[desk.STATE]["docs"],"garanzia autorizzata")
+
+
+
+def test_visitor_pdf_survives_rerun_but_is_not_shared(monkeypatch,tmp_path):
+    import pymupdf
+    from gasops_app import document_page as desk
+    from gasops_app.document_desk import search
+    monkeypatch.setenv("GASOPS_PDF_DIR",str(tmp_path))
+    monkeypatch.setattr(desk,"_archive_config",lambda:None)
+    with pymupdf.open() as doc:
+        doc.new_page().insert_text((80,80),"Deposito cauzionale personale.")
+        raw=doc.tobytes()
+    script="from gasops_app.document_page import document_page\ndocument_page()"
+    first=AppTest.from_string(script)
+    first.session_state[desk.VISITOR_UPLOADS]=(("test.pdf",raw),)
+    first.session_state[desk.SCOPE]="I miei PDF"
+    first.run()
+    assert not first.exception
+    assert search(first.session_state[desk.VISITOR_STATE]["docs"],"deposito cauzionale")
+    first.run()
+    assert not first.exception and first.session_state[desk.VISITOR_UPLOADS][0][1]==raw
+    assert not first.session_state[desk.STATE]["docs"].documents
+    second=AppTest.from_string(script).run()
+    assert not second.exception and desk.VISITOR_UPLOADS not in second.session_state
+    assert not second.session_state[desk.STATE]["docs"].documents
+    first.radio(key=desk.SCOPE).set_value("Archivio pubblico").run()
+    assert not first.exception and first.session_state[desk.VISITOR_UPLOADS][0][1]==raw
