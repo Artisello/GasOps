@@ -161,13 +161,20 @@ def evaluate(demand,hist,future,previous=None):
             "evaluation":"archived_day1" if previous is not None else "realized_only"}
 
 
-def analyse_gas_day(store,demand,now=None,*,refresh=False):
+def analyse_gas_day(store,demand,now=None,*,refresh=False,snapshots=None):
     now=now or utc_now()
     first,last,fstart,fend=available_periods(demand["demand_gwh"],now)
     # ERA5 delay plus next day's early UTC hours needed for the gas day.
     last=min(last,now.astimezone(ROME).date()-timedelta(days=7))
-    hist,ha,hc,hf=fetch(store,first,last,"era5")
-    future,fa,fc,ff=fetch(store,fstart,fend,"forecast",refresh=refresh)
+    def get(kind,a,b):
+        item=(snapshots or {}).get(kind)
+        if item and not refresh and not item["failed"] and now-item["acquired"]<=timedelta(hours=12 if kind=="forecast" else 24):
+            frame=item["frame"].loc[str(a):str(b)]
+            if frame.index.equals(pd.date_range(a,b,freq="D")):
+                return frame,item["acquired"],item["cached"],item["failed"]
+        return fetch(store,a,b,kind,refresh=refresh and kind=="forecast")
+    hist,ha,hc,hf=get("era5",first,last)
+    future,fa,fc,ff=get("forecast",fstart,fend)
     if now-fa>timedelta(hours=12):
         raise SourceUnavailable("Previsione meteo in cache troppo vecchia")
     previous=None

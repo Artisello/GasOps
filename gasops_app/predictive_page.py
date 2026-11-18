@@ -20,11 +20,11 @@ def panel():
     st.subheader("Laboratorio previsionale")
     st.caption("Studio retrospettivo · giorno gas 06:00–06:00 · nessuna sostituzione del forecast principale")
     now=utc_now()
-    active=st.session_state.get("active_bundle")
-    recent=bool(active and active.origin.kind==Kind.HISTORICAL and active.origin.grain=="daily" and
+    active=st.session_state.get("live_public_bundles_v1",{}).get("daily") or st.session_state.get("active_bundle")
+    recent=bool(active and active.origin.kind in (Kind.HISTORICAL,Kind.LIVE) and active.origin.grain=="daily" and
                 not active.origin.archive and active.origin.name.startswith("ENTSOG"))
     source=st.selectbox("Serie di domanda",["Archivio JRC 2015–2021","ENTSOG SRG già caricato"],
-                        key="predictive_target")
+                        index=1 if recent else 0,key="predictive_target")
     use_recent=source.startswith("ENTSOG")
     if use_recent and not recent:
         st.info("Carica prima la serie ENTSOG dalla vista Domanda e previsioni. Nessun fallback sintetico.")
@@ -51,7 +51,8 @@ def panel():
         st.caption("Nessuna variabile esterna compatibile caricata; modalità multivariata settoriale disponibile.")
     if use_recent:
         st.caption("AGSI+ Italia, ENTSOG interconnessioni e Terna si caricano nelle viste dedicate. Finestre brevi possono non bastare al backtest.")
-    weather=st.checkbox("Aggiungi HDD storico Open-Meteo · demo non commerciale",key="predictive_weather")
+    from .weather_source import enabled,refresh as refresh_weather,archive as weather_archive
+    weather=st.checkbox("HDD Open-Meteo · demo non commerciale",value=bool(use_recent and enabled(st.session_state)),disabled=not enabled(st.session_state),key="predictive_weather_"+("recent" if use_recent else "archive"))
     horizon=st.selectbox("Orizzonte",HORIZONS,format_func=lambda h:f"{h} giorno" if h==1 else f"{h} giorni",
                          key="predictive_horizon")
     st.caption(f"Training minimo {MIN_TRAIN} giorni comuni per origine; verifica ultimi 28 giorni di riferimento, almeno {MIN_TEST} coppie. Ritardi assunti: gas 2 giorni, covariate 7 giorni. Non sono SLA né vintage storici verificati.")
@@ -60,8 +61,14 @@ def panel():
         try:
             cov=[available[k] for k in selected]
             with st.spinner("Validazione temporale e confronto dei modelli…"):
+                weather_note=None
                 if weather:
-                    cov.append(historical_weather(database(),frame,now))
+                    try:
+                        if use_recent:
+                            refresh_weather(st.session_state,database(),now)
+                        cov.append(historical_weather(database(),frame,now,snapshot=weather_archive(st.session_state,now) if use_recent else None))
+                    except (ValueError,SourceUnavailable):
+                        weather_note="HDD non disponibile: confronto esplicitamente senza meteo."
                 last=frame["demand_gwh"].last_valid_index()
                 if last is None:
                     raise ValueError("Domanda assente.")
@@ -73,7 +80,7 @@ def panel():
                 result=evaluate(frame,cov,horizon,reference)
             st.session_state[STATE]={"result":result,"fingerprint":bundle.fingerprint,"source":source,
                 "selected":snapshots,"weather":weather,"horizon":horizon,"cov":[describe(c)|{"Provenienza":c.provenance} for c in cov],
-                "acquired":now.isoformat()}
+                "acquired":now.isoformat(),"weather_note":weather_note}
         except (ValueError,SourceUnavailable) as e:
             st.error(str(e))
     saved=st.session_state.get(STATE)
@@ -82,6 +89,7 @@ def panel():
     if (saved["source"],saved["fingerprint"],saved["selected"],saved["weather"],saved["horizon"])!=(source,bundle.fingerprint,snapshots,weather,horizon):
         st.info("Parametri cambiati: esegui un nuovo confronto.")
         return
+    if saved.get("weather_note"):st.caption(saved["weather_note"])
     r=saved["result"]
     st.caption(f'{r["test_n"]}/28 origini confrontabili · {r["test_start"]} – {r["test_end"]} · calcolato {saved["acquired"]}')
     st.warning("Backtest con dati storici rivisti e ritardi ipotizzati: non certifica performance operativa ex ante. Nessuna promozione automatica del modello.")

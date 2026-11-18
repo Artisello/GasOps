@@ -68,11 +68,17 @@ def collect(store, context, now, *, key="", include_gie=False, include_weather=F
         out["GIE"]={"status":"unavailable","reason":"Chiave GIE non configurata."}
     if include_weather:
         origin=context.bundle.origin
-        if origin.kind==Kind.HISTORICAL and origin.grain=="daily" and not origin.archive and origin.name.startswith("ENTSOG"):
+        if origin.kind in (Kind.HISTORICAL,Kind.LIVE) and origin.grain=="daily" and not origin.archive and origin.name.startswith("ENTSOG"):
             tasks["Open-Meteo"]=lambda:weather_context(analyse_gas_day(store,context.inspection.usable,now),now)
         else:
-            out["Open-Meteo"]={"source":"Open-Meteo","status":"unavailable",
-                               "reason":"Serve la fonte ENTSOG giornaliera recente."}
+            def outlook_only():
+                from .weather_source import refresh,outlook
+                state={}
+                refresh(state,store,now)
+                result=outlook(state,now)
+                if not result:raise ValueError("Meteo non disponibile")
+                return {**result,"source_url":result["url"],"status":"available","limitation":result["limitation"]+" · nessun forecast consumo mensile derivato."}
+            if origin.kind in (Kind.HISTORICAL,Kind.LIVE) and not origin.archive:tasks["Open-Meteo"]=outlook_only
     if tasks:
         with ThreadPoolExecutor(max_workers=4) as pool:
             futures={name:pool.submit(task) for name,task in tasks.items()}

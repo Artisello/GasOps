@@ -30,7 +30,12 @@ def panel():
         mode=st.radio("Selezione fonti e strumenti",["Automatica (AI)","Manuale"],horizontal=True,key="analyst_strategy")
         if mode=="Automatica (AI)":
             from .autonomous_analyst_page import panel as autonomous_panel
-            autonomous_panel(items,model,now)
+            from .weather_source import enabled,refresh
+            from .session import database
+            def acquire_weather():
+                if enabled(st.session_state):refresh(st.session_state,database(),utc_now())
+                return catalog(st.session_state,utc_now())[0]
+            autonomous_panel(items,model,now,refresh_catalog=acquire_weather)
             return
     defaults=[k for k in ("snam_demand","terna_Thermal","terna_load","jarvis_withdrawal_definitivo") if k in items]
     if not defaults:
@@ -68,7 +73,7 @@ def panel():
             payload=analyse(items,keys,first.isoformat(),last.isoformat())
             if include:
                 payload["benchmarks"]=reference_facts()
-                payload["forecasts"]=forecast_facts(st.session_state)
+                payload["forecasts"]=forecast_facts(st.session_state,now)
             answer=None;refs=[];warning=None
             if model and question.strip() and (not remote or consent and can_share(items,keys)) and evidence_ids(payload):
                 try:
