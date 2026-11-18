@@ -29,7 +29,12 @@ def test_overview_button_completes_offline_run(monkeypatch, tmp_path):
     assert report.finished_at and len(report.results) == 6
     assert app.session_state["last_briefing"].id == report.id
     assert any("Ultimo bollettino generato" in e.value for e in app.markdown)
-    assert any(m.label=="Modalità effettiva" and m.value=="Deterministica" for m in app.metric)
+    assert report.mode == "Deterministic" and report.interpretation is None
+    assert any(e.value.endswith(" · Calcoli locali") and report.source.name in e.value for e in app.caption)
+    completed = sum(r.status in ("completed", "review") for r in report.results.values())
+    issues = sum(f.severity in ("high", "medium") for f in report.findings)
+    assert any(e.value == f"Analisi eseguite: {completed}/{len(report.steps)} · Da verificare: {issues}" for e in app.caption)
+    assert any("Consumi" in e.proto.body and "Previsione di esempio" in e.proto.body for e in app.get("html"))
     assert any("Scarica bollettino"==b.proto.label for b in app.get("download_button"))
     projection = report.results[Agent.FORECAST].values["forecast"]
     assert projection["model"] in MODELS
