@@ -237,6 +237,50 @@ def _briefing_highlights(run):
         st.caption(forecast.summary)
 
 
+def _briefing_operational_context(public):
+    """Keep source scope, availability and units beside each indicator."""
+    if not public:
+        return
+    st.markdown("**Sicurezza delle forniture · contesto operativo**")
+    cards=[]
+    for name,label,field,unit in (("AGSI+","Stoccaggi Italia","fill_pct","%"),
+                                  ("ALSI","Rigassificazione Italia","sendout_gwh_d","GWh/g"),
+                                  ("IIP","Record UMM ricevuti","received_records","")):
+        source=public.get(name)
+        if not source:
+            continue
+        available=source.get("status")=="available"
+        values=source.get("values",{}) if available else {}
+        value=(source.get(field) if name=="IIP" else values.get(field)) if available else None
+        raw_day=source.get("gas_day")
+        detail=raw_day or ("Finestra IIP" if name=="IIP" else "")
+        if not available:
+            detail=source.get("reason") or "Dato non recente"
+        elif name=="AGSI+":
+            if values.get("stock_twh") is not None:
+                detail+=" · "+numero(values["stock_twh"])+" TWh"
+            if source.get("quality_review"):
+                detail+=" · dato da verificare"
+        elif name=="IIP":
+            detail=f"{source.get('coverage','Copertura non indicata')} · record, non eventi"
+        cards.append((label,value,unit,detail,0 if name=="IIP" else 1,""))
+    if cards:
+        kpi_grid(cards)
+    weather=public.get("Open-Meteo")
+    if weather:
+        points=weather.get("points",[]) if weather.get("status")=="available" else []
+        if points:
+            peak=max(points,key=lambda p:p.get("hdd",float("-inf")))
+            day=peak.get("period") or peak.get("day") or "data non indicata"
+            st.caption("Meteo · picco HDD "+numero(peak.get("hdd"))+" il "+day+
+                       " · "+numero(peak.get("temperature_c"))+" °C · previsione territoriale")
+        else:
+            st.caption("Meteo · previsione non disponibile o non recente.")
+    missing=[name for name,item in public.items() if item.get("status")!="available"]
+    if missing:
+        st.caption("Copertura incompleta · "+", ".join(missing)+". Nessun valore sostitutivo.")
+
+
 def _briefing_panel(selection) -> None:
     with st.container(border=True,key="panel_overview_brief"):
         lead,action=st.columns([2.2,1],vertical_alignment="center")
@@ -246,7 +290,7 @@ def _briefing_panel(selection) -> None:
         with action:
             clicked=st.button(analysis_label(),type="primary",icon=":material/auto_awesome:",width="stretch",key="analysis_launch",disabled=selection.bundle is None)
         extras=[]
-        if st.session_state.get("briefing_gie"):
+        if st.session_state.get("briefing_gie",True):
             extras.append("GIE (AGSI+, ALSI e IIP)")
         if st.session_state.get("briefing_weather"):
             extras.append("Open-Meteo")
@@ -275,9 +319,13 @@ def _briefing_panel(selection) -> None:
             for warning in dict.fromkeys(run.warnings):
                 st.warning(warning)
             _briefing_highlights(run)
+            public=run.assumptions.get("public_operational_context") or {}
+            _briefing_operational_context(public)
             if actual_ai:
                 st.markdown("**Sintesi AI**")
-                st.text(run.interpretation)
+                for paragraph in run.interpretation.splitlines():
+                    if paragraph.strip():
+                        st.text(paragraph.strip())
                 info("Evidenze AI",", ".join(AGENT_LABELS[a] for a in run.interpretation_sources))
             issues=[f for f in run.findings if f.severity in ("high","medium")]
             completed=sum(r.status in ("completed","review") for r in run.results.values())
@@ -293,7 +341,14 @@ def _briefing_panel(selection) -> None:
                         st.text(finding.detail)
             elif not issues:
                 st.caption("Nessun rilievo nei controlli eseguiti.")
-            public=run.assumptions.get("public_operational_context") or {}
+            with st.expander("Esposizione e stress test · simulazioni"):
+                st.caption("Non sono posizioni, fatture o esposizioni reali dei partecipanti.")
+                for agent in (Agent.SETTLEMENT,Agent.SCENARIO):
+                    item=run.results.get(agent)
+                    if item:
+                        st.markdown("**"+AGENT_LABELS[agent]+"**")
+                        st.text(item.summary)
+                st.caption("Per EPSu, MEPSu e settlement effettivi servono i dati verificati del dossier operativo.")
             if public:
                 with st.expander("Fonti operative consultate"):
                     for name,source in public.items():
@@ -305,6 +360,8 @@ def _briefing_panel(selection) -> None:
             with st.expander("Dettaglio degli agenti"):
                 st.caption("Scenari e settlement: calcoli dimostrativi.")
                 for agent,item in run.results.items():
+                    if agent in (Agent.SETTLEMENT,Agent.SCENARIO):
+                        continue
                     st.markdown("**"+AGENT_LABELS[agent]+"**")
                     st.text(item.summary)
                 st.html(steps(run))

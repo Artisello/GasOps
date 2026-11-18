@@ -130,7 +130,8 @@ def run_workflow(
     run = Run(
         question=question, source=context.bundle.origin, input_sha256=context.bundle.fingerprint,
         assumptions={**assumptions.model_dump(mode="json"), "pdf_sha256": editions,
-                     "public_operational_context":public_context or {}},
+                     "public_operational_context":public_context or {}, "full_briefing":full,
+                     "source_period":context.facts.get("period")},
     )
     required = set(Agent) if full else {call.agent for call in defaults} if len(defaults) == len(Agent) else set()
     report = execute(
