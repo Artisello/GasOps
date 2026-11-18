@@ -4,11 +4,9 @@
 
 Strumento indipendente in sola lettura per analizzare il mercato italiano del gas. La dashboard Streamlit include panoramica, previsioni, simulazioni di bilanciamento e regolazione, ricerca normativa e un centro operativo per sei agenti.
 
-## Identità e deployment
+**Demo live:** https://snamigor.streamlit.app/
 
-I.G.O.R. (già GasOps AI) è un prototipo indipendente, non ufficiale Snam. La rinomina del repository esistente in `Artisello/IGOR` e il cambio del sottodominio Streamlit sono operazioni di amministrazione separate dal codice. Conservare i Secrets e le configurazioni prima del redeploy. I riferimenti al vecchio indirizzo GitHub rimangono funzionanti durante la transizione e tramite redirect dopo la rinomina (non ricreare il vecchio repository). Il package `gasops_app`, la CLI `gasops.py`, le variabili `GASOPS_*`, i bucket e i percorsi di persistenza mantengono i nomi tecnici per compatibilità. Non migrare o cancellare dati per un cambio di marchio.
-
-[Procedura GitHub](https://docs.github.com/en/repositories/creating-and-managing-repositories/renaming-a-repository) · [Procedura Streamlit](https://docs.streamlit.io/deploy/streamlit-community-cloud/manage-your-app/rename-your-app)
+I.G.O.R. è un prototipo indipendente, non ufficiale Snam. Gli identificatori tecnici e le configurazioni di deployment restano invariati per compatibilità.
 
 ## Stato di rilascio
 
