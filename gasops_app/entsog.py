@@ -17,7 +17,7 @@ from .models import Kind, Origin, utc_now
 from .public_data import SourceUnavailable, retrieve
 from .store import Store
 
-URL = "https://transparency.entsog.eu/api/v1/operationalData"
+URL = "https://transparency.entsog.eu/api/v1/operationaldatas"
 SOURCE = "https://transparency.entsog.eu/"
 POINTS = {
     "it-tso-0001dis-00005exit": "distribution_gwh",
@@ -25,6 +25,9 @@ POINTS = {
     "it-tso-0001fnc-00005exit": "industry_gwh",
 }
 FIELDS = tuple(POINTS.values())
+# Preserve operator/point key capitalization specified by the API; the
+# direction remains lowercase. Normalization is for matching responses only.
+QUERY_POINTS = tuple(point[:-4].upper() + point[-4:] for point in POINTS)
 MAX_MONTHS = 13
 
 
@@ -181,20 +184,22 @@ def load(store: Store, *, refresh=False, now: datetime|None=None) -> tuple[Bundl
         def parse(text,when,**kwargs):
             return parse_month(json.loads(text),first,end,when,**kwargs)
         try:
-            month=retrieve(store,key=f"entsog-srg-three-v1-{first:%Y-%m}",name="ENTSOG",
+            month=retrieve(store,key=f"entsog-srg-three-v2-{first:%Y-%m}",name="ENTSOG",
                 url=URL,parse=parse,ttl=timedelta(hours=12 if i<2 else 24*30),
-                refresh=refresh and i<2,attempts=1,
-                params={"pointDirection":",".join(POINTS),"from":first.isoformat(),
-                        "to":(end+timedelta(days=1)).isoformat(),"indicator":"Physical Flow",
-                        "periodType":"day","timeZone":"CET","limit":500,"dataset":1})
-        except SourceUnavailable:
-            warnings.append(f"{first:%m/%Y}: dati non disponibili.")
+                refresh=refresh and i<2,attempts=1,timeout=(5,20),diagnostics=True,
+                params={"pointDirection":",".join(QUERY_POINTS),"from":first.isoformat(),
+                        "to":end.isoformat(),"indicator":"Physical Flow",
+                        "periodType":"day","timeZone":"CET","limit":500})
+        except SourceUnavailable as exc:
+            warnings.append(f"{first:%m/%Y}: {exc}")
             # Early-month publication lag is possible; try the preceding month once.
             if i==0:
                 continue
             break
         loaded.append(month)
         earliest=first
+    if not loaded:
+        raise SourceUnavailable("ENTSOG non disponibile. " + " ".join(warnings))
     bundle=combine(loaded,earliest,last)
     if len(loaded)<MAX_MONTHS:
         warnings.append("Storico parziale: nessuna sostituzione con dati di esempio.")
