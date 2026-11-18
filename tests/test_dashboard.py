@@ -350,3 +350,31 @@ def test_balancing_missing_storage_shock_does_not_crash(monkeypatch,tmp_path):
     app.run()
     assert not app.exception
     assert any("variazione stoccaggio è sospesa" in e.value for e in app.warning)
+
+
+
+def test_commercial_workspace_updates_summary_and_calendar(monkeypatch,tmp_path):
+    from datetime import date
+    monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
+    app=AppTest.from_string("from gasops_app.operations_page import operations_ledger\noperations_ledger()",default_timeout=30).run()
+    assert not app.exception
+    assert [t.label for t in app.tabs]==["Fatture","Garanzie","Scadenze","Prezzi","Bilanci e GNL"]
+    def summary():
+        return next(e.proto.body for e in app.get("html") if "Partite da verificare" in e.proto.body)
+    assert "4.200,00" in summary() and "92,0" in summary()
+    app.number_input(key="invoice_amount_short").set_value(172200.).run()
+    assert not app.exception and "4.200,00" not in summary()
+    app.checkbox(key="invoice_present_long").set_value(False).run()
+    assert not app.exception and "1 con importo non confrontabile" in summary()
+    app.number_input(key="guarantee_limit").set_value(920000.).run()
+    assert not app.exception and "100,0" in summary()
+    app.date_input(key="invoice_date_short").set_value(date(2026,11,8)).run()
+    assert not app.exception
+    calendar=next(d.value for d in app.dataframe if "Adempimento" in d.value.columns)
+    assert "Pagamento DEMO-FT-01" in calendar["Adempimento"].tolist()
+    assert "Pagamento DEMO-FT-02" not in calendar["Adempimento"].tolist()
+    assert str(calendar.loc[calendar["Adempimento"]=="Pagamento DEMO-FT-01","Data"].iloc[0])[:10]=="2026-11-23"
+    app.toggle(key="ledger_revisions_only").set_value(True).run()
+    assert not app.exception
+    ledger=next(d.value for d in app.dataframe if "Delta DS" in d.value.columns)
+    assert len(ledger)==1
