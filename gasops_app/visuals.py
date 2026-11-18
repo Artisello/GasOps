@@ -159,8 +159,11 @@ def demand_chart(data: pd.DataFrame, projection: Forecast, grain: str, *, height
                                      fillcolor="rgba(131,172,255,0.17)", hoverinfo="skip",
                                      mode="lines", line=dict(width=0, color=BLUE), legendrank=4,
                                      legendgroup="interval"))
-        fig.add_vrect(x0=data.index[-1], x1=dates[-1], fillcolor="rgba(131,172,255,0.04)", line_width=0)
-        fig.add_vline(x=data.index[-1], line_color="#446492", line_dash="dot", line_width=1)
+        boundary=data["demand_gwh"].last_valid_index()
+        if boundary is None:
+            boundary=data.index[-1]
+        fig.add_vrect(x0=boundary, x1=dates[-1], fillcolor="rgba(131,172,255,0.04)", line_width=0)
+        fig.add_vline(x=boundary, line_color="#446492", line_dash="dot", line_width=1)
     demand = _line("Consumi osservati", data.index, data["demand_gwh"], TEAL, "GWh", grain)
     demand.legendrank = 1
     fig.add_trace(demand)
