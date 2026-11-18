@@ -51,6 +51,8 @@ def panel():
         return
     st.caption("Unità nativa: grafici ed errori visualizzati in migliaia di unità, senza assumere MWh per tutti gli anni. Orari locali dichiarati nel file; non disponibilità storica certificata.")
     h=st.selectbox("Orizzonte", [0,1,2],format_func=lambda x:"G" if x==0 else f"G+{x}",key="snam_horizon")
+    from .snam_power_page import panel as power_panel
+    power_panel(saved,h)
     extended=st.checkbox("Modello esteso e incertezza",key="snam_extended")
     models=(*MODELS,"extended") if extended else MODELS
     signatures=tuple((y,v["sha256"]) for y,v in sorted(saved.items()))
@@ -101,7 +103,7 @@ def panel():
             st.metric("I.G.O.R. esteso",f'{item["extended"]/1000:.2f}')
             if "low" in item:
                 st.caption(f'Intervallo empirico nominale 90%: {item["low"]/1000:.2f} – {item["high"]/1000:.2f} · {item["cal_n"]} errori precedenti disponibili.')
-    st.caption("Terna: dati elettrici nella vista dedicata; non inclusi senza storico e vintage comuni.")
+    st.caption("Per misurare il contributo Terna usa il confronto dedicato qui sotto.")
     st.warning("Riferimento provvisorio, non bilancio definitivo. Dati storici eventualmente revisionati, unità annuali da confermare e nessuna attestazione di disponibilità ex ante.")
     with st.expander("Metriche, metodo ed esportazione"):
         st.dataframe([{"Modello":LABELS[k],**{m:v/1000 if m!="wape" and v is not None else v for m,v in score.items()}} for k,score in r["scores"].items()],hide_index=True,width="stretch")
