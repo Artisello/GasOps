@@ -13,6 +13,7 @@ from .operational_sources import (AGSI_SOURCE,GME_SOURCE,GME_TERMS,JARVIS_SOURCE
 from .public_data import SourceUnavailable
 from .session import database
 from .visuals import local_time
+from .iip_view import MISSING, coverage, display_row, export_rows, filter_messages, options, project_messages
 
 
 def configured_key():
@@ -80,9 +81,10 @@ def _credit(platform):
     st.markdown("[Fonte: "+GIE_CREDIT[platform]+"]("+GIE_LINKS[platform]+") · [Condizioni d’uso]("+GIE_TERMS+")")
 
 
-def _load_once(state,button,loader,key,*args):
+def _load_once(state,button,loader,key,*args,primary=False):
     """One automatic load for each selection in this session. Explicit retry only."""
-    clicked=st.button(button,key=state+"_load")
+    clicked=st.button(button,key=state+"_load",type="primary" if primary else "secondary",
+                      icon=":material/refresh:")
     previous=st.session_state.get(state)
     if previous is None or clicked:
         now=utc_now()
@@ -168,42 +170,100 @@ def _inventory_panel(platform,loader,key):
 
 def _iip_panel(key):
     st.subheader("Messaggi urgenti di mercato (UMM)")
+    st.caption("Indisponibilità e informazioni pubblicate dagli operatori. I messaggi non equivalgono "
+               "a eventi unici o a capacità persa aggregata.")
     _credit("IIP")
-    st.caption("Messaggi attivi richiesti per oggi e i prossimi sette giorni, prima pagina (fino a 50 messaggi, secondo il limite del server). "
-               "Non è una mappa completa delle indisponibilità né una stima di capacità persa.")
     if not key:
+        st.info("Per consultare i messaggi serve una chiave GIE abilitata.")
         return
-    result=_load_once("gie_iip","Aggiorna messaggi UMM",load_iip,key)
+    actions=st.columns([1,1,2],vertical_alignment="bottom")
+    with actions[0]:
+        result=_load_once("gie_iip","Aggiorna UMM",load_iip,key,primary=True)
     if result is None:
-        st.caption("Se l’errore persiste, consulta i messaggi sul portale GIE IIP. La documentazione API completa è disponibile nel tuo account GIE.")
+        st.caption("Consulta il portale GIE IIP in caso di errore.")
         return
-    st.caption("Acquisito "+result["acquired"].isoformat()+(" · cache" if result["cached"] else ""))
-    if result["failed"] or utc_now()-result["acquired"]>timedelta(hours=2):
-        st.warning("Messaggi non aggiornati: verifica il portale IIP.")
-    if result["pages"] is None:
-        st.warning("Messaggi disponibili · prima pagina. Il totale non è verificabile: non usare l’elenco come inventario completo delle indisponibilità.")
-    elif result["partial"]:
-        st.warning("Risultati parziali: prima pagina di "+str(result["pages"])+". Consulta il portale per l’elenco completo.")
-    elif result.get("pagination_verified"):
-        st.caption("Risposta completa per la richiesta: tutti i messaggi dichiarati dall’API sono stati ricevuti.")
+    with actions[1]:
+        st.download_button("Esporta JSON",attributed_iip_json(result),
+                           "gasops-gie-iip.json","application/json",key="iip_json",icon=":material/download:")
     total=result.get("reported_total")
-    st.metric("Messaggi ricevuti",f'{len(result["messages"])} / {total}' if total is not None else len(result["messages"]))
-    _credit("IIP")
+    state=coverage(result)
+    period=(result["request_from"]+" – "+result["request_to"]
+            if result.get("request_from") and result.get("request_to") else "Non indicato")
+    with actions[2]:
+        st.caption("Fonte acquisita: "+local_time(result["acquired"])+(" · cache" if result["cached"] else ""))
+    if result["failed"] or utc_now()-result["acquired"]>timedelta(hours=2) or st.session_state.get("gie_iip",{}).get("error"):
+        st.warning("Aggiornamento non riuscito o dati non recenti. Consulta il portale IIP.")
+    if state=="Parziale":
+        st.warning(f"Prima pagina di {result['pages']}. Non tutti i risultati sono stati acquisiti.")
+    elif state=="Non verificata":
+        st.warning("Copertura della richiesta non verificata. Consulta il portale per l’elenco completo.")
+    cards=st.columns(4)
+    for col,label,value,detail in zip(cards,
+            ("Messaggi ricevuti","Copertura richiesta","Periodo richiesto","Ultima acquisizione"),
+            (f'{len(result["messages"])} / {total}' if total is not None else str(len(result["messages"])),
+             state,period,local_time(result["acquired"])),
+            ("Record API, non eventi distinti","Rispetto al totale dichiarato","Filtro trasmesso all’API","Europe/Rome"),strict=True):
+        with col,st.container(border=True):
+            st.caption(label)
+            st.markdown("**"+value+"**")
+            st.caption(detail)
+    rows=project_messages(result["messages"])
+    if not rows:
+        st.info("Nessun messaggio restituito per questa richiesta. Non dimostra assenza di indisponibilità.")
+    else:
+        st.subheader("Messaggi ricevuti")
+        search=st.text_input("Cerca per asset, operatore, ID o motivo",key="iip_search",
+                             placeholder="Cerca nei campi disponibili")
+        c1,c2,c3=st.columns(3)
+        countries=c1.multiselect("Paese",options(rows,"country"),key="iip_country",placeholder="Tutti")
+        statuses=c2.multiselect("Stato UMM",options(rows,"status"),key="iip_status",placeholder="Tutti")
+        types=c3.multiselect("Tipo di evento",options(rows,"event_type"),key="iip_type",placeholder="Tutti")
+        visible=filter_messages(rows,query=search,countries=countries,statuses=statuses,types=types)
+        st.caption(f"{len(visible)} di {len(rows)} record ricevuti · ordinati per pubblicazione quando il fuso è noto. "
+                   "I campi non riconosciuti restano non indicati.")
+        if visible:
+            st.dataframe([display_row(r) for r in visible],hide_index=True,width="stretch",
+                         column_config={"Asset":st.column_config.TextColumn(width="medium"),
+                                        "Motivo":st.column_config.TextColumn(width="large")})
+            st.caption("Fonte: "+GIE_CREDIT["IIP"]+" · capacità riportata dal singolo messaggio; nessuna somma.")
+            st.download_button("Esporta CSV filtrato",export_rows(visible,result),"gasops-iip-messaggi.csv",
+                               "text/csv",key="iip_csv",icon=":material/download:")
+            by_index={r["record_index"]:r for r in visible}
+            chosen=st.selectbox("Apri dettaglio del messaggio",list(by_index),
+                format_func=lambda i:f'{i+1} · {by_index[i]["message_id"] or "ID non indicato"} · {by_index[i]["asset"] or MISSING}',
+                key="iip_detail")
+            row=by_index[chosen]
+            with st.container(border=True):
+                st.markdown("**Dettaglio UMM**")
+                a,b=st.columns(2)
+                with a:
+                    for label,field in (("Asset","asset"),("Operatore","operator"),("Paese","country"),
+                                        ("Stato UMM","status"),("Tipo evento","event_type"),("Direzione","direction")):
+                        st.caption(label)
+                        st.text(row.get(field) or MISSING)
+                with b:
+                    for label,field in (("Pubblicato","published_label"),("Inizio","start_label"),("Fine","stop_label"),
+                                        ("Capacità indisponibile","impact"),("Motivo","reason"),("Note","remarks")):
+                        st.caption(label)
+                        st.text(row.get(field) or MISSING)
+                st.caption("Dati originali e possibili intervalli di capacità multipli")
+                with st.expander("Record originale selezionato"):
+                    st.json(result["messages"][chosen],expanded=False)
+                st.caption("Fonte: "+GIE_CREDIT["IIP"])
+        else:
+            st.info("Nessun risultato corrisponde ai filtri. Modifica la ricerca.")
     diagnostic=result.get("pagination_diagnostic")
     if diagnostic is not None:
         with st.expander("Diagnostica paginazione IIP"):
-            st.caption("Metadati della risposta, senza contenuto dei messaggi o credenziali. Utili per controllare il formato API.")
+            st.caption(f"Ricevuti: {len(result['messages'])} · Totale dichiarato: "
+                       f"{total if total is not None else 'non indicato'} · Pagine: "
+                       f"{result['pages'] if result['pages'] is not None else 'non indicate'} · {state}")
             diagnostic_text=json.dumps(diagnostic,ensure_ascii=False,indent=2)
             st.code(diagnostic_text,language="json")
             st.download_button("Scarica diagnostica JSON",diagnostic_text,"gasops-iip-diagnostica.json",
                                "application/json",key="iip_pagination_diagnostic")
-    if not result["messages"]:
-        st.caption("Nessun messaggio restituito per la richiesta; non dimostra assenza di indisponibilità.")
-    else:
-        with st.expander("Messaggi originali GIE IIP"):
-            st.json(result["messages"],expanded=False)
-    st.download_button("Esporta JSON con fonte",attributed_iip_json(result),
-                       "gasops-gie-iip.json","application/json",key="iip_json")
+    with st.expander("Tutti i messaggi originali GIE IIP"):
+        st.json(result["messages"],expanded=False)
 
 
 def gme_reference():

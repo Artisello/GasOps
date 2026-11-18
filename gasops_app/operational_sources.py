@@ -384,16 +384,18 @@ def load_iip(store,api_key,*,now=None,refresh=False):
     # only: no claim of complete event coverage or available capacity.
     params={"from":today.isoformat(),"to":(today+timedelta(days=7)).isoformat(),
             "status":"active","size":IIP_PAGE_SIZE,"page":1}
-    return retrieve(store,key="iip-active-v2-"+today.isoformat(),name=GIE_CREDIT["IIP"],
+    result=retrieve(store,key="iip-active-v2-"+today.isoformat(),name=GIE_CREDIT["IIP"],
                     url=IIP_SOURCE+"api",parse=parse_iip,ttl=timedelta(hours=2),
                     params=params,attempts=1,headers={"x-key":api_key.strip(),"Accept":"application/json"},
                     timeout=(5,20),diagnostics=True,refresh=refresh,max_bytes=2_000_000)
+    return {**result,"request_from":params["from"],"request_to":params["to"]}
 
 
 def attributed_iip_json(result):
     return json.dumps({**attribution("IIP"),"retrieved_at":result["acquired"].isoformat(),
                        "pages":result["pages"],"partial":result["partial"],
                        "reported_total":result.get("reported_total"),"server_page_size":result.get("server_page_size"),
+                       "request_from":result.get("request_from"),"request_to":result.get("request_to"),
                        "pagination_verified":result.get("pagination_verified",False),
                        "record_keys":result.get("record_keys"),"pagination_diagnostic":result.get("pagination_diagnostic"),
                        "messages":result["messages"]},ensure_ascii=False,indent=2,allow_nan=False)
