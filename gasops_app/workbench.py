@@ -209,7 +209,7 @@ def _scenario_panel() -> None:
 
 
 def balancing() -> None:
-    header("Bilanciamento", f'{kind_tag(Kind.SIMULATION)} <span>Calcoli illustrativi · nessuna operazione reale</span>')
+    header("Bilanciamento", "Stime pubblicate · controlli · simulazioni separate")
     system, daily, participant, aggregate = st.tabs(["Stato sistema", "Controllo giornaliero", "Sbilanciamento del partecipante", "Scenario di mercato"])
     with system:
         from .operational_sources_page import _jarvis_panel

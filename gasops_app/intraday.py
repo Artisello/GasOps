@@ -38,9 +38,11 @@ def merge_snapshot(previous,raw,now):
         raise ValueError("Versioni in conflitto: archivio precedente conservato.")
     if len(combined)>LIMIT:raise ValueError("Archivio al limite: esporta prima di rimuovere le stime.")
     combined=combined.sort_values(["gas_day","published_at"]).reset_index(drop=True)
+    hashes=tuple(dict.fromkeys((*previous.get("hashes",(previous["sha256"],)),new["sha256"])))
+    if len(hashes)>200:raise ValueError("Limite estratti distinti: esporta l’archivio.")
     return {"versions":combined,"latest":combined.drop_duplicates("gas_day",keep="last").reset_index(drop=True),
             "sha256":sha256(archive_csv(combined).encode()).hexdigest(),
-            "hashes":tuple(dict.fromkeys((*previous.get("hashes",(previous["sha256"],)),new["sha256"])))}
+            "hashes":hashes}
 
 
 def _pairs(frame,metric,day,issued,now):
@@ -85,7 +87,7 @@ def evaluate(versions,day,metric,now):
     if h.empty:return None
     row=h.iloc[-1];issued=row.published_at.to_pydatetime()
     value=pd.to_numeric(row[metric],errors="coerce")
-    if not math.isfinite(float(value)):return None
+    if pd.isna(value) or not math.isfinite(float(value)):return None
     # Current-day estimate only if reasonably fresh; historic day explicitly retrospective.
     if gas_end(day)>now and now-issued>timedelta(hours=3):return None
     pairs=_pairs(versions,metric,day,issued,now)

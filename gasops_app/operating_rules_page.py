@@ -39,8 +39,8 @@ def network_panel():
     with st.expander("Quadratura del bilancio di rete"):
         st.latex(r"I+S=P+C+PE+\Delta LPC+GNC")
         st.caption("CdR XCII · cap. 9 §3.1.1 · pp. 368–370. Solo aggregati SRG, stessa fase e giorno gas, GWh a PCS coerente.")
+        st.download_button("Modello CSV vuoto",template(),"igor-bilancio-rete.csv","text/csv",key="network_balance_template")
         with st.form("network_balance_import"):
-            st.download_button("Modello CSV vuoto",template(),"igor-bilancio-rete.csv","text/csv",key="network_balance_template",on_click="ignore")
             f=st.file_uploader("Componenti del bilancio",type=["csv"],key="network_balance_file")
             ok=st.checkbox("Confermo dati pubblici autorizzati, perimetro e unità.")
             submitted=st.form_submit_button("Verifica bilancio")
@@ -60,8 +60,10 @@ def network_panel():
         cols=st.columns(2 if compared else 1);cols[0].metric("Giorni calcolati",len(checks))
         if compared:cols[1].metric("Da verificare",sum(x["esito"]=="Da verificare" for x in compared))
         frame=pd.DataFrame(checks)
-        frame["GNC_calcolato"]=frame["GNC_calcolato"].astype(float)
-        st.line_chart(frame,x="gas_day",y="GNC_calcolato",y_label="GWh")
+        chart=frame[["gas_day","GNC_calcolato"]].copy()
+        chart["GNC_calcolato"]=chart["GNC_calcolato"].astype(float)
+        if len(chart)>1:st.line_chart(chart,x="gas_day",y="GNC_calcolato",y_label="GWh")
+        else:st.metric("GNC calcolato",str(checks[0]["GNC_calcolato"])+" GWh")
         st.dataframe(checks,hide_index=True,width="stretch")
         st.caption("GNC calcolato per differenza; verifica solo se GNC pubblicato è fornito. Nessuna equivalenza con SAS o DS. Dati di sessione, non inviati ad AI.")
         st.download_button("Esporta controlli CSV",frame.to_csv(index=False),"igor-quadrature.csv","text/csv",key="network_balance_export")

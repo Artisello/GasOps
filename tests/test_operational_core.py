@@ -47,3 +47,18 @@ def test_calendar_and_gnc_residual():
     assert r[0]["GNC_calcolato"]==9 and r[0]["delta_GNC"]==1 and r[0]["esito"]=="Da verificare"
     assert r[1]["GNC_calcolato"]==8 and r[1]["delta_GNC"] is None
     with pytest.raises(ValueError):parse_balance((template()+"2026-11-18,definitive,100,0,90,1,2,0,7\n").encode(),NOW)
+
+
+
+def test_gas_day_dst():
+    assert gas_end(date(2026,3,28))-gas_end(date(2026,3,27))==timedelta(hours=23)
+    assert gas_end(date(2026,10,24))-gas_end(date(2026,10,23))==timedelta(hours=25)
+
+
+def test_network_and_calendar_panels_empty_without_demo():
+    from streamlit.testing.v1 import AppTest
+    app=AppTest.from_string("from gasops_app.operating_rules_page import network_panel,calendar_panel\nfrom gasops_app.models import utc_now\nfrom gasops_app.data import ROME\nnetwork_panel()\ncalendar_panel(utc_now().astimezone(ROME))").run()
+    assert not app.exception
+    assert len(app.metric)==0
+    assert len(app.dataframe)==1
+    assert len(app.dataframe[0].value)==6
