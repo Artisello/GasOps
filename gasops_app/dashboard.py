@@ -12,10 +12,10 @@ from .data import FIELDS, period_text
 from .forecast import AUTOMATIC, MODELS
 from .italiano import GRAVITA, MODALITA, MODELLI, data_it, numero
 from .models import AGENT_LABELS, Agent, Kind, Provider
-from .session import ai_controls, analysis_label, briefing_run, launch, preview_market, source_filters
+from .session import analysis_label, briefing_run, launch, preview_market, source_filters
 from .reports import markdown
 from .visuals import AMBER, BLUE, ROSE, TEAL, breakdown_chart, chip, demand_chart, error_chart
-from .visuals import forecast_readout, heading, header, info, kind_tag, kpi, local_time, mini_chart, plot, rows, steps
+from .visuals import forecast_readout, heading, header, info, kind_tag, kpi_grid, local_time, mini_chart, plot, rows, steps
 
 
 def _change(facts: dict, field: str) -> str:
@@ -31,16 +31,16 @@ def _metrics(context: MarketContext) -> None:
     origin = context.bundle.origin
     if origin.grain == "monthly":
         specs = [
-            ("Consumo interno", "demand_gwh", "GWh/mese", _change(facts, "demand_gwh"), 1, "teal"),
-            ("Disponibilità contabile", "supply_gwh", "GWh/mese", "Consumo interno calcolato", 1, ""),
+            ("Gas consumato", "demand_gwh", "GWh/mese", _change(facts, "demand_gwh"), 1, "teal"),
+            ("Disponibilità contabile", "supply_gwh", "GWh/mese", "Bilancio statistico, non capacità", 1, ""),
             ("Importazioni nette", "net_imports_gwh", "GWh/mese", "Importazioni − esportazioni", 1, ""),
             ("Variazione delle scorte", "stock_change_gwh", "GWh/mese", "Positiva in accumulo", 1, "blue"),
-            ("Prezzo PSV · ARERA", "price_eur_mwh", "€/MWh", "Media mensile CMEM,m", 2, ""),
+            ("Prezzo del gas · PSV", "price_eur_mwh", "€/MWh", "Media mensile CMEM,m", 2, ""),
         ]
     elif origin.grain == "daily" and "distribution_gwh" in origin.fields:
         specs = [(title, field, "GWh/giorno", _change(facts, field), 1, tone) for title, field, tone in (
-            ("Consumo nazionale" if origin.archive else "Prelievi SRG (proxy)", "demand_gwh", "teal"), ("Industria", "industry_gwh", ""),
-            ("Generazione elettrica", "power_gwh", "blue"), ("Residenziale e terziario" if origin.archive else "Distribuzione", "distribution_gwh", ""),
+            ("Consumo nazionale" if origin.archive else "Prelievi sulla rete SRG", "demand_gwh", "teal"), ("Industria", "industry_gwh", ""),
+            ("Centrali elettriche", "power_gwh", "blue"), ("Residenziale e terziario" if origin.archive else "Distribuzione", "distribution_gwh", ""),
         )]
     else:
         specs = [
@@ -51,10 +51,27 @@ def _metrics(context: MarketContext) -> None:
             ("Copertura della domanda", "coverage_pct", "%", "Offerta ÷ domanda", 1, "blue"),
             ("Prezzo di esempio", "price_eur_mwh", "€/MWh", _change(facts, "price_eur_mwh"), 2, ""),
         ]
-    for col, (title, field, units, description, decimals, tone) in zip(st.columns(len(specs)), specs, strict=True):
-        with col:
-            kpi(title, facts.get(field), units, description if facts.get(field) is not None else "Valore non disponibile",
-                decimals, tone)
+    kpi_grid([(title,facts.get(field),units,description if facts.get(field) is not None else "Dato non disponibile",
+               decimals,tone) for title,field,units,description,decimals,tone in specs])
+
+
+def _plain_market(context: MarketContext) -> str:
+    facts=context.facts
+    origin=context.bundle.origin
+    if not facts or facts.get("demand_gwh") is None:
+        return "Consumi non disponibili per la fonte selezionata."
+    delta=facts.get("demand_gwh_change_pct")
+    if delta is None:
+        return "Dati insufficienti per confrontare i consumi."
+    direction="in aumento" if delta>0 else "in diminuzione" if delta<0 else "invariati"
+    magnitude=f" ({numero(delta,signed=True)}%)" if delta else ""
+    comparison="tra gli ultimi sette giorni e i sette precedenti" if origin.grain=="daily" else "rispetto al mese precedente"
+    subject=("Nella simulazione, i consumi" if origin.kind==Kind.SYNTHETIC else
+             "Nell’archivio storico, i consumi" if origin.archive else
+             "I prelievi osservati sulla rete SRG" if origin.grain=="daily" else "I consumi nazionali")
+    return subject+" sono "+direction+magnitude+" "+comparison+"."
+
+
 
 
 def _state(source: Provider) -> str:
@@ -112,7 +129,7 @@ def _charts(context: MarketContext, horizon: int, page: str, height: int = 330) 
     origin = context.bundle.origin
     data = context.inspection.usable.tail(horizon)
     title = ("Consumo interno e disponibilità" if origin.grain == "monthly" else
-             "Consumi nazionali" if origin.archive else "Prelievi SRG (proxy)" if "distribution_gwh" in origin.fields else "Domanda e offerta")
+             "Consumi nazionali" if origin.archive else "Prelievi sulla rete SRG" if "distribution_gwh" in origin.fields else "Domanda e offerta")
     projection = context.projection
     heading(title, kind_tag(Kind.FORECAST) if projection.points else "")
     if not data["demand_gwh"].notna().any():
@@ -170,12 +187,15 @@ def _supporting_charts(context: MarketContext, data: pd.DataFrame, page: str) ->
                 st.caption("Prezzo ufficiale assente per il periodo selezionato.")
 
 
-def _briefing_panel(selection, clicked: bool) -> None:
+def _briefing_panel(selection) -> None:
     with st.container(border=True,key="panel_overview_brief"):
-        st.subheader("Bollettino di mercato")
-        lead,help_col=st.columns([4,1],vertical_alignment="center")
-        lead.caption("Mercato, previsioni e rischi · sintesi dei dati selezionati.")
-        with help_col:
+        lead,action=st.columns([2.2,1],vertical_alignment="center")
+        with lead:
+            st.subheader("Bollettino di mercato")
+            st.caption("Cosa sta succedendo e cosa controllare.")
+        with action:
+            clicked=st.button(analysis_label(),type="primary",icon=":material/auto_awesome:",width="stretch",key="analysis_launch",disabled=selection.bundle is None)
+        with st.container():
             info("Info bollettino","Il pulsante esegue i sei agenti e i controlli locali. Il modello AI, se selezionato, interpreta i risultati condivisibili.","Non modifica le fonti, i calcoli o le posizioni operative. Scenari e settlement possono essere dimostrativi.")
         extras=[]
         if st.session_state.get("briefing_gie"):
@@ -214,11 +234,8 @@ def _briefing_panel(selection, clicked: bool) -> None:
             c1.metric("Controlli completati",f"{completed}/{len(run.steps)}")
             c2.metric("Rilievi da verificare",issues)
             c3.metric("Modalità effettiva","AI" if actual_ai else "Deterministica")
-            for agent in (Agent.MARKET,Agent.FORECAST,Agent.QUALITY):
-                if agent in run.results:
-                    item=run.results[agent]
-                    st.markdown("**"+AGENT_LABELS[agent]+"**")
-                    st.text(item.summary)
+            if run.summary:
+                st.text(run.summary)
             public=run.assumptions.get("public_operational_context") or {}
             if public:
                 with st.expander("Fonti operative consultate"):
@@ -240,7 +257,7 @@ def _briefing_panel(selection, clicked: bool) -> None:
             d2.download_button("Scarica dati JSON",json.dumps(run.model_dump(mode="json"),ensure_ascii=False,indent=2),
                                f"gasops-{run.id[:10]}.json",mime="application/json",key="overview_brief_json",width="stretch")
             st.markdown("[Centro operativo AI: domande, storico e riscontri](/operations)")
-        ai_controls(prefix="overview")
+        # AI connection controls are in the sidebar.
 
 
 def overview() -> None:
@@ -248,23 +265,22 @@ def overview() -> None:
     with controls:
         selection=source_filters("overview")
     with top:
-        clicked=header("Panoramica del mercato",selection.meta,analysis_label(),disabled=selection.bundle is None)
-    _briefing_panel(selection,clicked)
+        header("Panoramica del mercato",selection.meta)
     if not selection.bundle:
+        _briefing_panel(selection)
         return
     context=preview_market(selection)
-    st.caption("Ultimo periodo osservato · "+context.facts.get("label","Non disponibile"))
+    st.subheader("Il mercato in breve")
+    st.caption("Ultimo dato · "+context.facts.get("label","Non disponibile"))
     _metrics(context)
-    main,desk=st.columns([2.42,1],gap="medium")
-    with main:
-        with st.container(border=True,key="panel_main"):
-            data=_charts(context,selection.periods,"overview",height=314)
-        _supporting_charts(context,data,"overview")
-    with desk:
-        with st.container(border=True,key="panel_source"):
-            heading("Fonti e aggiornamento")
-            _source_panel(context)
-        _quality_panel(context)
+    st.write(_plain_market(context))
+    _briefing_panel(selection)
+    with st.container(border=True,key="panel_main"):
+        _charts(context,selection.periods,"overview",height=345)
+        info("Come leggere il grafico","Linea continua: consumi osservati. Linea tratteggiata: consumi previsti. L’intervallo indica l’incertezza della stima, non una garanzia.","GWh è una misura di energia; 1 GWh equivale a 1.000 MWh.")
+    _quality_panel(context)
+    with st.expander("Fonti e aggiornamento"):
+        _source_panel(context)
     st.markdown("[Mercato e previsioni](/market) · [Stoccaggi e forniture](/security-of-supply) · [Registro operativo](/ledger)")
 
 
@@ -321,6 +337,7 @@ def market() -> None:
     origin = context.bundle.origin
     st.caption("Ultimo periodo osservato · " + context.facts.get("label", "Non disponibile"))
     _metrics(context)
+    st.write(_plain_market(context))
     with st.container(border=True, key="panel_market_chart"):
         visible = _charts(context, selection.periods, "market", height=348)
     from .weather_page import weather_panel

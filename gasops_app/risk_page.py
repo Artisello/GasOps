@@ -13,8 +13,8 @@ from .visuals import info
 
 
 def risk_page():
-    st.title("Rischio probabilistico")
-    st.caption("Simulazione Monte Carlo · rischio ipotetico, non ufficiale né settlement.")
+    st.title("Simulazione dei rischi")
+    st.caption("Cosa potrebbe succedere se domanda, offerta o prezzi cambiassero? · simulazione ipotetica, non ufficiale.")
     info("Info simulazione","Stima probabilità di deficit e perdita economica potenziale, VaR e CVaR.","Le probabilità sono condizionate alle ipotesi; non rappresentano il rischio ufficiale del sistema gas.")
     state = assumptions()
     data = st.session_state.get("active_bundle") or fixture()
@@ -50,7 +50,7 @@ def risk_page():
         st.caption("La disponibilità contabile mensile non equivale a capacità fisicamente disponibile.")
     p = facts.get("price_eur_mwh")
     s = state.risk
-    st.subheader("1. Imposta lo scenario")
+    st.subheader("1. Scegli le ipotesi")
     with st.form("risk_assumptions"):
         a,b,c = st.columns(3)
         with a:
@@ -93,11 +93,11 @@ def risk_page():
             or (use_forecast and r["forecast_model"] != projection.model)):
         st.warning("Le ipotesi ora visualizzate sono cambiate. Esegui una nuova simulazione.")
         return
-    st.subheader("2. Risultati dell’ultima simulazione")
+    st.subheader("2. Quanto è probabile una carenza di gas?")
     a,b,c = st.columns(3)
-    a.metric("Probabilità di deficit", f"{numero(100*r['probability_deficit'],2)}%")
-    b.metric("Deficit medio", f"{numero(r['expected_deficit_gwh'])} GWh")
-    c.metric("Margine P05", f"{numero(r['gap_gwh']['p05'])} GWh")
+    a.metric("Probabilità di carenza", f"{numero(100*r['probability_deficit'],2)}%")
+    b.metric("Carenza media", f"{numero(r['expected_deficit_gwh'])} GWh")
+    c.metric("Margine nel 5° percentile", f"{numero(r['gap_gwh']['p05'])} GWh")
     st.caption(f"Intervallo Monte Carlo 95% (solo errore di campionamento): "
                f"{numero(100*r['probability_deficit_mc_interval95'][0],2)}% – "
                f"{numero(100*r['probability_deficit_mc_interval95'][1],2)}%.")
@@ -106,7 +106,7 @@ def risk_page():
     st.plotly_chart(fig, width="stretch")
     st.dataframe([{"Variabile": label, **r[key]} for label,key in
                   [("Domanda","demand_gwh"),("Offerta","supply_gwh"),("Margine","gap_gwh"),("Deficit","deficit_gwh")]], hide_index=True)
-    st.subheader("3. Perdite nei casi peggiori (VaR e CVaR)")
+    st.subheader("3. Quanto potrebbe costare? (VaR e CVaR)")
     metrics = []
     for level in ("95","99"):
         energy = r["deficit_tail_gwh"][level]

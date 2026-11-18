@@ -153,7 +153,7 @@ def _scenario_panel() -> None:
 
 def balancing() -> None:
     header("Bilanciamento e regolazione", f'{kind_tag(Kind.SIMULATION)} <span>Regolazione del partecipante e scenari aggregati</span>')
-    participant, aggregate = st.tabs(["Regolazione del partecipante", "Scenari aggregati"])
+    participant, aggregate = st.tabs(["Calcola sbilanciamento", "Simula domanda e offerta"])
     with participant:
         _settlement_panel()
     with aggregate:
@@ -247,7 +247,7 @@ def _reg_explorer(docs) -> None:
 
 
 def regulatory() -> None:
-    header("Analisi normativa", '<span>Edizioni esaminate · applicabilità attuale da verificare</span>')
+    header("Norme e documenti", '<span>Edizioni esaminate · applicabilità attuale da verificare</span>')
     left, right = st.columns([1.65, 1], gap="medium")
     with left:
         st.file_uploader("Aggiungi PDF con testo ricercabile", type=["pdf"], accept_multiple_files=True, key="reg_upload",
@@ -261,7 +261,7 @@ def regulatory() -> None:
             st.caption("Le note sulle edizioni esaminate sono disponibili offline.")
         for warning in docs.errors:
             st.warning(warning)
-    register, ask, explorer = st.tabs(["Registro delle anomalie", "Ricerca e domande", "Consulta le pagine"])
+    register, ask, explorer = st.tabs(["Punti da verificare", "Ricerca e domande", "Leggi i documenti"])
     with register:
         _reg_register()
     with ask:
@@ -367,10 +367,10 @@ def operations() -> None:
     with controls:
         selection = source_filters("ops", lookback=False)
     with top:
-        started = header("Centro operativo AI", selection.meta, analysis_label(), disabled=selection.bundle is None)
-    st.caption("Bollettino completo o domanda mirata · risultati qui sotto.")
+        started = header("Assistente AI", selection.meta, analysis_label(), disabled=selection.bundle is None)
+    st.caption("Genera un bollettino o chiedi un approfondimento. Il risultato appare qui sotto.")
     with st.container(border=True, key="panel_ops_query"):
-        heading("Interroga l’analista")
+        heading("Fai una domanda sul gas")
         st.caption("Usa solo domande e dati pubblici o sintetici; non inserire informazioni riservate.")
         st.selectbox("Domanda di esempio", ["Scegli un esempio", *QUESTIONS], key="ops_example", on_change=_example_question)
         with st.form("ops_question_form", border=False):

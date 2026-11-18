@@ -26,13 +26,13 @@ def _csv(rows):
 
 
 def commercial_workbench(ledger_view):
-    st.title("Operazioni commerciali")
+    st.title("Fatture e garanzie")
     st.caption("Demo sintetica · settembre 2026 · nessuna fattura reale")
     records = sample_rows()
     demo = reconcile(records,demo_invoices(),"DEMO-001",2026,9)
     eps = exposure(D(420000),D(280000),D(220000),D(1000000))
     issues = [r for r in demo if r["status"] not in ("QUADRA","NON DOVUTA")]
-    st.subheader("Da verificare")
+    st.subheader("Riepilogo del caso di esempio")
     a,b,c=st.columns(3)
     a.metric("Partite da riconciliare",len(issues))
     b.metric("Differenze note",money(sum((abs(r["delta"]) for r in issues if r["delta"] is not None),D(0))))
@@ -40,7 +40,7 @@ def commercial_workbench(ledger_view):
     info("Info riepilogo","Indicatori del caso demo fisso; gli strumenti sottostanti consentono simulazioni indipendenti. Edizioni normative di studio, nessuna disposizione operativa.")
     tabs=st.tabs(["Fatture","Prezzi","Garanzie","Scadenze","Bilanci e GNL"])
     with tabs[0]:
-        st.subheader("Confronta le partite economiche")
+        st.subheader("Controlla gli importi fatturati")
         st.caption("Esempio imponibile, un documento per gruppo DS; IVA, note di credito e fatture multiple richiedono verifica.")
         a,b=st.columns(2)
         short=a.number_input("Documento DS negativo (€)",min_value=0.,value=168000.,step=100.)
@@ -84,7 +84,7 @@ def commercial_workbench(ledger_view):
             st.warning(str(error))
         info("Info prezzi",PRICE_REF+" · Prezzi esposti a tre decimali; calcolo non arrotondato.")
     with tabs[2]:
-        st.subheader("Controlla la capienza delle garanzie")
+        st.subheader("Verifica le garanzie disponibili")
         st.caption("Inserire componenti EPSu già determinate e MEPSu disponibile; importi firmati, IVA inclusa ove prevista.")
         a,b=st.columns(2)
         pf=a.number_input("Pfat (€)",value=420000.,step=10000.)

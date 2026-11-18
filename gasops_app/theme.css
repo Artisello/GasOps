@@ -212,3 +212,30 @@ div[data-testid="stVerticalBlockBorderWrapper"] { border-color: var(--gas-border
 .stApp [data-testid="stPopoverButton"]:focus-visible { outline: 2px solid var(--gas-blue); outline-offset: 2px; }
 .stApp [data-testid="stText"] { line-height: 1.5; }
 @media (max-width: 760px) { .gas-kpi { min-height: 0; } }
+
+/* Content-first hierarchy and responsive KPI grid. */
+.gas-kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,165px),1fr)); gap:.75rem; }
+.gas-kpi { min-height:7rem; padding:.95rem 1rem; border-radius:.65rem; }
+.gas-kpi .value { font-family:var(--gas-font); font-size:clamp(1.45rem,2.1vw,1.95rem); font-variant-numeric:tabular-nums; letter-spacing:-.055em; }
+.gas-kpi .unit { font-family:var(--gas-font); font-size:.73rem; }
+.gas-kpi .key { font-size:.88rem; }
+.gas-kpi .detail { font-size:.79rem; }
+.stApp [data-testid="stMainBlockContainer"] { max-width:1280px; padding-bottom:3rem; }
+.stApp h1 { font-size:clamp(1.8rem,2.8vw,2.35rem); }
+.stApp h2 { font-size:1.36rem; }
+.gas-panel-head { border-bottom:0; padding-bottom:.1rem; }
+.gas-chip { font-family:var(--gas-font); font-size:.72rem; letter-spacing:0; }
+.gas-topline { border:0; padding:0; }
+.gas-forecast-readout { background:#132337; border-radius:.55rem; padding:.85rem 1rem; }
+.gas-forecast-readout strong { font-family:var(--gas-font); font-variant-numeric:tabular-nums; font-size:1.18rem; }
+.gas-row .num { font-family:var(--gas-font); font-variant-numeric:tabular-nums; font-size:.82rem; }
+.stApp [data-testid="stButton"] button[kind="primary"],.stApp [data-testid="stFormSubmitButton"] button[kind="primary"] { min-height:2.8rem; border-radius:.6rem; }
+[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"] p { font-size:.9rem; }
+@media(max-width:620px) {
+  .gas-kpi-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:.5rem; }
+  .gas-kpi { min-height:0; padding:.75rem; }
+  .gas-kpi .value { font-size:1.3rem; overflow-wrap:anywhere; }
+  .gas-kpi .detail { font-size:.76rem; }
+  .gas-header-meta { line-height:1.4; }
+}
+@media(max-width:350px) {.gas-kpi-grid {grid-template-columns:1fr;}}

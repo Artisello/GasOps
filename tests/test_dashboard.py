@@ -234,3 +234,18 @@ def test_store_wrapper_is_fresh_without_resetting_persisted_budget(tmp_path):
     assert old is not new
     assert new.llm_usage()==1
     assert old.path==new.path
+
+
+def test_overview_has_plain_language_and_responsive_cards(monkeypatch,tmp_path):
+    from gasops_app import session
+    monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
+    monkeypatch.setattr(session,"_configuration",lambda:None)
+    app=AppTest.from_file(Path(__file__).resolve().parents[1]/"app.py",default_timeout=30)
+    app.session_state["selected_source"]=DEMO
+    app.run()
+    assert not app.exception
+    assert any(e.value=="Il mercato in breve" for e in app.subheader)
+    assert any("Nella simulazione, i consumi" in e.value or "Dati insufficienti" in e.value for e in app.markdown)
+    assert any('gas-kpi-grid' in e.proto.body for e in app.get("html"))
+    assert app.button(key="analysis_launch").label=="Genera bollettino di mercato"
+    assert any(e.label=="Fonti e aggiornamento" for e in app.expander)

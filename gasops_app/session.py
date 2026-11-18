@@ -30,9 +30,9 @@ DAILY = "ENTSOG · prelievi SRG giornalieri"
 SOURCE_CHOICES = (PUBLIC, DAILY, ARCHIVE, DEMO)
 RUN_ANALYSIS = "Genera bollettino AI"
 SOURCE_LABELS = {
-    PUBLIC: "Italia · bilancio mensile (Eurostat + ARERA)",
-    DAILY: "Italia · prelievi giornalieri (ENTSOG/SRG)",
-    ARCHIVE: "Archivio giornaliero 2015–2021 (JRC)",
+    PUBLIC: "Italia · consumi e prezzi mensili (Eurostat + ARERA)",
+    DAILY: "Rete SRG · prelievi giornalieri (ENTSOG)",
+    ARCHIVE: "Archivio 2015–2021 (JRC)",
     DEMO: "Simulazione · dati di esempio",
 }
 ENTSOG_METADATA_NOTE = ("ENTSOG: totale dichiarato discordante; griglia giorno-settore richiesta verificata integralmente. "
@@ -133,7 +133,7 @@ def ai_controls(*, prefix="sidebar") -> None:
                 st.warning("Contatore AI non disponibile. I calcoli locali restano utilizzabili.")
     with st.expander("Connessione e limiti AI", expanded=False):
         if config and st.session_state.get("execution_mode")=="Deterministic":
-            st.caption("Modello disponibile: selezionalo in Modalità di analisi.")
+            st.caption("Modello disponibile: selezionalo in Assistente AI.")
         if not config:
             st.write("Per Groq Cloud, imposta GROQ_API_KEY nei Secrets di Streamlit; "
                      "oppure i tre campi GASOPS_LLM_URL, GASOPS_LLM_MODEL, GASOPS_LLM_API_KEY.")
@@ -168,13 +168,13 @@ def sidebar() -> None:
     except ValueError:
         pass
     modes=["Deterministic",config.model] if config else ["Deterministic"]
-    st.selectbox("Modalità di analisi",modes,index=1 if config and config.groq else 0,
-                 format_func=lambda value:MODALITA.get(value,value),key="execution_mode")
+    st.selectbox("Assistente AI",modes,index=1 if config and config.groq else 0,
+                 format_func=lambda value:"Calcoli senza AI" if value=="Deterministic" else value,key="execution_mode")
     ai_controls()
-    with st.expander("Fonti del briefing AI",expanded=False):
-        st.checkbox("Aggiungi riepiloghi pubblici GIE",key="briefing_gie",
+    with st.expander("Fonti aggiuntive AI",expanded=False):
+        st.checkbox("Stoccaggi, GNL e indisponibilità (GIE)",key="briefing_gie",
                     help="Consulta AGSI+ e ALSI Italia e IIP al lancio del report. Se usi un modello remoto, invia solo indicatori pubblici con attribuzione, non record UMM originali.")
-        st.checkbox("Aggiungi analisi meteo (demo non commerciale)",key="briefing_weather",
+        st.checkbox("Meteo (demo non commerciale)",key="briefing_weather",
                     help="Consulta Open-Meteo solo con ENTSOG recente; i riepiloghi possono essere condivisi con il modello selezionato.")
         st.caption("Solo dati pubblici autorizzati alla condivisione.")
     if config and not config.local:
@@ -235,11 +235,11 @@ def source_filters(page: str, *, lookback: bool = True) -> Selection:
             windows = {"30 giorni": 30, "90 giorni": 90, "180 giorni": 180, "1 anno": 365} if grain == "daily" else {
                 "12 mesi": 12, "24 mesi": 24, "36 mesi": 36, "60 mesi": 60,
             }
-            window = st.selectbox("Periodo del grafico", tuple(windows), index=1, key=f"{page}_window_{grain}")
+            window = st.selectbox("Periodo", tuple(windows), index=1, key=f"{page}_window_{grain}")
             periods = windows[window]
     with ctrl[-1]:
         if name in (PUBLIC, DAILY):
-            refresh = st.button("Aggiorna fonti", icon=":material/refresh:", width="stretch", key=f"{page}_refresh")
+            refresh = st.button("Aggiorna dati", icon=":material/refresh:", width="stretch", key=f"{page}_refresh")
         else:
             refresh = False
             pass

@@ -65,28 +65,27 @@ def heading(label: str, right: str = "") -> None:
     st.html(f'<div class="gas-panel-head"><h2>{escape(label)}</h2>{right}</div>')
 
 
-def kpi(label: str, value, unit: str, detail: str, decimals: int = 1, tone: str = "") -> None:
-    rendered = numero(value, decimals)
-    unit_label = unit if value is not None else ""
-    st.html(f"""
-    <div class="gas-kpi">
-      <span class="key">{escape(label)}</span>
-      <div class="readout"><span class="value {escape(tone)}">{rendered}</span>
-        <span class="unit">{escape(unit_label)}</span></div>
-      <span class="detail">{escape(detail)}</span>
-    </div>
-    """)
+def _kpi_markup(label,value,unit,detail,decimals=1,tone=""):
+    return f'<div class="gas-kpi"><span class="key">{escape(label)}</span><div class="readout"><span class="value {escape(tone)}">{numero(value,decimals)}</span><span class="unit">{escape(unit if value is not None else "")}</span></div><span class="detail">{escape(detail)}</span></div>'
+
+
+def kpi(label,value,unit,detail,decimals=1,tone=""):
+    st.html(_kpi_markup(label,value,unit,detail,decimals,tone))
+
+
+def kpi_grid(items):
+    st.html('<div class="gas-kpi-grid">'+''.join(_kpi_markup(*item) for item in items)+'</div>')
 
 
 def forecast_readout(point: ForecastPoint, grain: str, *, historical: bool = False) -> None:
     period = data_it(date.fromisoformat(point.period), day=grain == "daily")
-    label = "Proiezione storica" if historical else "Prossima stima"
+    label = "Stima su dati storici" if historical else "Consumo previsto"
     interval = (f"{numero(point.lower_80, 0)}–{numero(point.upper_80, 0)} GWh"
                 if point.lower_80 is not None else "Campione insufficiente")
     st.html(f"""
         <div class="gas-forecast-readout">
           <div><small>{label} · {period}</small><strong>{numero(point.estimate, 0)} GWh</strong></div>
-          <div><small>Fascia all’80%</small><strong>{interval}</strong></div>
+          <div><small>Intervallo stimato (80%)</small><strong>{interval}</strong></div>
         </div>
     """)
 
@@ -156,13 +155,13 @@ def demand_chart(data: pd.DataFrame, projection: Forecast, grain: str, *, height
         if any(v is not None for v in upper):
             fig.add_trace(go.Scatter(x=dates, y=lower, mode="lines", showlegend=False, hoverinfo="skip",
                                      line=dict(width=0), legendgroup="interval"))
-            fig.add_trace(go.Scatter(x=dates, y=upper, name="Fascia all’80%", fill="tonexty",
+            fig.add_trace(go.Scatter(x=dates, y=upper, name="Intervallo stimato (80%)", fill="tonexty",
                                      fillcolor="rgba(131,172,255,0.17)", hoverinfo="skip",
                                      mode="lines", line=dict(width=0, color=BLUE), legendrank=4,
                                      legendgroup="interval"))
         fig.add_vrect(x0=data.index[-1], x1=dates[-1], fillcolor="rgba(131,172,255,0.04)", line_width=0)
         fig.add_vline(x=data.index[-1], line_color="#446492", line_dash="dot", line_width=1)
-    demand = _line("Consumi", data.index, data["demand_gwh"], TEAL, "GWh", grain)
+    demand = _line("Consumi osservati", data.index, data["demand_gwh"], TEAL, "GWh", grain)
     demand.legendrank = 1
     fig.add_trace(demand)
     if data["supply_gwh"].notna().any():
@@ -172,7 +171,7 @@ def demand_chart(data: pd.DataFrame, projection: Forecast, grain: str, *, height
                       legendrank=2)
         fig.add_trace(supply)
     if future:
-        dotted = _line("Previsione", dates, [p.estimate for p in future], BLUE, "GWh", grain, "dash")
+        dotted = _line("Consumi previsti", dates, [p.estimate for p in future], BLUE, "GWh", grain, "dash")
         dotted.update(mode="lines+markers", marker=dict(size=4, color=BLUE), legendrank=3)
         fig.add_trace(dotted)
     return _frame(fig, grain, "GWh", height)
