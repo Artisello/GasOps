@@ -38,7 +38,7 @@ def test_complete_offline_workflow_is_traceable(context, monkeypatch, tmp_path):
     assert run.steps[Agent.QUALITY].finished_at <= run.steps[Agent.MARKET].started_at
     assert any(snapshot[Agent.FORECAST] == "running" for snapshot in snapshots)
     assert any(f.id == "notice-7" for f in run.findings)
-    assert not any(f.category == "Independent validation" for f in run.findings)
+    assert not any(f.category == "Validazione indipendente" for f in run.findings)
     assert run.results[Agent.SETTLEMENT].values["cash_flow_eur"] == "-50400.00"
     stress = run.results[Agent.SCENARIO].values["stress"]
     assert float(stress["coverage_pct"]) == pytest.approx(87.82, abs=0.02)
@@ -50,7 +50,7 @@ def test_complete_offline_workflow_is_traceable(context, monkeypatch, tmp_path):
     assert store.recent()[0] == run
     assert len(store.recent()) == 1
     md = markdown(run, store.reviewed(run.id))
-    assert "PDF p. 103" in md and "acknowledged" in md
+    assert "PDF p. 103" in md and "preso in carico" in md
 
 
 def test_independent_tools_overlap(context):
@@ -68,7 +68,7 @@ def test_independent_tools_overlap(context):
 
 
 def test_deterministic_analysis_routes_question_and_assumptions(context):
-    request = "What happens if demand increases by 15% and supply falls by 8%?"
+    request = "Cosa succede se la domanda aumenta del 15% e l’offerta cala dell’8%?"
     run = run_workflow(context, Library(), Assumptions(), request)
     assert run.results[Agent.SCENARIO].values["changes"]["demand_pct"] == "15"
     assert run.results[Agent.SCENARIO].values["changes"]["supply_pct"] == "-8"

@@ -1,6 +1,7 @@
 """Deterministic balancing indicators, settlement and scenario calculations."""
 
 from decimal import Decimal
+import re
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -22,6 +23,10 @@ class SettlementInput(BaseModel):
     @field_validator("delivered", "withdrawn", "buy_eur_mwh", "sell_eur_mwh", mode="before")
     @classmethod
     def finite_decimal(cls, value):
+        if isinstance(value, str):
+            value = value.strip()
+            if re.fullmatch(r"[+-]?(?:\d+|\d{1,3}(?:\.\d{3})+),\d+", value):
+                value = value.replace(".", "").replace(",", ".")
         return None if value in (None, "") else number(value)
 
 
@@ -40,12 +45,12 @@ def settle(inputs: SettlementInput) -> Settlement:
     result = Settlement()
     if inputs.buy_eur_mwh is not None and inputs.sell_eur_mwh is not None:
         if inputs.buy_eur_mwh < inputs.sell_eur_mwh:
-            result.problems.append("Buy price is lower than sell price. Confirm the supplied prices.")
+            result.problems.append("Il prezzo di acquisto è inferiore a quello di vendita. Verifica i valori inseriti.")
     scale = MWH_PER_UNIT[inputs.unit]
     result.delivered_mwh = None if inputs.delivered is None else inputs.delivered * scale
     result.withdrawn_mwh = None if inputs.withdrawn is None else inputs.withdrawn * scale
     if result.delivered_mwh is None or result.withdrawn_mwh is None:
-        result.problems.append("Delivered and withdrawn energy are both required.")
+        result.problems.append("Inserisci sia l’energia immessa sia quella prelevata.")
         return result
     result.imbalance_mwh = result.delivered_mwh - result.withdrawn_mwh
     if result.imbalance_mwh == 0:
@@ -54,7 +59,8 @@ def settle(inputs: SettlementInput) -> Settlement:
     result.side = "buy" if result.imbalance_mwh < 0 else "sell"
     result.price_eur_mwh = inputs.buy_eur_mwh if result.side == "buy" else inputs.sell_eur_mwh
     if result.price_eur_mwh is None:
-        result.problems.append(f"The {result.side} price is required for this position.")
+        side_label = "acquisto" if result.side == "buy" else "vendita"
+        result.problems.append(f"Per questa posizione serve il prezzo di {side_label}.")
         return result
     cash = (result.imbalance_mwh * result.price_eur_mwh).quantize(CENT)
     result.cash_flow_eur = cash if cash else D("0.00")
@@ -92,9 +98,9 @@ def balance(supply: Decimal, demand: Decimal) -> tuple[Decimal, Decimal | None]:
 
 def scenario(case: ScenarioCase, changes: ScenarioInput) -> ScenarioOutput:
     if case.storage_gwh is not None and case.storage_gwh > case.supply_gwh:
-        raise ValueError("Storage is a component of supply and must be within its total.")
+        raise ValueError("Il contributo dello stoccaggio deve rientrare nell’offerta totale.")
     if case.storage_gwh is None and changes.storage_pct:
-        raise ValueError("Set an observed or illustrative storage contribution to vary its availability.")
+        raise ValueError("Per variare lo stoccaggio, indica un contributo iniziale osservato o di esempio.")
     demand = case.demand_gwh * (1 + changes.demand_pct / 100)
     base_storage = case.storage_gwh or D(0)
     storage = None if case.storage_gwh is None else base_storage * (1 + changes.storage_pct / 100)
