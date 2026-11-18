@@ -6,7 +6,7 @@ import streamlit as st
 from .data import ROME
 from .models import utc_now
 from .terna_power import credentials,PORTAL
-from .terna_context import STATE,ATTEMPT,SELECT,MAX_BYTES,DOCS,UNITS,acquire,merge,scopes,latest_rows,import_exchange
+from .terna_context import STATE,ATTEMPT,SELECT,MAX_BYTES,DOCS,UNITS,acquire,merge,scopes,latest_rows,import_exchange,exchange_payload
 from .public_data import SourceUnavailable
 
 LABELS={"capacity":"Capacità disponibile prevista","industry":"Consumi industriali · IMCEI","exchange":"Scambi esteri programmati"}
@@ -19,12 +19,12 @@ def panel():
     except (ValueError,KeyError,FileNotFoundError):client,secret=credentials()
     with st.form("terna_context_request_"+kind):
         if kind=="industry":
-            last=first=st.date_input("Mese di riferimento",value=(today.replace(day=1)-timedelta(days=32)).replace(day=1),max_value=today.replace(day=1)-timedelta(days=1)).replace(day=1)
+            last=first=st.date_input("Mese di riferimento",value=(today.replace(day=1)-timedelta(days=1)).replace(day=1),max_value=today.replace(day=1)-timedelta(days=1)).replace(day=1)
         else:
             a,b=st.columns(2)
             first=a.date_input("Dal giorno gas",value=today,max_value=today+timedelta(days=2))
             last=b.date_input("Al giorno gas",value=today+timedelta(days=1),max_value=today+timedelta(days=2))
-        f=st.file_uploader("JSON ufficiale (schema Scheduled Foreign Exchange)",type=["json"]) if kind=="exchange" else None
+        f=st.file_uploader("JSON documentato o CSV con intestazioni normalizzate",type=["json","csv"]) if kind=="exchange" else None
         consent=st.checkbox("Confermo uso autorizzato; per dati orari assumo l’inizio intervallo.")
         submit=st.form_submit_button("Importa scambi" if kind=="exchange" else "Aggiorna dati",disabled=not (f if kind=="exchange" else client and secret))
     if kind!="exchange" and not (client and secret):st.caption("Credenziali Terna non configurate; ripristina un archivio autorizzato.")
@@ -36,11 +36,11 @@ def panel():
             try:
                 if kind=="exchange":
                     if f.size>2_000_000:raise ValueError("File troppo grande")
-                    b=import_exchange(json.loads(f.getvalue()),first,last,now)
+                    b=import_exchange(exchange_payload(f.getvalue(),f.name),first,last,now)
                 else:
                     with st.spinner("Acquisizione Terna…"):b=acquire(client,secret,kind,first,last,now)
                 state[STATE]=merge(state.get(STATE,[]),[b],utc_now())
-            except (ValueError,SourceUnavailable,KeyError,TypeError,OverflowError):st.caption("Copertura non disponibile o import non valido; archivio precedente invariato.")
+            except (ValueError,SourceUnavailable,KeyError,TypeError,OverflowError,IndexError):st.caption("Copertura non disponibile o import non valido; archivio precedente invariato.")
     elif submit:st.caption("Conferma autorizzazione.")
     with st.expander("Archivio versionato"):
         f=st.file_uploader("Ripristina archivio I.G.O.R.",type=["json"],key="terna_context_archive")

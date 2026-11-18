@@ -94,9 +94,13 @@ def refresh(state,store,now,selected,*,gie=None,terna=None,clock=utc_now):
     def context_signal(kind):
         from .terna_context import acquire,merge,STATE as CONTEXT
         today=now.astimezone(ROME).date()
-        first=today if kind=="capacity" else (today.replace(day=1)-timedelta(days=32)).replace(day=1)
+        first=today if kind=="capacity" else (today.replace(day=1)-timedelta(days=1)).replace(day=1)
         last=today+timedelta(days=1) if kind=="capacity" else first
-        b=acquire(*terna,kind,first,last,now)
+        try:b=acquire(*terna,kind,first,last,now)
+        except (SourceUnavailable,ValueError):
+            if kind!="industry":raise
+            first=(first-timedelta(days=1)).replace(day=1)
+            b=acquire(*terna,kind,first,first,now)
         state[CONTEXT]=merge(state.get(CONTEXT,[]),[b],clock())
         return ""
     def acer():

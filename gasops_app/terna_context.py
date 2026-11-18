@@ -2,7 +2,7 @@
 from datetime import date,datetime,timedelta
 from hashlib import sha256
 from decimal import Decimal
-import json,math
+import json,math,csv,io
 import pandas as pd
 from .data import ROME
 from .models import utc_now
@@ -160,6 +160,26 @@ def acquire(client,secret,kind,first,last,now=None,clock=utc_now):
     rows=gas_days(kind,get_rows(payload,"expected_available_capacity"),first,last) if kind=="capacity" else parse_industry(payload,first)
     at=clock()
     return validate(batch(kind,rows,at),at)
+
+
+def exchange_payload(raw,filename):
+    """Accept documented JSON or CSV normalized to the exact documented headers."""
+    if len(raw)>2_000_000:raise ValueError("File troppo grande")
+    if filename.lower().endswith(".json"):return json.loads(raw)
+    if not filename.lower().endswith(".csv"):raise ValueError("Formato non supportato")
+    text=raw.decode("utf-8-sig")
+    if not text.strip():raise ValueError("File vuoto")
+    expected={"date","date_tz","date_offset","country","import","export","scheduled_foreign_exchange_MW"}
+    delimiter=";" if ";" in text.splitlines()[0] else ","
+    reader=csv.DictReader(io.StringIO(text),delimiter=delimiter,strict=True)
+    if not reader.fieldnames or set(reader.fieldnames)!=expected or len(reader.fieldnames)!=len(expected):raise ValueError("Intestazioni non riconosciute")
+    rows=[]
+    try:
+        for row in reader:
+            if None in row or any(v is None for v in row.values()) or len(rows)>=30000:raise ValueError("Record non valido")
+            rows.append(row)
+    except csv.Error as exc:raise ValueError("CSV non valido") from exc
+    return {"result":{"status":"Completed"},"scheduled_foreign_exchange":rows}
 
 
 def import_exchange(payload,first,last,now):

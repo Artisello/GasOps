@@ -46,3 +46,11 @@ def test_signed_exchange_and_incomplete_grid():
     rows=gas_days("exchange",raw,DAY,DAY)
     assert rows[0]["value"]==pytest.approx(-1.2)
     assert gas_days("exchange",raw[:-1],DAY,DAY)==[]
+
+
+def test_normalized_exchange_csv():
+    from gasops_app.terna_context import exchange_payload
+    raw=b"date;date_tz;date_offset;country;import;export;scheduled_foreign_exchange_MW\n2026-11-19 06:00:00;Europe/Rome;+01:00;Austria;50;100;-50\n"
+    parsed=exchange_payload(raw,"test.csv")
+    assert parsed["scheduled_foreign_exchange"][0]["scheduled_foreign_exchange_MW"]=="-50"
+    with pytest.raises(ValueError):exchange_payload(b"country;other\nItaly;1","test.csv")
