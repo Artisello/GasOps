@@ -12,7 +12,7 @@ from .data import FIELDS, period_text
 from .forecast import AUTOMATIC, MODELS
 from .italiano import GRAVITA, MODALITA, MODELLI, data_it, numero
 from .models import AGENT_LABELS, Agent, Kind, Provider
-from .session import analysis_label, briefing_run, launch, preview_market, source_filters, market_scope
+from .session import analysis_label, briefing_run, launch, preview_market, source_filters, market_scope, PUBLIC, DAILY
 from .reports import markdown
 from .visuals import AMBER, BLUE, ROSE, TEAL, breakdown_chart, chip, demand_chart, error_chart
 from .visuals import forecast_readout, heading, header, info, kind_tag, kpi_grid, local_time, mini_chart, plot, rows, steps
@@ -260,32 +260,94 @@ def _briefing_panel(selection) -> None:
                                mime="text/markdown",key="overview_brief_md",width="stretch")
             d2.download_button("Scarica dati JSON",json.dumps(run.model_dump(mode="json"),ensure_ascii=False,indent=2),
                                f"gasops-{run.id[:10]}.json",mime="application/json",key="overview_brief_json",width="stretch")
-            st.markdown("[Centro operativo AI: domande, storico e riscontri](/operations)")
+            st.markdown("[Continua nell’Assistente AI](/operations)")
         # AI connection controls are in the sidebar.
+
+
+def _overview_mix(context):
+    facts=context.facts
+    origin=context.bundle.origin
+    total=facts.get("demand_gwh")
+    if origin.grain=="daily" and "distribution_gwh" in origin.fields:
+        fields=(("Distribuzione" if not origin.archive else "Residenziale e terziario","distribution_gwh"),
+                ("Industria","industry_gwh"),("Centrali elettriche","power_gwh"))
+        st.subheader("Composizione dei consumi")
+        parts=[facts.get(field) for _,field in fields]
+        st.caption(facts.get("label","Periodo non disponibile")+" · GWh/giorno gas")
+        if total and all(v is not None and 0<=v<=total for v in parts) and abs(sum(parts)-total)<=max(.01,.001*total):
+            for (label,_),value in zip(fields,parts,strict=True):
+                st.markdown(f"**{label}** · {numero(value,1)} GWh ({numero(100*value/total,1)}%)")
+                st.progress(float(value/total))
+        else:
+            rows([(label,numero(facts.get(field),1)) for label,field in fields])
+            st.caption("Quote non calcolate: componenti incomplete o non riconciliate.")
+    elif origin.grain=="monthly":
+        st.subheader("Bilancio nazionale")
+        st.caption(facts.get("label","Periodo non disponibile")+" · GWh/mese")
+        rows([(label,numero(facts.get(field),1)) for label,field in (
+            ("Importazioni nette","net_imports_gwh"),("Produzione interna","production_gwh"),
+            ("Variazione delle scorte","stock_change_gwh"),("Disponibilità contabile","supply_gwh"))])
+        st.caption("Disponibilità statistica, non misura della capacità di rete.")
+    else:
+        st.subheader("Scenario di esempio")
+        rows([(label,numero(facts.get(field),1)+unit if facts.get(field) is not None else "—") for label,field,unit in (
+            ("Offerta","supply_gwh"," GWh/giorno"),("Saldo","gap_gwh"," GWh/giorno"),
+            ("Copertura","coverage_pct","%"),("Prezzo ipotetico","price_eur_mwh"," €/MWh"))])
+        st.caption("Valori sintetici, non mercato reale.")
+    st.markdown("[Approfondisci mercato e previsioni](/market)")
 
 
 def overview() -> None:
     top,controls=st.container(),st.container()
     with controls:
         selection=source_filters("overview")
+    area,perimeter=market_scope(selection.name)
     with top:
-        header("Panoramica del mercato",selection.meta)
-    if not selection.bundle:
-        _briefing_panel(selection)
-        return
-    context=preview_market(selection)
-    st.subheader("Il mercato in breve")
-    st.caption("Ultimo dato · "+context.facts.get("label","Non disponibile"))
-    _metrics(context)
-    st.write(_plain_market(context))
+        header("Panoramica del mercato","")
+        st.markdown("**"+area+"** · "+perimeter)
+    context=None
+    if selection.bundle:
+        context=preview_market(selection)
+        st.subheader("Il mercato in breve")
+        st.caption("Fonte: "+context.bundle.origin.name)
+        _market_headlines(context)
+        findings=[f for f in context.inspection.findings if f.severity!="info"]
+        stale=[f for f in findings if f.id=="stale" or f.id.startswith("public-cache")]
+        for f in stale:
+            st.warning(f.title+" — "+f.detail)
+        if not context.facts:
+            st.warning("Nessuna osservazione utilizzabile. Consulta i controlli qualità.")
+        with st.container(key="overview_split"):
+            left,right=st.columns([2.15,1],gap="medium")
+            with left,st.container(border=True,key="panel_main"):
+                _charts(context,selection.periods,"overview",height=355,readout=False)
+                point=next(iter(context.projection.points),None)
+                if point and point.lower_80 is not None and point.upper_80 is not None:
+                    st.caption("Intervallo stimato (80%) della prima stima: "+numero(point.lower_80,0)+"–"+numero(point.upper_80,0)+" GWh.")
+                info("Come leggere il grafico","Linea continua: consumi osservati. Linea tratteggiata: stime del modello. La fascia indica l’incertezza. GWh misura energia.")
+            with right:
+                with st.container(border=True,key="panel_overview_mix"):
+                    _overview_mix(context)
+                with st.container(border=True,key="panel_overview_quality"):
+                    st.subheader("Qualità dei dati")
+                    if findings:
+                        st.markdown("**"+str(len(findings))+" rilievi da verificare**")
+                        critical=[f for f in findings if f.severity=="high"]
+                        for f in critical:
+                            st.warning(f.title)
+                        with st.expander("Tutti i controlli"):
+                            for f in context.inspection.findings:
+                                st.markdown("**"+f.title+"** · "+GRAVITA[f.severity])
+                                st.caption(f.detail)
+                    else:
+                        st.caption("Nessun rilievo da rivedere nei controlli eseguiti.")
+        with st.expander("Fonti e aggiornamento"):
+            _source_panel(context)
+    if selection.name in (PUBLIC,DAILY):
+        from .overview_indicators import panel
+        panel(context)
     _briefing_panel(selection)
-    with st.container(border=True,key="panel_main"):
-        _charts(context,selection.periods,"overview",height=345)
-        info("Come leggere il grafico","Linea continua: consumi osservati. Linea tratteggiata: consumi previsti. L’intervallo indica l’incertezza della stima, non una garanzia.","GWh è una misura di energia; 1 GWh equivale a 1.000 MWh.")
-    _quality_panel(context)
-    with st.expander("Fonti e aggiornamento"):
-        _source_panel(context)
-    st.markdown("[Mercato e previsioni](/market) · [Stoccaggi e forniture](/security-of-supply) · [Registro operativo](/ledger)")
+    st.markdown("[Mercato e previsioni](/market) · [Stoccaggi e forniture](/security-of-supply) · [Bilanciamento](/balancing) · [Fatture e garanzie](/ledger)")
 
 
 def _model_comparison(context: MarketContext) -> None:

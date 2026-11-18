@@ -288,3 +288,10 @@ div[data-testid="stVerticalBlockBorderWrapper"] { border-color: var(--gas-border
 @media (prefers-reduced-motion:reduce) {
   [data-testid="stSidebar"] [data-testid="stPageLink-NavLink"] { transition:none; }
 }
+
+/* Overview: one primary chart, quieter context cards, no decorative scorecards. */
+.st-key-panel_main .gas-panel-head h2 {font-size:1.15rem;}
+.st-key-panel_overview_mix h3,.st-key-panel_overview_quality h3 {font-size:1.05rem;}
+.st-key-panel_overview_mix .gas-row {min-height:1.8rem;padding:.34rem 0;}
+.st-key-panel_overview_indicators .gas-kpi {min-height:6rem;}
+.st-key-panel_overview_indicators a {font-size:.78rem;}
