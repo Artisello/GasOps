@@ -196,3 +196,48 @@ def test_terna_context_only_uses_complete_non_conflicting_observations():
     data=power_context({"acquired":NOW.isoformat(),"rows":rows},NOW)
     assert data["values"]=={"Thermal":{"period":"2026-11-16","value":123.0}}
     assert data["status"]=="available" and "elettrici" in data["unit"]
+
+
+def test_structured_briefing_sources_and_measured_usage(monkeypatch):
+    from gasops_app.models import Result,Citation
+    from gasops_app.supervisor import ModelUnavailable
+    import pytest
+    replies={"sections":[{"id":"summary","text":"Consumo osservato in aumento.","references":["market_intelligence"]},
+                         {"id":"supply","text":"Stoccaggi da verificare.","references":["src:AGSI+"]}]}
+    seen=[]
+    class Response:
+        status_code=200
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def iter_content(self,chunk_size):
+            yield json.dumps({"choices":[{"message":{"content":json.dumps(replies)}}],
+                              "usage":{"prompt_tokens":780,"completion_tokens":120,"total_tokens":900}}).encode()
+    def post(*args,**kwargs):
+        seen.append(kwargs["json"])
+        return Response()
+    monkeypatch.setattr("gasops_app.llm.requests.post",post)
+    model=CompatibleReasoner(LLMConfig("openai/gpt-oss-120b","https://api.groq.com/openai/v1","fixture"))
+    result=Result(agent=Agent.MARKET,summary="Consumo 100 GWh",evidence=[Citation(document="Eurostat",evidence="100 GWh")])
+    context={"AGSI+":{"source":"GIE AGSI+","source_url":"https://agsi.gie.eu/","status":"available",
+                       "gas_day":"2026-11-16","values":{"stock_twh":70.0}}}
+    answer,refs=model.interpret("Bollettino",{Agent.MARKET:result},context=context,executive=True)
+    assert "In sintesi" in answer and refs==[Agent.MARKET]
+    assert model.last_sections[1]["references"]==["src:AGSI+"]
+    prompt=seen[-1]["messages"][-1]["content"]
+    assert "70.0" in prompt and "2026-11-16" in prompt and "https://agsi.gie.eu/" not in prompt
+    assert model.usage_summary()["total_tokens"]==900
+    replies["sections"][1]["references"]=["src:invented"]
+    with pytest.raises(ModelUnavailable,match="riferimenti"):
+        model.interpret("Bollettino",{Agent.MARKET:result},context=context,executive=True)
+    assert model.last_sections==[]
+
+
+def test_compact_context_keeps_units_periods_status_and_original():
+    from gasops_app.ai_response import compact_context
+    original={"Terna":{"source":"Terna","url":"https://dati.terna.it/","period":"2026-11-16",
+                        "scope":"Italia elettrica","unit":"GWh elettrici","status":"stale",
+                        "values":{"load":{"value":100,"period":"2026-11-16"}}}}
+    projected=compact_context(original)
+    assert projected["Terna"]=={k:v for k,v in original["Terna"].items() if k!="url"}
+    assert "url" in original["Terna"]
+    assert len(json.dumps(projected))<len(json.dumps(original))

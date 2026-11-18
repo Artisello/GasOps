@@ -159,6 +159,8 @@ def execute(
         except Exception as error:
             _fallback(run, "sintesi", error)
 
+    if reasoner and callable(getattr(reasoner,"usage_summary",None)):
+        run.ai_usage=reasoner.usage_summary()
     run.finished_at = utc_now()
     notify(run)
     return run

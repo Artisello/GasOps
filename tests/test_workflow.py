@@ -134,7 +134,10 @@ def test_llm_tool_protocol_routes_and_retrieves_in_bounded_rounds(context):
     assert len(requests_seen) == 3
     assert requests_seen[0][0] == "/v1/chat/completions"
     assert any(msg.get("tool_call_id") == "scenario_call" for msg in requests_seen[1][1]["messages"])
-    assert any(msg.get("tool_call_id") == "reg_call" for msg in requests_seen[2][1]["messages"])
+    final=requests_seen[2][1]["messages"]
+    assert len(final)==2 and not any(msg.get("tool_call_id") for msg in final)
+    assert "regulatory_intelligence" in final[-1]["content"] and "scenario" in final[-1]["content"]
+    assert run.ai_usage["calls"]==3 and run.ai_usage["reported_calls"]==0
     assert run.results[Agent.SCENARIO].values["changes"]["demand_pct"] == "12"
     assert run.interpretation_sources == [Agent.SCENARIO, Agent.REGULATORY]
     assert Agent.MARKET not in run.results
