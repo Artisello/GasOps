@@ -123,6 +123,7 @@ def run_workflow(
     public_context: dict | None = None,
     planned_only: bool = False,
     market_only: bool = False,
+    source_requirements=(),
 ) -> Run:
     question = question.strip()[:600] or DAILY_BRIEFING
     defaults = plan(question, full)
@@ -136,7 +137,7 @@ def run_workflow(
         question=question, source=context.bundle.origin, input_sha256=context.bundle.fingerprint,
         assumptions={**assumptions.model_dump(mode="json"), "pdf_sha256": editions,
                      "public_operational_context":public_context or {}, "full_briefing":full,
-                     "source_period":context.facts.get("period")},
+                     "source_period":context.facts.get("period"),"assistant_source_requirements":list(source_requirements)},
     )
     required = {call.agent for call in defaults} if market_only else set(Agent) if full else {call.agent for call in defaults} if len(defaults) == len(Agent) else set()
     report = execute(
