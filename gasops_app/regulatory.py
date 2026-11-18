@@ -47,9 +47,11 @@ class Case:
 
 REGISTER = (
     Case(Finding(
-        id="notice-7", title="Preavviso di esattamente sette giorni", severity="high",
-        detail="Le due tabelle passano da 8 giorni a meno di 7. Il coefficiente per sette giorni esatti "
-               "resta da verificare prima di calcolare il corrispettivo.",
+        id="notice-7", title="Piombino · Mancata discarica con preavviso di 7 giorni", severity="high",
+        detail="Nel Codice di Rigassificazione FSRU Piombino, rev. 2023-I, le tabelle dei corrispettivi "
+               "per mancata discarica (lato utente e lato operatore) elencano 8 giorni e meno di 7, "
+               "ma non 7 giorni esatti. Il coefficiente T applicabile in questo caso richiede una verifica "
+               "prima di calcolare il corrispettivo.",
         category="Omissione testuale confermata",
         citations=[
             cite(PIOMBINO, 103, "Cap. 10 §1.1.1", "La tabella lato utente elenca 12, 11, 10, 9, 8 e <7 giorni."),
@@ -126,6 +128,17 @@ REGISTER = (
         ],
     ), "Formula verificata · gestione del totale nullo da chiarire", "pro quota proportional zero denominator denominatore qt ot"),
 )
+
+
+def registered_case(finding_id):
+    return next((case for case in REGISTER if case.finding.id==finding_id),None)
+
+
+def matching_edition(docs,citation):
+    """Resolve by known revision digest, never filename alone."""
+    return next((pdf for pdf in docs.documents.values()
+                 if EDITIONS.get(pdf.digest)==citation.document and
+                 citation.page is not None and citation.page<=pdf.pages),None)
 
 
 @dataclass(frozen=True)
