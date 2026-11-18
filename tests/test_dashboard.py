@@ -560,3 +560,28 @@ def test_visitor_pdf_survives_rerun_but_is_not_shared(monkeypatch,tmp_path):
     assert not second.session_state[desk.STATE]["docs"].documents
     first.radio(key=desk.SCOPE).set_value("Archivio pubblico").run()
     assert not first.exception and first.session_state[desk.VISITOR_UPLOADS][0][1]==raw
+
+
+
+def test_visitor_upload_button_indexes_and_removes_pdf(monkeypatch,tmp_path):
+    import pymupdf
+    from types import SimpleNamespace
+    from gasops_app import document_page as desk
+    from gasops_app.document_desk import search
+    monkeypatch.setenv("GASOPS_PDF_DIR",str(tmp_path))
+    monkeypatch.setattr(desk,"_archive_config",lambda:None)
+    with pymupdf.open() as doc:
+        doc.new_page().insert_text((80,80),"Deposito cauzionale di prova.")
+        raw=doc.tobytes()
+    file=SimpleNamespace(name="prova.pdf",size=len(raw),getvalue=lambda:raw)
+    monkeypatch.setattr(desk.st,"file_uploader",lambda *a,**kw:[file])
+    app=AppTest.from_string("from gasops_app.document_page import document_page\ndocument_page()").run()
+    assert not app.exception
+    next(b for b in app.button if b.label=="Aggiungi ai miei PDF").click().run()
+    assert not app.exception
+    assert app.radio(key=desk.SCOPE).value=="I miei PDF"
+    assert search(app.session_state[desk.VISITOR_STATE]["docs"],"deposito cauzionale")
+    assert app.session_state[desk.VISITOR_UPLOADS]==(("prova.pdf",raw),)
+    next(b for b in app.button if b.label=="Rimuovi").click().run()
+    assert not app.exception and not app.session_state[desk.VISITOR_UPLOADS]
+    assert not app.session_state[desk.VISITOR_STATE]["docs"].documents

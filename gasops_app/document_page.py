@@ -1,4 +1,4 @@
-"""Shared, persistent public PDF archive; personal research state stays session-only."""
+"""Shared persistent archive and independent visitor-only PDF workspaces."""
 import json
 import os
 from threading import Lock
@@ -137,7 +137,7 @@ def _visitor_upload_panel():
     for notice in notices:
         st.warning(notice)
     with st.expander("Carica PDF",expanded=not personal):
-        st.caption("Nessun account richiesto. I PDF restano disponibili mentre navighi in questa sessione; ricaricando la pagina potrebbero andare persi. Non sono visibili agli altri visitatori.")
+        st.caption("Nessun account richiesto · PDF disponibili durante la sessione, non dopo una nuova sessione, un refresh o un riavvio. Non condivisi con gli altri visitatori.")
         st.caption("Usa solo documenti pubblici o autorizzati; non caricare materiale riservato sul prototipo pubblico.")
         with st.form("document_visitor_add",clear_on_submit=True):
             files=st.file_uploader("Seleziona PDF",type=["pdf"],accept_multiple_files=True,
