@@ -471,3 +471,63 @@ def test_assistant_session_history_isolated_and_shortcut_works(monkeypatch,tmp_p
     app.button(key="assistant_clear").click().run()
     assert not app.exception and assistant_page.HISTORY not in app.session_state
     assert len(db.recent())==1
+
+
+
+def test_document_upload_survives_navigation_and_removal(monkeypatch,tmp_path):
+    import pymupdf
+    from types import SimpleNamespace
+    from gasops_app import document_page as desk
+    from gasops_app.document_desk import search,bookmark
+    monkeypatch.setenv("GASOPS_PDF_DIR",str(tmp_path))
+    monkeypatch.setattr(desk,"reasoner",lambda:None)
+    def make_pdf(name,text):
+        with pymupdf.open() as doc:
+            doc.new_page().insert_text((80,80),text)
+            raw=doc.tobytes()
+        return SimpleNamespace(name=name,size=len(raw),getvalue=lambda:raw)
+    first=make_pdf("garanzie.pdf","Garanzia economica con deposito cauzionale.")
+    second=make_pdf("prezzi.pdf","Prezzo di sbilanciamento del gas naturale.")
+    pending=[first]
+    # Exercise uploader ingestion with a test double. On later reruns and
+    # after a page switch the widget has no files, just as in multipage Streamlit.
+    def upload(*args,**kwargs):
+        files=pending.copy()
+        pending.clear()
+        return files
+    monkeypatch.setattr(desk.st,"file_uploader",upload)
+    app=AppTest.from_string(
+        "import streamlit as st\nfrom gasops_app.document_page import document_page\n"
+        "if st.radio('Sezione',['Documenti','Altra pagina'],key='test_nav')=='Documenti':\n"
+        "    document_page()\nelse:\n    st.write('Altra pagina')",default_timeout=30).run()
+    assert not app.exception
+    assert len(app.session_state[desk.UPLOADS])==1
+    assert any(e.value=="garanzie.pdf" for e in app.text)
+    old=app.session_state[desk.STATE]
+    hit=search(old["docs"],"garanzia economica")[0]
+    old["reference_list"].append(bookmark(old["docs"],hit))
+    app.radio(key="test_nav").set_value("Altra pagina").run()
+    assert not app.exception
+    app.radio(key="test_nav").set_value("Documenti").run()
+    assert not app.exception
+    assert any(e.value=="garanzie.pdf" for e in app.text)
+    assert app.session_state[desk.STATE]["identity"]==old["identity"]
+    assert len(app.session_state[desk.STATE]["reference_list"])==1
+    pending.append(second)
+    app.run()
+    assert not app.exception
+    assert len(app.session_state[desk.UPLOADS])==2
+    assert any(e.value=="garanzie.pdf" for e in app.text)
+    assert any(e.value=="prezzi.pdf" for e in app.text)
+    assert len(app.session_state[desk.STATE]["reference_list"])==1
+    digest=next(p.digest for p in app.session_state[desk.STATE]["docs"].documents.values() if p.name=="garanzie.pdf")
+    app.button(key="desk_remove_"+digest).click().run()
+    assert not app.exception
+    assert len(app.session_state[desk.UPLOADS])==1
+    assert not any(e.value=="garanzie.pdf" for e in app.text)
+    assert any(e.value=="prezzi.pdf" for e in app.text)
+    assert not app.session_state[desk.STATE]["reference_list"]
+    fresh=AppTest.from_string("from gasops_app.document_page import document_page\ndocument_page()").run()
+    assert not fresh.exception
+    assert not fresh.session_state[desk.UPLOADS]
+    assert any("Aggiungi almeno un PDF" in e.value for e in fresh.info)

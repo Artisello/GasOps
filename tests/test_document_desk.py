@@ -39,3 +39,30 @@ def test_invalid_pdf_and_exact_boundary():
     assert library.errors and len(library.documents)==1
     assert search(library,"frase di prova",mode="exact")[0].page==1
     assert search(library,"termine assente impossibile",mode="exact")==[]
+
+
+
+def test_archive_appends_uploads_and_deduplicates_by_bytes():
+    from gasops_app.document_desk import extend_uploads
+    a=pdf("Garanzia economica con deposito cauzionale.")
+    b=pdf("Prezzo di sbilanciamento determinato dal mercato.")
+    saved,library,notices=extend_uploads((),(("norme.pdf",a),))
+    assert saved==(("norme.pdf",a),)
+    assert len(library.documents)==1
+    saved,library,notices=extend_uploads(saved,(("copia.pdf",a),("norme.pdf",b),("bad.pdf",b"bad")))
+    assert saved==(("norme.pdf",a),("norme.pdf",b))
+    assert len(library.documents)==2
+    assert any("già presente" in n for n in notices)
+    assert any("non valido" in n for n in notices)
+    assert search(library,"garanzia economica")
+    assert search(library,"prezzo di sbilanciamento")
+
+
+def test_archive_invalid_second_upload_retains_first_and_server_file():
+    from gasops_app.document_desk import extend_uploads
+    a=pdf("Regole delle garanzie economiche.")
+    b=pdf("Il prezzo del gas naturale.")
+    saved,library,_=extend_uploads((("a.pdf",a),),(("bad.pdf",b"%PDF-broken"),),(("b.pdf",b),))
+    assert saved==(("a.pdf",a),)
+    assert len(library.documents)==2
+    assert library.errors
