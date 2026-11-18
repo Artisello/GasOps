@@ -50,3 +50,19 @@ def test_generic_groq_secret_detected():
 def test_unknown_key_not_guessed():
     with pytest.raises(ValueError,match="modello non configurato"):
         configuration({"GASOPS_LLM_API_KEY":"unknown","GASOPS_LLM_MODEL":"","GROQ_API_KEY":""})
+
+
+def test_operator_reset_migrates_existing_budget_once_and_preserves_minute_limit(tmp_path):
+    import sqlite3
+    path=tmp_path/"old.sqlite3"
+    with sqlite3.connect(path) as connection:
+        connection.execute("CREATE TABLE llm_requests (id INTEGER PRIMARY KEY, attempted_at TEXT NOT NULL)")
+        connection.executemany("INSERT INTO llm_requests(attempted_at) VALUES (?)",
+                               [((NOW-timedelta(minutes=2)).isoformat(),)]*17+[(NOW.isoformat(),)]*4)
+    db=Store(path)
+    assert db.llm_usage(now=NOW)==0
+    assert not db.reserve_llm(now=NOW)
+    assert db.reserve_llm(now=NOW+timedelta(seconds=61))
+    assert Store(path).llm_usage(now=NOW+timedelta(seconds=61))==1
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM llm_budget_resets").fetchone()[0]==1

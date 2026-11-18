@@ -20,11 +20,17 @@ CREATE TABLE IF NOT EXISTS llm_requests (
     id INTEGER PRIMARY KEY, attempted_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS llm_requests_time ON llm_requests(attempted_at);
+CREATE TABLE IF NOT EXISTS llm_budget_resets (
+    reset_id TEXT PRIMARY KEY, applied_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS reviews (
     run_id TEXT NOT NULL REFERENCES runs(id), finding_id TEXT NOT NULL, reviewed_at TEXT NOT NULL,
     PRIMARY KEY (run_id, finding_id)
 );
 """
+
+
+LLM_RESET_ID = "operator-reset-2026-11-19"
 
 
 class Store:
@@ -34,6 +40,19 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as connection:
             connection.executescript(SCHEMA)
+        self._apply_budget_reset()
+
+    def _apply_budget_reset(self):
+        """One-time operator-requested daily reset; preserve minute throttling."""
+        with closing(self._connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            columns={row[1] for row in db.execute("PRAGMA table_info(llm_requests)")}
+            if "daily_counted" not in columns:
+                db.execute("ALTER TABLE llm_requests ADD COLUMN daily_counted INTEGER NOT NULL DEFAULT 1")
+            added=db.execute("INSERT INTO llm_budget_resets VALUES (?,?) ON CONFLICT DO NOTHING",
+                             (LLM_RESET_ID,utc_now().isoformat())).rowcount
+            if added:
+                db.execute("UPDATE llm_requests SET daily_counted=0")
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=5)
@@ -58,7 +77,7 @@ class Store:
         with closing(self._connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             db.execute("DELETE FROM llm_requests WHERE attempted_at<=?",(day,))
-            count=db.execute("SELECT COUNT(*) FROM llm_requests").fetchone()[0]
+            count=db.execute("SELECT COUNT(*) FROM llm_requests WHERE daily_counted=1").fetchone()[0]
             short=db.execute("SELECT COUNT(*) FROM llm_requests WHERE attempted_at>?",(recent,)).fetchone()[0]
             if count>=daily or short>=minute:
                 return False
@@ -68,7 +87,7 @@ class Store:
     def llm_usage(self, *, now=None) -> int:
         cutoff=((now or utc_now())-timedelta(hours=24)).isoformat()
         with closing(self._connect()) as db:
-            return db.execute("SELECT COUNT(*) FROM llm_requests WHERE attempted_at>?",(cutoff,)).fetchone()[0]
+            return db.execute("SELECT COUNT(*) FROM llm_requests WHERE attempted_at>? AND daily_counted=1",(cutoff,)).fetchone()[0]
 
     def save(self, run: Run) -> None:
         with closing(self._connect()) as db, db:

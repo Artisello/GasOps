@@ -153,7 +153,7 @@ def ai_controls(*, prefix="sidebar") -> None:
         st.caption(("Groq Cloud" if config.groq else "Ollama locale" if config.local else "Provider remoto")+" · "+config.model)
         if not config.local:
             if budget_ready:
-                st.caption(f"Richieste interne ultime 24 h: {usage}/30 · max 4/min. "
+                st.caption(f"Richieste interne conteggiate nelle ultime 24 h: {usage}/30 · max 4/min. "
                            "Non è il saldo della quota del provider.")
             else:
                 st.caption("Contatore non disponibile: richieste AI bloccate. Se persiste, riavvia l’app.")
