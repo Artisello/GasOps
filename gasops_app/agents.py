@@ -113,7 +113,7 @@ def _market(context: MarketContext, args: MarketArguments) -> Result:
     summary = f"{facts['label']} · consumi pari a {numero(facts['demand_gwh'])} GWh."
     delta = facts["demand_gwh_change_pct"]
     if args.comparison == "weekly" and monthly:
-        summary += " Per il confronto settimanale serve una serie giornaliera, disponibile nell’archivio JRC."
+        summary += " Per il confronto settimanale serve una serie giornaliera, disponibile in ENTSOG o nell’archivio JRC."
     elif delta is not None:
         summary += f" Variazione dei consumi {numero(delta, signed=True)}% {facts['comparison']}."
     elif not monthly:
@@ -248,7 +248,7 @@ def _scenario(context: MarketContext, assumptions: ScenarioInput, args: Scenario
                       findings=[Finding(id="scenario-baseline", severity="medium", title="Dati dello scenario da verificare",
                                         detail=str(error), category=TIPI[Kind.SIMULATION])])
     delta = None if stress.gap_value_eur is None else stress.gap_value_eur - base.gap_value_eur
-    basis = "Base di esempio" if context.bundle.origin.kind == Kind.SYNTHETIC else "Base contabile Eurostat"
+    basis = "Base interamente di esempio (non dati osservati)" if context.bundle.origin.kind == Kind.SYNTHETIC else "Base contabile Eurostat"
     summary = (f"{basis} · {facts['label']}. Con domanda {numero(changes.demand_pct, signed=True)}% e offerta "
                f"escluso stoccaggio {numero(changes.supply_pct, signed=True)}%, "
                f"il saldo simulato è {numero(stress.imbalance_gwh, signed=True)} GWh")
