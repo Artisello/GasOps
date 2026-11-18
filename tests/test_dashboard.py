@@ -447,6 +447,7 @@ def test_assistant_session_history_isolated_and_shortcut_works(monkeypatch,tmp_p
     monkeypatch.setattr(session,"reasoner",lambda:None)
     monkeypatch.setattr(assistant_page,"reasoner",lambda:None)
     monkeypatch.setattr(assistant_page,"analysis_label",lambda:"Genera bollettino di mercato")
+    monkeypatch.setattr(assistant_page,"ai_configured",lambda:False)
     db=session.database()
     data=synthetic()
     foreign=Run(question="DOMANDA_DI_UN_ALTRO_VISITATORE",source=data.origin,input_sha256=data.fingerprint,assumptions={})
@@ -455,10 +456,9 @@ def test_assistant_session_history_isolated_and_shortcut_works(monkeypatch,tmp_p
     app.session_state["selected_source"]=DEMO
     app.run()
     assert not app.exception
-    assert app.chat_input(key="assistant_question").disabled
-    assert not app.button or not any(b.key=="assistant_starter_Consumi" for b in app.button)
-    app.radio(key="assistant_view").set_value("Report locali").run()
-    assert not app.exception and not app.chat_input
+    assert app.radio(key="assistant_view").value=="Report locali"
+    assert not app.chat_input
+    assert app.button(key="assistant_starter_Consumi")
     assert not any(foreign.question in e.value for e in app.text)
     assert any("Il risultato apparirà qui" in e.value for e in app.caption)
     app.button(key="assistant_starter_Consumi").click().run()

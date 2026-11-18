@@ -186,7 +186,14 @@ def sidebar() -> None:
                     help="Attivo di default nel prototipo: HDD e previsioni, con cache. Disattivabile qui.")
         st.caption("Solo dati pubblici autorizzati alla condivisione.")
     if config and not config.local:
-        st.caption("Non inserire dati riservati. Selezionando il modello remoto autorizzi l’invio delle domande e dei risultati pubblici al provider; i PDF richiedono conferma separata.")
+        st.caption("AI remota: solo dati pubblici. I PDF richiedono consenso separato.")
+
+
+def ai_configured() -> bool:
+    try:
+        return _configuration() is not None
+    except ValueError:
+        return False
 
 
 def reasoner() -> CompatibleReasoner | None:
@@ -216,13 +223,13 @@ def ai_activation_panel(*, prefix: str) -> None:
     except ValueError:
         config = None
     if config:
-        st.info("AI disattivata. Attiva il modello per fare domande in linguaggio naturale.")
+        st.info("Attiva l’AI per fare domande.")
         if not config.local:
-            st.caption("Attivando il modello autorizzi l’invio delle domande e degli aggregati pubblici consentiti al provider. Non inserire dati riservati.")
+            st.caption("Domande e aggregati pubblici saranno inviati al provider esterno. Nessun dato riservato.")
         st.button("Attiva AI · "+config.model, key=prefix+"_activate_ai",type="primary",
                   on_click=activate_ai,args=(config.model,))
     else:
-        st.info("AI non configurata. Imposta un modello e le credenziali nei Secrets; consulta Connessione e limiti AI nella barra laterale.")
+        st.info("AI non configurata. Usa i report locali o configura il modello nelle impostazioni.")
 
 
 def analysis_label() -> str:
@@ -288,7 +295,7 @@ def source_filters(page: str, *, lookback: bool = True) -> Selection:
             refresh = False
             pass
     with ctrl[-1]:
-        with st.popover("Modello e fonte",icon=":material/info:",width="stretch"):
+        with st.popover("Opzioni",icon=":material/info:",width="stretch"):
             previous = assumptions()
             model = st.selectbox("Modello previsionale", MODEL_CHOICES, index=MODEL_CHOICES.index(previous.model),
                                  format_func=MODELLI.__getitem__, key=f"{page}_model",
@@ -324,7 +331,7 @@ def source_filters(page: str, *, lookback: bool = True) -> Selection:
                 with st.expander("Nota tecnica ENTSOG"):
                     st.caption(note)
         except SourceUnavailable as error:
-            st.caption("Fonte temporaneamente indisponibile. Riprova con Aggiorna dati.")
+            st.warning("Fonte non disponibile. Riprova con Aggiorna dati.")
             with st.expander("Dettagli della fonte"):
                 st.text(str(error))
             if name == DAILY:

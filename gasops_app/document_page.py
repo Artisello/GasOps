@@ -130,7 +130,7 @@ def _update_index(inputs,docs=None,*,state_key=STATE):
     return cached
 
 
-def _visitor_upload_panel():
+def _visitor_upload_panel(*, has_public=False):
     """Never write visitor bytes to disk, shared cache, or the public bucket."""
     personal=st.session_state.get(VISITOR_UPLOADS,())
     message,notices=st.session_state.pop(VISITOR_NOTICE,("",[]))
@@ -138,9 +138,8 @@ def _visitor_upload_panel():
         st.success(message)
     for notice in notices:
         st.warning(notice)
-    with st.expander("Carica PDF",expanded=not personal):
-        st.caption("PDF personali · solo sessione corrente · non condivisi.")
-        st.caption("Solo PDF pubblici o autorizzati. Nessun dato riservato.")
+    with st.expander("Carica PDF",expanded=not personal and not has_public):
+        st.caption("Solo sessione · PDF pubblici o autorizzati, nessun dato riservato.")
         with st.form("document_visitor_add",clear_on_submit=True):
             files=st.file_uploader("Seleziona PDF",type=["pdf"],accept_multiple_files=True,
                 help="8 PDF, massimo 24 MB per file, 64 MB e 2.000 pagine in totale; PDF con testo ricercabile.")
@@ -184,7 +183,7 @@ def _archive():
     except OSError:
         local=()
         st.warning("Archivio predisposto sul server non leggibile.")
-    _visitor_upload_panel()
+    upload_slot=st.container()
     config=None
     try:
         config=_archive_config()
@@ -207,6 +206,8 @@ def _archive():
             st.markdown("[Configurazione archivio remoto](https://github.com/Artisello/GasOps#archivio-pubblico-persistente-supabase-storage)")
             st.caption("Solo per gestori del progetto: è ancora possibile predisporre PDF pubblici nel repository.")
             st.link_button("Apri cartella pubblica","https://github.com/Artisello/GasOps/tree/main/data/public-regulatory")
+    with upload_slot:
+        _visitor_upload_panel(has_public=bool(local or remote))
     message,notices=st.session_state.pop(NOTICE,("",[]))
     if message:
         st.success(message)
@@ -233,8 +234,8 @@ def _render_documents(cached):
         st.warning(warning)
     if docs.documents:
         coverage=searchable_pages(docs)
-        st.caption(f"{len(docs.documents)} PDF · {sum(coverage.values())} / {sum(p.pages for p in docs.documents.values())} pagine con testo")
-        with st.container(border=True,key="panel_document_archive"):
+        with st.expander(f"Documenti disponibili · {len(docs.documents)} PDF"):
+            st.caption(f"{sum(coverage.values())} / {sum(p.pages for p in docs.documents.values())} pagine con testo")
             for name,pdf in docs.documents.items():
                 label,actions=st.columns([3,1.45],vertical_alignment="center")
                 with label:
@@ -614,10 +615,12 @@ def document_page():
          "Usa solo copie pubbliche o autorizzate. I PDF autorizzati pubblicati nel repository o in Storage sono condivisi tra tutti i visitatori e conservati indipendentemente dalla sessione Streamlit. Chiunque può caricare PDF nel proprio spazio di sessione senza account. Solo gli account I.G.O.R. autorizzati possono pubblicare nell’archivio condiviso; la rimozione dei documenti condivisi è riservata all’amministratore. Non caricare dati riservati. I PDF non entrano nel bollettino; la ricerca è sul server. Con Chiedi all’AI, soltanto la domanda e gli estratti sono inviati al modello selezionato, previo consenso per provider remoti. Non caricare documenti riservati su un deployment pubblico. Nessun OCR. La vigenza delle edizioni non è verificata.")
     cached=_archive()
     if not cached["docs"].documents:
-        st.info("Aggiungi almeno un PDF per iniziare. Usa Carica PDF oppure consulta l’archivio pubblico. Non vengono mostrati rilievi o citazioni in assenza di documenti.")
+        st.info("Aggiungi almeno un PDF per iniziare a cercare.")
         return
     action=st.radio("Strumento",["Cerca","Chiedi all’AI","Leggi PDF","Confronta","Revisore","Registro rilievi","Riferimenti salvati","Compliance"],
-                    horizontal=True,label_visibility="collapsed",key="desk_mode")
+                    horizontal=True,label_visibility="collapsed",key="desk_mode",
+                    format_func={"Cerca":"Cerca","Chiedi all’AI":"Chiedi AI","Leggi PDF":"Leggi","Confronta":"Confronta",
+                                 "Revisore":"Verifica","Registro rilievi":"Rilievi","Riferimenti salvati":"Salvati","Compliance":"Compliance"}.__getitem__)
     if action=="Cerca":
         _search(cached)
     elif action=="Chiedi all’AI":

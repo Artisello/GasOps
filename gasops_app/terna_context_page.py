@@ -26,11 +26,12 @@ def panel():
             last=b.date_input("Al giorno gas",value=today+timedelta(days=1),max_value=today+timedelta(days=2))
         f=st.file_uploader("JSON documentato o CSV con intestazioni normalizzate",type=["json","csv"]) if kind=="exchange" else None
         st.caption("Dati pubblici · timestamp orari = inizio intervallo (ipotesi sperimentale).")
-        submit=st.form_submit_button("Importa scambi" if kind=="exchange" else "Aggiorna dati",disabled=not (f if kind=="exchange" else client and secret))
+        submit=st.form_submit_button("Importa scambi" if kind=="exchange" else "Aggiorna dati",disabled=kind!="exchange" and not bool(client and secret))
     if kind!="exchange" and not (client and secret):st.caption("Credenziali Terna non configurate; ripristina un archivio autorizzato.")
     if submit:
         previous=state.get(ATTEMPT)
-        if previous and now-previous<timedelta(minutes=1):st.caption("Aggiornamento già richiesto nell’ultimo minuto.")
+        if kind=="exchange" and f is None:st.warning("Seleziona un file.")
+        elif previous and now-previous<timedelta(minutes=1):st.caption("Aggiornamento già richiesto nell’ultimo minuto.")
         else:
             state[ATTEMPT]=now
             try:

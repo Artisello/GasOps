@@ -204,7 +204,7 @@ def _briefing_panel(selection) -> None:
         if st.session_state.get("briefing_weather"):
             extras.append("Open-Meteo")
         if extras:
-            st.caption("Fonti aggiuntive: "+", ".join(extras))
+            info("Fonti del bollettino",", ".join(extras))
         if clicked:
             generated=launch(selection,full=True)
             if generated is None:
@@ -216,7 +216,7 @@ def _briefing_panel(selection) -> None:
             matches=bool(selection.bundle and run.input_sha256==selection.bundle.fingerprint
                          and run.assumptions.get("model")==selection.model)
             if not matches:
-                st.warning("Bollettino precedente: fonte o modello previsionale attuale diverso. Genera un nuovo report per aggiornare i risultati.")
+                st.warning("Bollettino precedente: fonte o modello cambiato. Genera un nuovo bollettino.")
             actual_ai=run.mode=="LLM-assisted" and bool(run.interpretation)
             st.markdown("**Ultimo bollettino generato**")
             st.caption(local_time(run.finished_at)+" · "+run.source.name+" · "+
@@ -304,7 +304,6 @@ def overview() -> None:
     with top:
         header("Panoramica del mercato","")
         st.markdown("**"+area+"** · "+perimeter)
-        st.markdown("[KPI operativi · fonti pubbliche](/kpi)")
     context=None
     if selection.bundle:
         context=preview_market(selection)

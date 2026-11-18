@@ -31,7 +31,7 @@ def month_option(values,key):
 
 
 def _import_tasks():
-    with st.expander("Importa registro attività"):
+    with st.expander("Importa registro attività",expanded=STATE not in st.session_state):
         st.caption("Dati pubblici o sintetici · solo sessione, senza dati riservati.")
         st.download_button("Modello CSV",task_template(),"igor-attivita-modello.csv","text/csv",key="bso_template")
         info("Formato","ID fittizio, area, descrizione, scadenza, completamento. Date YYYY-MM-DD oppure timestamp ISO con offset (+01:00/+02:00 o Z). Completamento vuoto = aperto nel registro. Una scadenza con orario richiede un completamento con orario. Nessun invio al modello AI, nessun salvataggio persistente.")
