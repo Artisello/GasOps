@@ -113,7 +113,7 @@ def conditional_scenario(series, historical, future):
         pred=np.maximum(model.predict(features(test.index,test["hdd"] if with_hdd else None)),0)
         errors[name]=float(np.mean(np.abs(test["demand"].to_numpy()-pred)))
     output={"observations":len(joined),"holdout":len(test),"mae":errors,
-            "train_end":joined.index.max().date().isoformat(),"test_end":test.index.max().date().isoformat(),
+            "train_end":train.index.max().date().isoformat(),"test_end":test.index.max().date().isoformat(),
             "improved":errors["weather"]<errors["calendar"],"points":[]}
     # Do not advertise an alternative scenario where the weather variable
     # fails even this limited conditional comparison.
