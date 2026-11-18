@@ -120,10 +120,9 @@ def evaluate(frame,external=(),horizon=1,reference=None):
     # Identical train and test samples for both Ridge models and weekly naive.
     columns=["actual","weekly",*multi]
     eligible=features.dropna(subset=columns)
-    end=min(last-pd.Timedelta(days=horizon),ref-pd.Timedelta(days=1))
+    end=min(last,ref-pd.Timedelta(days=GAS_LAG))-pd.Timedelta(days=horizon)
     start=end-pd.Timedelta(days=HOLDOUT-1)
     records=[]
-    residuals=[]
     for origin in pd.date_range(start,end,freq="D"):
         if origin not in eligible.index:
             continue

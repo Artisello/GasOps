@@ -1,5 +1,6 @@
 """Independent study lab: real historic archive, recent session data, no auto promotion."""
 from datetime import timedelta
+from hashlib import sha256
 import pandas as pd
 import streamlit as st
 
@@ -38,6 +39,7 @@ def panel():
     options=list(available)
     selected=st.multiselect("Variabili aggiuntive già caricate",options,format_func=lambda k:available[k].name,
                             max_selections=3,key="predictive_covariates")
+    snapshots=tuple((k,sha256(available[k].values.to_csv().encode()).hexdigest(),available[k].provenance) for k in selected)
     def describe(c):
         valid=c.values.dropna()
         return {"Variabile":c.name,"Unità":c.unit,"Perimetro":c.scope,"Osservazioni":len(valid),
@@ -70,14 +72,14 @@ def panel():
                     reference=min(reference,pd.Timestamp(active_day))
                 result=evaluate(frame,cov,horizon,reference)
             st.session_state[STATE]={"result":result,"fingerprint":bundle.fingerprint,"source":source,
-                "selected":tuple(selected),"weather":weather,"horizon":horizon,"cov":[describe(c)|{"Provenienza":c.provenance} for c in cov],
+                "selected":snapshots,"weather":weather,"horizon":horizon,"cov":[describe(c)|{"Provenienza":c.provenance} for c in cov],
                 "acquired":now.isoformat()}
         except (ValueError,SourceUnavailable) as e:
             st.error(str(e))
     saved=st.session_state.get(STATE)
     if not saved:
         return
-    if (saved["source"],saved["fingerprint"],saved["selected"],saved["weather"],saved["horizon"])!=(source,bundle.fingerprint,tuple(selected),weather,horizon):
+    if (saved["source"],saved["fingerprint"],saved["selected"],saved["weather"],saved["horizon"])!=(source,bundle.fingerprint,snapshots,weather,horizon):
         st.info("Parametri cambiati: esegui un nuovo confronto.")
         return
     r=saved["result"]

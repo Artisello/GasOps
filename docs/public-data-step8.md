@@ -9,3 +9,5 @@ Direct horizons 1, 3, 7 gas days. Reference R, target R+h; gas features dated <=
 Forecast for one selected horizon from reference last observed +2 days (capped at active gas day for current SRG). Refuse if features missing. Descriptive 10–90% residual-quantile band if >=20 backtest records, not calibrated prediction interval. Same reference for all models, no recursive use of forecast targets. Export rows with model train end and source fingerprint. Session-only, no settlement changes, no automated actions.
 
 Tests include deterministic synthetic inputs, future feature invariance, strict lag/label cutoff, missing dates, insufficient Terna window, and actual bundled JRC archive. CI required; no live-vintage verification.
+
+Backtest evaluation outcomes also stop at the reference minus two gas days; changed session covariate content/provenance invalidates the displayed result. UI test runs the JRC lab without any API.

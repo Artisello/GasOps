@@ -67,3 +67,25 @@ def test_real_jrc_archive():
 def test_duplicate_external_conflict():
     with pytest.raises(ValueError):
         series_from_rows([{"day":"2025-01-01","v":1},{"day":"2025-01-01","v":2}],"day","v")
+
+
+def test_backtest_outcomes_available_at_reference():
+    f=fixture()
+    ref=f.index[-3]
+    r=evaluate(f,[],7,ref)
+    assert all(pd.Timestamp(p["target"])<=ref-pd.Timedelta(days=2) for p in r["records"])
+
+
+def test_predictive_page_real_archive_no_api():
+    from streamlit.testing.v1 import AppTest
+    app=AppTest.from_string("from gasops_app.predictive_page import panel\npanel()",default_timeout=30).run()
+    assert not app.exception
+    assert app.selectbox(key="predictive_target").value=="Archivio JRC 2015–2021"
+    app.button(key="predictive_run").click().run()
+    assert not app.exception
+    assert not app.error
+    assert app.session_state["predictive_study_v1"]["result"]["test_n"]>=14
+    assert any("Backtest con dati storici rivisti" in w.value for w in app.warning)
+    app.selectbox(key="predictive_horizon").set_value(7).run()
+    assert not app.exception
+    assert any("Parametri cambiati" in info.value for info in app.info)
