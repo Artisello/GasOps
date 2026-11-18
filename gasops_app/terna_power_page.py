@@ -19,8 +19,11 @@ LABELS={"Thermal":"Termoelettrico (tutti i combustibili)","Wind":"Eolico","Photo
 
 def panel():
     st.subheader("Sistema elettrico · Terna")
-    mode=st.radio("Analisi",["Giorni gas","Statistiche annuali"],horizontal=True,key="terna_mode")
-    if mode=="Statistiche annuali":
+    mode=st.radio("Analisi",["Giorni gas","Previsioni elettriche","Statistiche annuali"],horizontal=True,key="terna_mode")
+    if mode=="Previsioni elettriche":
+        from .terna_forward_page import panel as forward_panel
+        forward_panel()
+    elif mode=="Statistiche annuali":
         _annual()
     else:
         _daily()
@@ -118,6 +121,12 @@ def _daily():
     if load:
         st.markdown("**Fabbisogno elettrico**")
         st.line_chart(chart[load],y_label="GWh elettrici/giorno gas")
+    if all(LABELS[k] in chart for k in ("load","Wind","Photovoltaic")):
+        proxy=(chart[LABELS["load"]]-chart[LABELS["Wind"]]-chart[LABELS["Photovoltaic"]]).dropna()
+        if not proxy.empty:
+            st.markdown("**Carico al netto di eolico e fotovoltaico**")
+            st.line_chart(proxy.rename("Carico residuo parziale"),y_label="GWh elettrici/giorno gas")
+            st.caption("Proxy consuntiva; non sottrae importazioni e altre fonti, non misura il consumo di gas.")
     st.caption("Intervalli mancanti o in conflitto escludono il totale del giorno per quella metrica. Thermal include più combustibili; non è solo gas. Idroelettrico non identificato come rinnovabile puro.")
     if gas is not None:
         st.markdown("**Relazione con i prelievi termoelettrici SRG**")

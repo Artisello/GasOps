@@ -191,6 +191,18 @@ def catalog(state,now):
             add("terna_"+metric,label,"GWh elettrici/giorno gas","gas_day","Italia elettrica","Terna",PORTAL,
                 "Giorni completi osservati; convenzione intervallo sperimentale; ultima versione dichiarata",
                 origin,((d,next(iter(vs))) for d,t,vs,ids in filtered))
+        # Use only equal-day complete metrics from the same acquisition.
+        residual=[];origins=set()
+        for day,_ in sorted({(d,"") for d,m in by}):
+            group=[by.get((day,m)) for m in ("load","Wind","Photovoltaic")]
+            if not all(x and len(x[1])==1 for x in group) or len({x[0] for x in group})!=1:continue
+            if group[0][2] and not set.intersection(*(x[2] for x in group)):continue
+            l,w,s=(next(iter(x[1])) for x in group)
+            residual.append((day,l-w-s))
+            origins.update(group[0][2] or {group[0][0].isoformat()})
+        if residual:
+            add("terna_residual_wind_solar","Carico al netto di eolico e fotovoltaico","GWh elettrici/giorno gas","gas_day","Italia elettrica","Terna · elaborazione I.G.O.R.",PORTAL,
+                "Consuntivo; proxy parziale, non domanda di gas; non sottrae import e altre produzioni",sha256("|".join(sorted(origins)).encode()).hexdigest(),residual)
     attempt("Terna",power)
     def storage():
         result=state.get("AGSI+_IT",{}).get("result")
@@ -292,6 +304,16 @@ def forecast_facts(state,now=None):
                     "horizon":7,"from":sector["points"][0]["period"],"to":sector["points"][-1]["period"],
                     "n":len(sector["points"]),"acquired":sector["acquired"],"evaluation":sector["evaluation"],
                     "mae":sector["mae"],"holdout":sector["holdout"],"points":sector["points"],"limitation":sector["limitation"]})
+    from .terna_forward import outlook as electricity_outlook,STATE as FORWARD,digest
+    forecast=electricity_outlook(state,asof)
+    if forecast:facts.append(forecast)
+    saved=state.get("snam_power_result_v1_forward")
+    forward=state.get(FORWARD,[])
+    if saved and signatures and forward:
+        sig=saved["signature"]
+        if sig[0]==signatures and sig[1]==tuple(digest(b) for b in forward):
+            r=saved["result"]
+            facts.append({"id":"backtest_terna_forward","source":"Terna MSD1 + Snam","url":PORTAL,"horizon":sig[2],"from":r["start"],"to":r["end"],"n":r["n"],"scores":r["scores"],"unit":"unità native Jarvis","limitation":"Previsioni acquisite prima del cutoff; importazioni con timestamp dichiarati; consuntivo Snam provvisorio."})
     return facts
 
 

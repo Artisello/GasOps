@@ -48,12 +48,16 @@ def join_power(d,batches,asof,*,strict,load):
     return d.join(pd.DataFrame(rows).set_index("target")),cols
 
 
-def evaluate(vintages,batches,horizon,asof,*,strict=True,load=True):
+def evaluate(vintages,batches,horizon,asof,*,strict=True,load=True,forward=False):
     base_features=[*FEATURES,*EXTRA_FIELDS]
     if not set(base_features)<=set(vintages.columns):
         raise ValueError("Ricarica le annualità Jarvis con il modello esteso.")
     d=samples(vintages,horizon)
-    original,cols=join_power(d,batches,asof,strict=strict,load=load)
+    if forward:
+        from .terna_forward import join_forward
+        if not strict:raise ValueError("Le previsioni richiedono acquisition-time cutoff.")
+        original,cols=join_forward(d,batches,asof)
+    else:original,cols=join_power(d,batches,asof,strict=strict,load=load)
     base=d.dropna(subset=[*base_features,"weekly","actual","actual_published","weekly_published"])
     base=base[(base.label_cutoff<=asof)&(base.actual_published<=asof)&
               (base.weekly_published<=base.origin+pd.Timedelta(hours=15))]
