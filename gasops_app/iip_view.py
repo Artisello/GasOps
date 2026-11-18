@@ -16,15 +16,15 @@ from .operational_sources import attribution
 MISSING = "Non indicato"
 FIELDS = {
     "message_id": ("messageId","messageIdentifier","ummId","messageCode","id"),
-    "published": ("publicationDateTime","publicationDate","publicationTime","publishedAt","published","publicationDateTimeUTC"),
-    "start": ("eventStart","eventStartDate","eventStartDateTime","eventStartUTC"),
-    "stop": ("eventStop","eventEnd","eventStopDateTime","eventStopUTC"),
+    "published": ("publicationDateTime","publicationDate","publicationTime","publishedAt","published","publicationDateTimeUTC","publicationTimestamp"),
+    "start": ("eventStart","eventStartDate","eventStartDateTime","eventStartUTC","eventStartTime","eventStartDateTimeUTC"),
+    "stop": ("eventStop","eventEnd","eventStopDateTime","eventStopUTC","eventEndDate","eventEndDateTime","eventEndTime","eventStopDateTimeUTC","eventEndDateTimeUTC"),
     "asset": ("affectedAssetOrUnit","affectedAssetOrUnitName","affectedAsset","assetName","facilityName","asset"),
-    "asset_code": ("affectedAssetOrUnitCode","assetCode","assetEic"),
+    "asset_code": ("affectedAssetOrUnitCode","assetCode","assetEic","affectedAssetOrUnitEic"),
     "operator": ("marketParticipant","marketParticipantName","reportingEntity","reportingEntityName","operatorName","operator"),
-    "country": ("countryCode","country"),
+    "country": ("countryCode","country","assetCountry","affectedAssetCountry"),
     "kind": ("typeOfUnavailability","unavailabilityType"),
-    "event_type": ("typeOfEvent","eventType"),
+    "event_type": ("typeOfEvent","eventType","unavailabilityEventType"),
     "status": ("eventStatus","status"),
     "reason": ("reasonForTheUnavailability","reasonForUnavailability","unavailabilityReason","reason"),
     "remarks": ("remarks","comment","comments"),
@@ -35,7 +35,7 @@ FIELDS = {
     "technical": ("technicalCapacity",),
 }
 CONTAINERS = {"umm","message","event","report","unavailabilityofgasfacilitiesreport",
-              "othermarketinformationreport","details","header","publication","asset","marketparticipant"}
+              "othermarketinformationreport","details","header","publication","asset","affectedassetorunit","marketparticipant","reportingentity","operator","eventdetails","unavailability","ummdetails"}
 TABLE_FIELDS = {
     "published_label":"Pubblicato","asset":"Asset","operator":"Operatore","country":"Paese",
     "event_type":"Tipo evento","status":"Stato UMM","start_label":"Inizio evento",
@@ -53,13 +53,16 @@ def _scalars(record, depth=0):
     result={}
     for key,val in record.items():
         name=_norm(key)
-        if isinstance(val,dict) and depth<2 and name in CONTAINERS:
-            if name in {"asset","marketparticipant","reportingentity","operator"}:
+        if isinstance(val,list) and len(val)==1 and isinstance(val[0],dict) and name in CONTAINERS:
+            val=val[0]
+        if isinstance(val,dict) and depth<4 and name in CONTAINERS:
+            if name in {"asset","affectedassetorunit","marketparticipant","reportingentity","operator"}:
                 # Explicit nested names have the same meaning as their direct aliases.
                 for nested_key,nested_val in val.items():
                     if _norm(nested_key)=="name" and isinstance(nested_val,str):
-                        target="assetname" if name=="asset" else "marketparticipantname"
+                        target="assetname" if name in {"asset","affectedassetorunit"} else "marketparticipantname"
                         result.setdefault(target,[]).append(nested_val.strip())
+            # Capacity intervals are not collapsed into one event-level value.
             nested=_scalars(val,depth+1)
             for k,values in nested.items():
                 result.setdefault(k,[]).extend(values)
@@ -173,3 +176,13 @@ def coverage(result):
     if result.get("pagination_verified") and not result.get("partial"):
         return "Completa"
     return "Non verificata"
+
+
+def visible_columns(rows):
+    """Keep a useful compact table; omit columns entirely absent in results."""
+    columns=("Asset","Stato UMM","Paese","Tipo evento","Inizio evento","Fine evento",
+             "Capacità indisponibile","Pubblicato","Operatore","ID messaggio")
+    always={"Asset","Stato UMM","ID messaggio"}
+    rendered=[display_row(row) for row in rows]
+    return [label for label in columns if label in always or
+            any(r.get(label) not in (None,MISSING,"Consulta dettaglio") for r in rendered)]

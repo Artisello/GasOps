@@ -1,5 +1,5 @@
 """Daily transport data for one explicit ENTSOG operator-point-direction."""
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 import csv
@@ -8,7 +8,7 @@ import json
 import re
 
 from .entsog import URL, SOURCE, gas_timestamp, _start, _last_completed
-from .public_data import retrieve, SourceSchemaError
+from .public_data import retrieve, SourceSchemaError, SourceUnavailable
 from .models import utc_now
 
 MANUAL = "https://transparency.entsog.eu/api/archiveDirectories/8/api-manual/ENTSOG_TP_API_UserManual_v3.0.pdf"
@@ -38,6 +38,7 @@ class NetworkResult:
     cached: bool
     failed: bool
     metadata_warning: bool
+    diagnostic: tuple[str, ...] = ()
 
     @property
     def credit(self):
@@ -55,7 +56,7 @@ def query_params(point, first, last):
     if not isinstance(first,date) or not isinstance(last,date) or not 0 <= (last-first).days < 31:
         raise SourceSchemaError("Seleziona da 1 a 31 giorni gas.")
     return {"pointDirection":point,"from":first.isoformat(),"to":last.isoformat(),
-            "indicator":",".join(INDICATORS),"periodType":"day","timeZone":"CET","limit":LIMIT}
+            "indicator":",".join(INDICATORS),"periodType":"day","timezone":"CET","limit":LIMIT}
 
 
 def _meta_int(meta, field, default=None):
@@ -86,7 +87,7 @@ def _amount(item):
     return amount
 
 
-def parse_network(payload, point, first, last, acquired, *, cached=False, failed=False):
+def parse_network(payload, point, first, last, acquired, *, cached=False, failed=False, requested=INDICATORS):
     query_params(point,first,last)
     if not isinstance(payload,dict):
         raise SourceSchemaError("Risposta ENTSOG non valida.")
@@ -95,12 +96,12 @@ def parse_network(payload, point, first, last, acquired, *, cached=False, failed
         raise SourceSchemaError("Nessun record ENTSOG restituito.")
     if len(items)>=LIMIT:
         raise SourceSchemaError("Limite record raggiunto: riduci il periodo.")
-    meta=payload.get("meta",{})
+    meta=payload.get("meta") or {}
     if not isinstance(meta,dict):
         raise SourceSchemaError("Metadati ENTSOG non validi.")
     count,total,offset,limit=(_meta_int(meta,k,d) for k,d in
                              (("count",None),("total",None),("offset",0),("limit",LIMIT)))
-    if offset!=0 or (count is not None and count!=len(items)) or (total is not None and total<len(items)) or (limit is not None and limit<=len(items)):
+    if offset!=0 or (count is not None and count!=len(items)) or (limit is not None and limit<=len(items)):
         raise SourceSchemaError("Conteggi o pagina ENTSOG incoerenti.")
     warning=count is None or total is None or total!=len(items)
     groups={}
@@ -110,7 +111,7 @@ def parse_network(payload, point, first, last, acquired, *, cached=False, failed
         if not isinstance(item,dict) or not required<=item.keys():
             raise SourceSchemaError("Campi ENTSOG obbligatori assenti.")
         identity="".join(str(item[k]) for k in ("operatorKey","pointKey","directionKey"))
-        if identity.lower()!=point.lower() or item["indicator"] not in INDICATORS or str(item["periodType"]).lower()!="day":
+        if identity.lower()!=point.lower() or item["indicator"] not in requested or str(item["periodType"]).lower()!="day":
             raise SourceSchemaError("Punto, indicatore o granularità inattesi.")
         if str(item["unit"]).strip().lower()!="kwh/d":
             raise SourceSchemaError("Unità imprevista: atteso kWh/d.")
@@ -156,11 +157,44 @@ def load_network(store,point,first,last,*,now=None):
     params=query_params(point,first,last)
     if last>_last_completed(now):
         raise SourceSchemaError("Seleziona solo giorni gas conclusi.")
-    def parser(text,when,**kwargs):
-        return parse_network(json.loads(text),point,first,last,when,**kwargs)
-    return retrieve(store,key=f"entsog-network-v1:{point}:{first}:{last}",name="ENTSOG Network",
-                    url=URL,parse=parser,ttl=timedelta(hours=12),params=params,
-                    attempts=1,timeout=(5,30),diagnostics=True,max_bytes=2_000_000)
+    def get(indicators, suffix=""):
+        def parser(text,when,**kwargs):
+            return parse_network(json.loads(text),point,first,last,when,requested=indicators,**kwargs)
+        return retrieve(store,key=f"entsog-network-v1:{point}:{first}:{last}{suffix}",name="ENTSOG Network",
+                        url=URL,parse=parser,ttl=timedelta(hours=12),
+                        params={**params,"indicator":",".join(indicators)},
+                        attempts=1,timeout=(5,20),diagnostics=True,max_bytes=2_000_000)
+    try:
+        return get(INDICATORS)
+    except SourceUnavailable as primary:
+        # A failed multi-indicator query must not prevent retrieving published
+        # flows. At most two narrower retries; do not retry provider throttling.
+        if any(code in str(primary) for code in ("HTTP 429","HTTP 401","HTTP 403")):
+            raise
+        valid=[]
+        diagnostics=["Richiesta complessiva: "+str(primary)]
+        for indicators,suffix,label in ((INDICATORS[:4],":flows","Flussi e programmi"),
+                                        (INDICATORS[4:],":capacity","Capacità firm")):
+            try:
+                valid.append((indicators,get(indicators,suffix)))
+            except SourceUnavailable as error:
+                diagnostics.append(label+": "+str(error))
+                if any(code in str(error) for code in ("HTTP 429","HTTP 401","HTTP 403")):
+                    break
+        if not valid:
+            raise SourceUnavailable(" · ".join(diagnostics)) from None
+        # Every result has the same fully validated point and period; merge
+        # disjoint indicators. Keep missing cells from the original grid.
+        reference=valid[0][1]
+        mapped={(row["gas_day"],row["indicator"]):row for indicators,result in valid
+                for row in result.rows if row["indicator"] in indicators}
+        return replace(reference,rows=tuple(mapped.get((row["gas_day"],row["indicator"]),row)
+                                           for row in reference.rows),
+                       labels=tuple(sorted({label for _,result in valid for label in result.labels})),
+                       acquired=min(result.acquired for _,result in valid),
+                       cached=any(result.cached for _,result in valid),
+                       failed=any(result.failed for _,result in valid),
+                       metadata_warning=True,diagnostic=tuple(diagnostics))
 
 
 def daily_metrics(result):
