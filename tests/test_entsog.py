@@ -120,3 +120,40 @@ def test_controlled_diagnostics_distinguish_empty_from_incomplete():
         parse_month({"operationalData":[]},DAY,DAY,NOW)
     with pytest.raises(SourceSchemaError,match="campi obbligatori"):
         parse_month({"operationalData":[{}]},DAY,DAY,NOW)
+
+
+
+def test_recent_partial_48_of_51_retains_complete_days_and_missing_tail(monkeypatch):
+    import gasops_app.entsog as en
+    import pandas as pd
+    first=date(2026,11,1)
+    last=date(2026,11,17)
+    rows=[record(p,first+timedelta(days=i)) for i in range(16) for p in POINTS]
+    payload={"meta":{"count":48,"total":51,"offset":0,"limit":500},"operationalData":rows}
+    def fake(store,**kwargs):
+        if kwargs["params"]["from"]==first.isoformat():
+            return kwargs["parse"](json.dumps(payload),NOW)
+        raise en.SourceUnavailable("Fonte non disponibile")
+    monkeypatch.setattr(en,"retrieve",fake)
+    bundle,warning=en.load(None,now=NOW)
+    usable=inspect(bundle,NOW).usable
+    assert bundle.origin.latest_period=="2026-11-16"
+    assert usable["demand_gwh"].notna().sum()==16
+    assert pd.isna(usable.loc["2026-11-17","demand_gwh"])
+    assert "48/51" in warning and "copertura parziale" in warning
+    assert "verificata integralmente" not in warning
+    assert "copertura_parziale" in bundle.rows.iloc[-1]["source_flag"]
+
+
+def test_recent_partial_still_rejects_bad_schema_and_conflicting_days():
+    rows=[record(p,d) for d in (DAY,DAY+timedelta(days=1)) for p in POINTS]
+    rows.append(record(next(iter(POINTS)),DAY+timedelta(days=1),2_000_000))
+    payload={"meta":{"count":7,"total":9,"offset":0,"limit":500},"operationalData":rows}
+    m=parse_month(payload,DAY,DAY+timedelta(days=1),NOW,allow_partial=True)
+    bundle=combine([m],DAY,DAY+timedelta(days=1))
+    assert m.valid_slots==5
+    assert inspect(bundle,NOW).usable["demand_gwh"].notna().sum()==1
+    assert "versioni_in_conflitto" in bundle.rows.iloc[1]["source_flag"]
+    payload["meta"]["count"]=6
+    with pytest.raises(ValueError,match="Conteggio"):
+        parse_month(payload,DAY,DAY+timedelta(days=1),NOW,allow_partial=True)

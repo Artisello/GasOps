@@ -65,7 +65,8 @@ def _plain_market(context: MarketContext) -> str:
         return "Dati insufficienti per confrontare i consumi."
     direction="in aumento" if delta>0 else "in diminuzione" if delta<0 else "invariati"
     magnitude=f" ({numero(delta,signed=True)}%)" if delta else ""
-    comparison="tra gli ultimi sette giorni e i sette precedenti" if origin.grain=="daily" else "rispetto al mese precedente"
+    comparison=("tra i sette giorni terminanti il "+facts["label"]+" e i sette precedenti (giorni confrontabili)"
+                if origin.grain=="daily" else "rispetto al mese precedente")
     subject=("Nella simulazione, i consumi" if origin.kind==Kind.SYNTHETIC else
              "Nell’archivio storico, i consumi" if origin.archive else
              "I prelievi osservati sulla rete SRG" if origin.grain=="daily" else "I consumi nazionali")
@@ -136,13 +137,16 @@ def _charts(context: MarketContext, horizon: int, page: str, height: int = 330, 
         st.info("Nessun consumo utilizzabile nel periodo selezionato.")
     else:
         if projection.points and readout:
-            forecast_readout(projection.points[0], origin.grain, historical=origin.archive)
+            forecast_readout(projection.points[0], origin.grain, historical=origin.archive or any(f.id=="stale" for f in context.inspection.findings))
         plot(demand_chart(data, projection, origin.grain, height=height), key=f"{page}_demand")
         horizon_text = "14 giorni gas" if origin.grain == "daily" else "6 mesi"
         if projection.points:
             model = MODELLI[projection.model]
             note = " · scelto dallo storico" if context.model == AUTOMATIC and projection.model in context.forecast_scores else ""
             st.caption(f"{model}{note} · orizzonte di {horizon_text}")
+            if context.facts.get("period") and origin.grain=="daily":
+                lead=(pd.Timestamp(projection.points[0].period)-pd.Timestamp(context.facts["period"])).days
+                st.caption(f"Prima stima a {lead} giorni dall’ultima osservazione ({context.facts[\'label\']}).")
             if context.model not in (AUTOMATIC, projection.model):
                 st.caption(f"Modello non disponibile per {MODELLI[context.model].lower()}.")
         else:
@@ -332,7 +336,8 @@ def _market_headlines(context: MarketContext):
     label=("Prelievi sulla rete SRG" if origin.grain=="daily" and not origin.archive
            and origin.kind!=Kind.SYNTHETIC else "Gas consumato")
     comparison=("Ultimi 7 giorni vs 7 precedenti" if origin.grain=="daily" else "Rispetto al mese precedente")
-    next_label="Stima successiva" if origin.archive or origin.kind==Kind.SYNTHETIC else "Consumo previsto"
+    stale=any(f.id=="stale" for f in context.inspection.findings)
+    next_label="Stima da dati non recenti" if stale else "Stima successiva" if origin.archive or origin.kind==Kind.SYNTHETIC else "Consumo previsto"
     kpi_grid([
         (label,facts.get("demand_gwh"),unit,facts.get("label","Dato non disponibile"),1,"teal"),
         ("Variazione dei consumi",facts.get("demand_gwh_change_pct"),"%",comparison,1,""),
@@ -340,6 +345,10 @@ def _market_headlines(context: MarketContext):
          period_text(pd.Timestamp(point.period),origin.grain) if point else "Previsione non disponibile",1,"blue")
     ])
     st.write(_plain_market(context))
+    if point and facts.get("period"):
+        lead=(pd.Timestamp(point.period)-pd.Timestamp(facts["period"])).days
+        if origin.grain=="daily":
+            st.caption(f"Stima a {lead} giorni dall’ultima osservazione ({facts[\'label\']}); non è un nuovo dato pubblicato.")
 
 
 def _market_quality_notice(context):
