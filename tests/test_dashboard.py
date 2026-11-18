@@ -18,12 +18,17 @@ def test_overview_button_completes_offline_run(monkeypatch, tmp_path):
     app.run()
     assert not app.exception
     assert app.title[0].value == "Panoramica del mercato"
-    assert app.button(key="analysis_launch").label == "Genera report di mercato"
+    assert app.button(key="analysis_launch").label == "Genera bollettino di mercato"
+    assert any("Nessun bollettino generato" in e.value for e in app.info)
     assert app.selectbox(key="overview_model").value == AUTOMATIC
     app.button(key="analysis_launch").click().run()
     assert not app.exception
     report = app.session_state["last_run"]
     assert report.finished_at and len(report.results) == 6
+    assert app.session_state["last_briefing"].id == report.id
+    assert any("Ultimo bollettino generato" in e.value for e in app.markdown)
+    assert any(m.label=="Modalità effettiva" and m.value=="Deterministica" for m in app.metric)
+    assert any("Scarica bollettino"==b.proto.label for b in app.get("download_button"))
     projection = report.results[Agent.FORECAST].values["forecast"]
     assert projection["model"] in MODELS
     assert projection["interval_kind"] in ("posterior", "empirical", "model_based")
@@ -167,3 +172,25 @@ def test_ai_connection_test_visible_in_deterministic_mode(monkeypatch,tmp_path):
     app.button(key="sidebar_llm_probe").click().run()
     assert not app.exception and probes==["fixture"]
     assert any("verificate" in e.value for e in app.success)
+
+
+
+def test_briefing_keeps_previous_report_when_source_changes(monkeypatch,tmp_path):
+    from gasops_app import session
+    from gasops_app.agents import Assumptions, MarketContext
+    from gasops_app.data import synthetic
+    from gasops_app.models import utc_now
+    from gasops_app.regulatory import Library
+    from gasops_app.workflow import run_workflow
+    monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
+    monkeypatch.setattr(session,"_configuration",lambda:None)
+    report=run_workflow(MarketContext(synthetic(),"Seasonal regression",utc_now()),Library(),Assumptions(),full=True)
+    report.assumptions["model"]="Seasonal regression"
+    app=AppTest.from_file(Path(__file__).resolve().parents[1]/"app.py",default_timeout=30)
+    app.session_state["selected_source"]=DEMO
+    app.session_state["last_briefing"]=report
+    app.run()
+    assert not app.exception
+    assert any("Bollettino precedente" in e.value for e in app.warning)
+    assert any("Ultimo bollettino generato" in e.value for e in app.markdown)
+    assert app.session_state["last_briefing"].id==report.id

@@ -318,15 +318,17 @@ def _report_panel(report: Run) -> None:
         if report.assumptions.get("public_operational_context"):
             with st.expander("Fonti operative del briefing"):
                 st.json(report.assumptions["public_operational_context"],expanded=False)
+        if report.interpretation:
+            st.markdown("**Interpretazione AI · da verificare**")
+            st.text(report.interpretation)
+            st.caption("Strumenti consultati · " + ", ".join(AGENT_LABELS[agent] for agent in report.interpretation_sources))
+        else:
+            st.caption("Nessuna interpretazione AI generata: risultati dei calcoli locali.")
         for agent in Agent:
             if agent in report.results:
                 result = report.results[agent]
                 st.markdown(f"**{AGENT_LABELS[agent]}**")
                 st.text(result.summary)
-        if report.interpretation:
-            st.caption("Interpretazione del modello da rivedere")
-            st.text(report.interpretation)
-            st.caption("Strumenti consultati · " + ", ".join(AGENT_LABELS[agent] for agent in report.interpretation_sources))
         a, b = st.columns(2)
         suffix = report.id[:10]
         with a:
@@ -369,6 +371,8 @@ def operations() -> None:
         selection = source_filters("ops", lookback=False)
     with top:
         started = header("Centro operativo AI", selection.meta, analysis_label(), disabled=selection.bundle is None)
+    st.caption("Genera un bollettino completo con il pulsante in alto, oppure invia una domanda mirata. "
+               "Il risultato appare qui sotto, nello storico delle analisi.")
     flow, analyst = st.columns([1, 1.1], gap="medium")
     with flow, st.container(border=True, key="panel_ops_flow"):
         heading("Flusso del supervisore")
