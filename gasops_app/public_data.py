@@ -38,6 +38,7 @@ def retrieve(
     headers: dict | None = None,
     timeout: tuple[float, float] = (3, 5),
     diagnostics: bool = False,
+    max_bytes: int = 1_000_000,
 ) -> T:
     now = utc_now()
     existing = store.cached(key)
@@ -56,13 +57,13 @@ def retrieve(
             secure = {"headers": headers, "allow_redirects": False} if headers else {}
             with requests.get(url, params=params, timeout=timeout, stream=True, **secure) as response:
                 if headers and 300 <= response.status_code < 400:
-                    raise ValueError("Redirect autenticato non consentito")
+                    raise SourceSchemaError("Redirect autenticato non consentito")
                 response.raise_for_status()
                 body = bytearray()
                 for part in response.iter_content(chunk_size=16_384):
                     body.extend(part)
-                    if len(body) > 1_000_000:
-                        raise ValueError("Risposta più grande del previsto")
+                    if len(body) > max_bytes:
+                        raise SourceSchemaError("Risposta superiore al limite di dimensione")
             text = body.decode("utf-8-sig")
             result = parse(text, now)
         except (requests.RequestException, *VALIDATION_ERRORS) as error:

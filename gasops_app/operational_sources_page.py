@@ -155,17 +155,20 @@ def _inventory_panel(platform,loader,key):
 
 def _iip_panel(key):
     _credit("IIP")
-    st.caption("Messaggi attivi richiesti per oggi e i prossimi sette giorni, prima pagina (max 100). "
+    st.caption("Messaggi attivi richiesti per oggi e i prossimi sette giorni, prima pagina (max 20). "
                "Non è una mappa completa delle indisponibilità né una stima di capacità persa.")
     if not key:
         return
     result=_load_once("gie_iip","Aggiorna messaggi UMM",load_iip,key)
     if result is None:
+        st.caption("Se l’errore persiste, consulta i messaggi sul portale GIE IIP. La documentazione API completa è disponibile nel tuo account GIE.")
         return
     st.caption("Acquisito "+result["acquired"].isoformat()+(" · cache" if result["cached"] else ""))
     if result["failed"] or utc_now()-result["acquired"]>timedelta(hours=2):
         st.warning("Messaggi non aggiornati: verifica il portale IIP.")
-    if result["partial"]:
+    if result["pages"] is None:
+        st.warning("Paginazione non indicata: completezza non verificabile. Consulta il portale IIP.")
+    elif result["partial"]:
         st.warning("Risultati parziali: prima pagina di "+str(result["pages"])+". Consulta il portale per l’elenco completo.")
     st.metric("Messaggi restituiti",len(result["messages"]))
     _credit("IIP")
