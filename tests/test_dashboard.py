@@ -29,7 +29,12 @@ def test_overview_button_completes_offline_run(monkeypatch, tmp_path):
     assert report.finished_at and len(report.results) == 6
     assert app.session_state["last_briefing"].id == report.id
     assert any("Ultimo bollettino generato" in e.value for e in app.markdown)
-    assert any(m.label=="Modalità effettiva" and m.value=="Deterministica" for m in app.metric)
+    assert report.mode == "Deterministic" and report.interpretation is None
+    assert any(e.value.endswith(" · Calcoli locali") and report.source.name in e.value for e in app.caption)
+    completed = sum(r.status in ("completed", "review") for r in report.results.values())
+    issues = sum(f.severity in ("high", "medium") for f in report.findings)
+    assert any(e.value == f"Analisi eseguite: {completed}/{len(report.steps)} · Da verificare: {issues}" for e in app.caption)
+    assert any("Consumi" in e.proto.body and "Previsione di esempio" in e.proto.body for e in app.get("html"))
     assert any("Scarica bollettino"==b.proto.label for b in app.get("download_button"))
     projection = report.results[Agent.FORECAST].values["forecast"]
     assert projection["model"] in MODELS
@@ -640,3 +645,24 @@ def test_jarvis_snapshot_reused_between_panels():
     assert any("consultazione storica" in e.value.casefold() for e in app.caption)
     assert not any("consultazione storica" in e.value.casefold() for e in app.warning)
     assert len(app.session_state["jarvis_public_snapshot_v1"]["versions"]) == 2
+
+
+def test_briefing_period_prefers_observed_and_fallback_is_not_monolithic(monkeypatch):
+    from datetime import date
+    from gasops_app import dashboard, session
+    from gasops_app.models import Agent, Result, Run, Finding
+    from gasops_app.data import synthetic
+    data=synthetic()
+    run=Run(question="briefing",source=data.origin.model_copy(update={"latest_period":None}),
+            input_sha256=data.fingerprint,assumptions={"model":session.MODEL_CHOICES[0],"source_period":"2026-10-01"},
+            mode="Deterministic fallback",warnings=["Fixture AI failure","Fixture AI failure"],summary="MONOLITHIC_FIXTURE")
+    run.results[Agent.MARKET]=Result(agent=Agent.MARKET,summary="Mercato",values={"period":"2026-10-01","demand_gwh":100})
+    run.findings=[Finding(id="fixture",title="Verifica fixture",severity="medium",detail="Dettaglio",category="Test")]
+    assert dashboard._briefing_period(run)==dashboard.data_it(date(2026,10,1),day=data.origin.grain=="daily")
+    monkeypatch.setattr(dashboard,"briefing_run",lambda:run)
+    monkeypatch.setattr(dashboard,"analysis_label",lambda:"Genera bollettino di mercato")
+    app=AppTest.from_string("from gasops_app import dashboard,session\nfrom gasops_app.data import synthetic\ndashboard._briefing_panel(session.Selection(session.DEMO,session.MODEL_CHOICES[0],30,synthetic()))").run()
+    assert not app.exception
+    assert sum(w.value=="Fixture AI failure" for w in app.warning)==1
+    assert not any("MONOLITHIC_FIXTURE" in t.value for t in app.text)
+    assert any("Verifica fixture" in m.value for m in app.markdown)

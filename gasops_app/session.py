@@ -444,5 +444,5 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
         for warning in report.warnings:
             st.warning(warning)
     state = "error" if any(step.status == "failed" for step in report.steps.values()) else "complete"
-    status.update(label=f"{MODALITA[report.mode]} · {local_time(report.finished_at)}", state=state, expanded=False)
+    status.update(label="Analisi completata" if state=="complete" else "Analisi con errori", state=state, expanded=False)
     return report

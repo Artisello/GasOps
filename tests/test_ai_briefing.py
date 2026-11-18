@@ -65,3 +65,36 @@ def test_groq_http_briefing_context_and_structured_probe(monkeypatch):
     sent=seen[-1]["messages"][-1]["content"]
     assert "stock_twh" in sent and "Gas Infrastructure Europe" in sent
     assert '"regulatory_intelligence"' not in sent and '"settlement"' not in sent
+
+
+def test_summary_diagnostics_and_completion_budget(monkeypatch):
+    import pytest
+    import requests
+    from gasops_app.models import Result, Citation
+    from gasops_app.supervisor import ModelUnavailable
+    result=Result(agent=Agent.MARKET,summary="Consumi 100 GWh",evidence=[Citation(document="Test",evidence="100 GWh")])
+    config=LLMConfig("openai/gpt-oss-120b","https://api.groq.com/openai/v1","fixture")
+    seen=[]
+    payload={"choices":[{"finish_reason":"length","message":{"content":""}}]}
+    class Response:
+        status_code=200
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def iter_content(self,chunk_size):yield json.dumps(payload).encode()
+    def post(*args,**kwargs):
+        seen.append(kwargs["json"])
+        return Response()
+    monkeypatch.setattr("gasops_app.llm.requests.post",post)
+    with pytest.raises(ModelUnavailable,match="troncata"):
+        CompatibleReasoner(config).interpret("Sintesi",{Agent.MARKET:result})
+    assert seen[-1]["max_completion_tokens"]==2048
+    payload["choices"][0]={"message":{"content":json.dumps({"interpretation":"Test","references":["NOT_ALLOWED"]})}}
+    with pytest.raises(ModelUnavailable,match="riferimenti non verificabili"):
+        CompatibleReasoner(config).interpret("Sintesi",{Agent.MARKET:result})
+    payload["choices"][0]={"message":{"content":"not-json"}}
+    with pytest.raises(ModelUnavailable,match="JSON"):
+        CompatibleReasoner(config).interpret("Sintesi",{Agent.MARKET:result})
+    def timeout(*args,**kwargs):raise requests.Timeout()
+    monkeypatch.setattr("gasops_app.llm.requests.post",timeout)
+    with pytest.raises(ModelUnavailable,match="Tempo di risposta"):
+        CompatibleReasoner(config).interpret("Sintesi",{Agent.MARKET:result})
