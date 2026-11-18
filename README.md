@@ -114,3 +114,7 @@ Menu raggruppato in Mercato, Operazioni e Analisi; Stoccaggi e forniture conserv
 ### IIP: diagnostica della paginazione
 
 Il wrapper pubblico usa last_page; il payload autenticato osservato dall'operatore sembra non includerlo. Non si presume che una pagina corta o un campo total certifichi la completezza. La sezione IIP mostra il numero di messaggi ricevuti e mantiene l'avvertenza di copertura non verificata. In Diagnostica paginazione IIP è disponibile un JSON con soli nomi strutturali filtrati e valori numerici dei campi di paginazione riconoscibili, inclusi eventuali contenitori meta/pagination: nessun corpo UMM, URL di continuazione o credenziale. Serve a verificare il contratto reale prima di estendere la paginazione. Non effettua nuove richieste né modifica il calcolo.
+
+### IIP: metadati reali di paginazione
+
+Diagnostica del deployment: data con 11 record, meta.current_page=1, meta.last_page=1, meta.per_page=50, meta.total=11, a fronte di size=20 richiesto. Si legge la paginazione annidata in meta mantenendo compatibilità con last_page al primo livello. La dimensione effettiva dichiarata dal server è accettata fino a 50 record; il limite del download resta 2 MB. Si controllano pagina, numero di record, totale, coerenza delle pagine e conflitti fra metadati. La dicitura di risposta completa riguarda solo la richiesta API e non certifica la copertura di tutte le indisponibilità. Se più pagine, resta visibile lo stato parziale: nessuna nuova chiamata automatica. Test con metadati reali e messaggi sintetici; attribuzione GIE invariata.

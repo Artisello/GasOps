@@ -169,7 +169,7 @@ def _inventory_panel(platform,loader,key):
 def _iip_panel(key):
     st.subheader("Messaggi urgenti di mercato (UMM)")
     _credit("IIP")
-    st.caption("Messaggi attivi richiesti per oggi e i prossimi sette giorni, prima pagina (max 20). "
+    st.caption("Messaggi attivi richiesti per oggi e i prossimi sette giorni, prima pagina (fino a 50 messaggi, secondo il limite del server). "
                "Non è una mappa completa delle indisponibilità né una stima di capacità persa.")
     if not key:
         return
@@ -184,7 +184,10 @@ def _iip_panel(key):
         st.warning("Messaggi disponibili · prima pagina. Il totale non è verificabile: non usare l’elenco come inventario completo delle indisponibilità.")
     elif result["partial"]:
         st.warning("Risultati parziali: prima pagina di "+str(result["pages"])+". Consulta il portale per l’elenco completo.")
-    st.metric("Messaggi ricevuti",len(result["messages"]))
+    elif result.get("pagination_verified"):
+        st.caption("Risposta completa per la richiesta: tutti i messaggi dichiarati dall’API sono stati ricevuti.")
+    total=result.get("reported_total")
+    st.metric("Messaggi ricevuti",f'{len(result["messages"])} / {total}' if total is not None else len(result["messages"]))
     _credit("IIP")
     diagnostic=result.get("pagination_diagnostic")
     if diagnostic is not None:
