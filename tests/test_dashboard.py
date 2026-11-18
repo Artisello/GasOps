@@ -402,3 +402,31 @@ def test_risk_workspace_stress_and_confidence_without_recompute(monkeypatch,tmp_
     app.selectbox(key="risk_preset").set_value("Base").run()
     assert not app.exception
     assert any("Fonte, previsione o scenario cambiati" in e.value for e in app.warning)
+
+
+
+def test_document_desk_empty_state_has_no_precompiled_findings(monkeypatch,tmp_path):
+    monkeypatch.setenv("GASOPS_PDF_DIR",str(tmp_path))
+    app=AppTest.from_string("from gasops_app.document_page import document_page\ndocument_page()").run()
+    assert not app.exception
+    assert any("Aggiungi almeno un PDF" in e.value for e in app.info)
+    assert not any("Preavviso di esattamente sette giorni" in e.value for e in app.markdown)
+
+
+def test_document_desk_pdf_search_and_rag_without_model(monkeypatch,tmp_path):
+    import pymupdf
+    from gasops_app import document_page
+    monkeypatch.setenv("GASOPS_PDF_DIR",str(tmp_path))
+    monkeypatch.setattr(document_page,"reasoner",lambda:None)
+    with pymupdf.open() as doc:
+        doc.new_page().insert_text((80,80),"Garanzia economica con deposito cauzionale.")
+        doc.save(tmp_path/"fixture.pdf")
+    app=AppTest.from_string("from gasops_app.document_page import document_page\ndocument_page()").run()
+    assert not app.exception
+    next(e for e in app.text_input if e.label=="Cosa vuoi cercare?").set_value("garanzia economica")
+    next(b for b in app.button if b.label=="Cerca nei PDF").click().run()
+    assert not app.exception
+    assert any("Garanzia economica" in e.value for e in app.text)
+    app.radio(key="desk_mode").set_value("Chiedi all’AI").run()
+    assert not app.exception
+    assert next(b for b in app.button if b.label=="Chiedi ai documenti").disabled

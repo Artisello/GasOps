@@ -9,6 +9,9 @@ from .data import ROOT
 from .document_desk import build, identity, search, searchable_pages, bookmark, page_text, MAX_RESULTS, MAX_TOTAL_BYTES
 from .regulatory import read_local_pdfs, MAX_DOCUMENTS, MAX_PDF_BYTES
 from .visuals import info
+from .session import reasoner
+from .document_rag import answer, MAX_PASSAGES
+from .supervisor import ModelUnavailable
 
 STATE="document_desk_v1"
 
@@ -134,6 +137,65 @@ def _search(cached):
         _results(cached,hits,"desk_search")
 
 
+def _ask(cached):
+    docs=cached["docs"]
+    model=reasoner()
+    st.caption("Risposta basata sui soli PDF selezionati, con citazioni testuali controllate.")
+    if model is None:
+        st.info("AI non selezionata. Scegli il modello nel menu laterale; la ricerca nei PDF funziona comunque.")
+    else:
+        st.caption("Modello: "+model.config.model+(" · locale sul server" if model.config.local else " · provider remoto"))
+    with st.form("desk_rag",border=False):
+        question=st.text_area("Fai una domanda ai documenti",placeholder="Quali sono le condizioni per il calcolo del corrispettivo di sbilanciamento?",max_chars=600,height=95)
+        scope=st.selectbox("Documento",["Tutti i PDF",*docs.documents],key="desk_rag_doc")
+        consent=False
+        if model and not model.config.local:
+            st.warning("Non usare documenti riservati. La domanda e fino a sei estratti pertinenti saranno inviati al provider AI, non il PDF completo.")
+            consent=st.checkbox("Autorizzo l’invio della domanda e degli estratti di documenti pubblici o autorizzati.",key="desk_rag_consent")
+        submit=st.form_submit_button("Chiedi ai documenti",type="primary",width="stretch",disabled=model is None)
+    if submit:
+        cached.pop("rag",None)
+        cached.pop("desk_rag_preview",None)
+        st.session_state.pop("desk_rag_hit",None)
+        if not question.strip():
+            st.warning("Scrivi una domanda.")
+        elif model and not model.config.local and not consent:
+            st.warning("Autorizzazione necessaria per usare un provider remoto. Puoi usare Cerca senza inviare dati.")
+        elif model:
+            hits=search(docs,question,document=None if scope=="Tutti i PDF" else scope,limit=MAX_PASSAGES)
+            claims,notice=[],None
+            if hits:
+                with st.spinner("Lettura degli estratti e verifica delle citazioni…"):
+                    try:
+                        claims=answer(model,question,hits,authorized_remote=consent)
+                    except ModelUnavailable as error:
+                        notice=str(error)
+                    except Exception:
+                        notice="Risposta AI non disponibile o citazioni non verificabili. Consulta gli estratti."
+            cached["rag"]={"question":question,"scope":scope,"model":model.config.model,
+                           "hits":hits,"claims":claims,"notice":notice}
+    saved=cached.get("rag")
+    if not saved:
+        return
+    st.caption("Ultima domanda · "+saved["model"]+" · "+saved["scope"])
+    st.text(saved["question"])
+    if saved["notice"]:
+        st.warning(saved["notice"])
+    if saved["claims"]:
+        st.subheader("Risposta AI")
+        for item in saved["claims"]:
+            citation=item["citation"]
+            with st.container(border=True):
+                st.text(item["text"])
+                st.caption(citation.document+f" · PDF p. {citation.page}")
+                st.text("«"+citation.evidence+"»")
+        st.caption("Citazioni testuali controllate; interpretazione e pertinenza da verificare sulla pagina originale.")
+    elif not saved["notice"]:
+        st.info("Riscontri insufficienti per una risposta AI. Nessuna conclusione generata.")
+    st.subheader("Passaggi consultati")
+    _results(cached,saved["hits"],"desk_rag")
+
+
 def _read(cached):
     docs=cached["docs"]
     selected=st.selectbox("Documento",list(docs.documents),key="desk_read_doc")
@@ -200,17 +262,19 @@ def _references(cached):
 
 def document_page():
     st.title("Norme e documenti")
-    st.caption("Cerca, leggi e confronta i tuoi PDF. Nessuna ricerca web o risposta AI in questa vista.")
+    st.caption("Cerca, interroga e confronta i tuoi PDF.")
     info("Info archivio","La ricerca mostra testo estratto dalle pagine dei PDF presenti, non note precompilate. Le corrispondenze per parole chiave non sono un parere legale.",
-         "Usa solo copie pubbliche o autorizzate. I PDF caricati qui rimangono nella memoria della sessione del server e non sono inviati a provider AI o al bollettino. Nessun OCR. La vigenza delle edizioni non è verificata.")
+         "Usa solo copie pubbliche o autorizzate. I PDF non entrano nel bollettino; la ricerca è sul server. Con Chiedi all’AI, soltanto la domanda e gli estratti sono inviati al modello selezionato, previo consenso per provider remoti. Non caricare documenti riservati su un deployment pubblico. Nessun OCR. La vigenza delle edizioni non è verificata.")
     cached=_archive()
     if not cached["docs"].documents:
         st.info("Aggiungi almeno un PDF per iniziare. Non vengono mostrati rilievi o citazioni in assenza di documenti.")
         return
-    action=st.radio("Strumento",["Cerca","Leggi PDF","Confronta","Riferimenti salvati"],
+    action=st.radio("Strumento",["Cerca","Chiedi all’AI","Leggi PDF","Confronta","Riferimenti salvati"],
                     horizontal=True,label_visibility="collapsed",key="desk_mode")
     if action=="Cerca":
         _search(cached)
+    elif action=="Chiedi all’AI":
+        _ask(cached)
     elif action=="Leggi PDF":
         _read(cached)
     elif action=="Confronta":
