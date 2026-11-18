@@ -19,7 +19,7 @@ LABELS={"Thermal":"Termoelettrico (tutti i combustibili)","Wind":"Eolico","Photo
 
 def panel():
     st.subheader("Sistema elettrico · Terna")
-    mode=st.radio("Analisi",["Statistiche annuali","Giorni gas"],horizontal=True,key="terna_mode")
+    mode=st.radio("Analisi",["Giorni gas","Statistiche annuali"],horizontal=True,key="terna_mode")
     if mode=="Statistiche annuali":
         _annual()
     else:
@@ -98,7 +98,7 @@ def _daily():
                     except (ValueError,TypeError,KeyError):
                         st.warning("Dati visualizzati, ma storico non aggiornato: verificare copertura e limite.")
             except (SourceUnavailable,ValueError):
-                st.error("Richiesta Terna non disponibile o non valida. Ultimo risultato invariato.")
+                st.caption("Aggiornamento Terna non disponibile. Ultimo risultato valido conservato, se presente.")
     history_panel()
     saved=st.session_state.get(STATE)
     if not saved:
@@ -119,10 +119,8 @@ def _daily():
         st.markdown("**Fabbisogno elettrico**")
         st.line_chart(chart[load],y_label="GWh elettrici/giorno gas")
     st.caption("Intervalli mancanti o in conflitto escludono il totale del giorno per quella metrica. Thermal include più combustibili; non è solo gas. Idroelettrico non identificato come rinnovabile puro.")
-    st.markdown("**Relazione con i prelievi termoelettrici SRG**")
-    if gas is None:
-        st.info("ENTSOG non disponibile; nessun confronto.")
-    else:
+    if gas is not None:
+        st.markdown("**Relazione con i prelievi termoelettrici SRG**")
         st.markdown(f"[Fonte ENTSOG]({ENTSOG_URL}) · acquisizione {gas['acquired']}")
         if gas["cached"] or gas["failed"] or gas["metadata_warning"]:
             st.warning("Cache o metadati ENTSOG da verificare; copertura non certificata.")
@@ -130,7 +128,7 @@ def _daily():
         r=correlation(pairs)
         a,b=st.columns(2)
         a.metric("Giorni confrontabili",len(pairs))
-        b.metric("Correlazione Pearson","—" if r is None else f"{r:.2f}")
+        if r is not None:b.metric("Correlazione Pearson",f"{r:.2f}")
         if pairs:
             pair=pd.DataFrame(pairs)
             st.scatter_chart(pair,x="thermal_gwh",y="sr_gas_gwh",x_label="Terna · termoelettrico GWh elettrici",

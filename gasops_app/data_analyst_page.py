@@ -15,6 +15,8 @@ STATE="data_analyst_result_v1"
 def panel():
     st.subheader("Analista dati integrato")
     st.caption("Serie pubbliche e dati già acquisiti · calcoli locali · fonti e periodo verificabili")
+    from .live_sources_page import controls
+    controls("analyst")
     now=utc_now()
     items,issues=catalog(st.session_state,now)
     if issues:
@@ -31,7 +33,9 @@ def panel():
             autonomous_panel(items,model,now)
             return
     defaults=[k for k in ("snam_demand","terna_Thermal","terna_load","jarvis_withdrawal_definitivo") if k in items]
-    if not defaults:defaults=["jrc_demand_gwh"] if "jrc_demand_gwh" in items else [next(iter(items))]
+    if not defaults:
+        recent=[k for k in items if k.startswith("market_")]
+        defaults=recent[:3] if recent else ["jrc_demand_gwh"] if "jrc_demand_gwh" in items else [next(iter(items))]
     keys=st.multiselect("Serie da interrogare",list(items),default=defaults,
         format_func=lambda k:items[k].source+" · "+items[k].label,max_selections=MAX_SELECTED,key="analyst_series")
     with st.expander("Catalogo e copertura"):

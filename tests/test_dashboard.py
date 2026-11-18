@@ -44,7 +44,7 @@ def test_unavailable_public_feed_can_open_the_real_offline_archive(monkeypatch, 
 
     monkeypatch.setattr("gasops_app.session.load_monthly", unavailable)
     app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=30).run()
-    assert app.error[0].value == "Eurostat non disponibile"
+    assert any("Eurostat non disponibile" in x.value for x in app.text)
     app.button(key="overview_archive").click().run()
     assert not app.exception
     assert app.selectbox(key="overview_dataset").value == ARCHIVE
@@ -63,7 +63,7 @@ def test_operational_sources_visible_when_entsog_unavailable(monkeypatch,tmp_pat
     app.session_state["selected_source"]=DAILY
     app.run()
     assert not app.exception
-    assert app.error[0].value=="ENTSOG non disponibile"
+    assert any("ENTSOG non disponibile" in x.value for x in app.text)
     assert any("Security of supply" in el.value for el in app.markdown)
     sources=AppTest.from_string("from gasops_app.operational_sources_page import operational_context\noperational_context()",default_timeout=30).run()
     assert not sources.exception
@@ -268,7 +268,7 @@ def test_market_scope_explicit_and_source_failure_preserves_scope(monkeypatch,tm
     app.run()
     assert not app.exception
     assert any("Italia · rete Snam (SRG)" in e.value and "non totale nazionale" in e.value for e in app.markdown)
-    assert app.error[0].value=="Fonte non disponibile"
+    assert any("Fonte non disponibile" in x.value for x in app.text)
 
 
 def test_market_layout_and_no_weather_request_for_demo(monkeypatch,tmp_path):

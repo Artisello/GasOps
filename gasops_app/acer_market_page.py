@@ -44,8 +44,7 @@ def _lng():
                     with st.spinner("Controllo CSV ACER…"):
                         st.session_state[STATE]=load_lng(database(),refresh=True)
                 except SourceUnavailable as exc:
-                    st.error(str(exc))
-                    st.caption("Mantengo l'ultima serie disponibile; nessun dato simulato.")
+                    st.caption("Aggiornamento ACER non disponibile; ultimo dato valido conservato, se presente.")
         with st.form("acer_upload"):
             f=st.file_uploader("Oppure importa il CSV storico scaricato dal portale",type=["csv"])
             authorized=st.checkbox("Confermo che il file è pubblico e utilizzabile.")
@@ -63,6 +62,9 @@ def _lng():
                     st.error("File non leggibile o intestazioni non riconosciute. Serie precedente invariata.")
     result=st.session_state.get(STATE)
     if result is None:
+        if not st.checkbox("Consulta estratto storico incluso",key="acer_historical_only"):
+            st.caption("Scarica il CSV aggiornato nelle fonti qui sopra, oppure consulta l’estratto storico.")
+            return
         result=bundled_lng()
     st.caption("Fonte: ACER · "+result.provenance+" · "+("cache · " if result.cached else "")+f"{result.rows[0]['date']} – {result.rows[-1]['date']}")
     if result.failed:
@@ -75,10 +77,10 @@ def _lng():
     n=st.selectbox("Ultime pubblicazioni",["30","90","365","Tutte"],key="acer_window")
     visible=frame if n=="Tutte" else frame.tail(int(n))
     latest=visible.iloc[-1]
-    cards=st.columns(3)
-    for col,field in zip(cards,("eu","benchmark","south_minus_nwe"),strict=True):
-        val=latest[field]
-        col.metric(LABELS[field],"—" if pd.isna(val) else f"{val:.3f} €/MWh")
+    fields=[k for k in ("eu","benchmark","south_minus_nwe") if pd.notna(latest[k])]
+    if fields:
+        for col,field in zip(st.columns(len(fields)),fields,strict=True):
+            col.metric(LABELS[field],f"{latest[field]:.3f} €/MWh")
     st.caption("Data dei tre indicatori: "+latest["date"]+" · campi mancanti non sostituiti.")
     labels=visible.rename(columns=LABELS)
     st.markdown("**Prezzi GNL**")

@@ -132,10 +132,22 @@ def panel(context=None):
             else:
                 with st.spinner("Consultazione di ARERA e, se configurato, GIE…"):
                     values=acquire_indicators(database(),key,now,refresh=bool(last))
-                previous={"attempted":now,"values":values}
+                retained=dict(previous.get("values",{}))
+                for name,item in values.items():
+                    if item.get("error") and name in retained and not retained[name].get("error"):
+                        retained[name]={**retained[name],"stale":True}
+                    else:retained[name]=item
+                previous={"attempted":now,"values":retained}
                 st.session_state[STATE]=previous
         snapshots=reuse_indicators(previous.get("values",{}),context,st.session_state,now)
-        kpi_grid(current_rows(snapshots,now,gie_enabled=bool(key)))
+        cards=current_rows(snapshots,now,gie_enabled=bool(key))
+        visible=[r for r in cards if r[1] is not None]
+        if visible:kpi_grid(visible)
+        else:st.caption("Aggiorna gli indicatori per consultare le ultime pubblicazioni.")
+        if len(visible)<len(cards):
+            with st.expander("Copertura delle fonti"):
+                for r in cards:
+                    if r[1] is None:st.caption(r[0]+" · "+r[3])
         links=["[ARERA · CMEM,m]("+ARERA_URL+")"]
         for platform in ("AGSI+","ALSI"):
             source=attribution(platform)

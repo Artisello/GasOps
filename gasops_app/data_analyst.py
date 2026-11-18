@@ -87,9 +87,13 @@ def catalog(state,now):
                     bundle.origin.url or "",status,bundle.fingerprint,
                     ((str(d.date()),v) for d,v in frame[k].items()))
     attempt("JRC",lambda:gas(jrc_archive(),"jrc","Italia","Archivio 2015–2021; include stime della fonte"))
+    bundles=dict(state.get("live_public_bundles_v1",{}))
     b=state.get("active_bundle")
     if b is not None and b.origin.kind in (Kind.HISTORICAL,Kind.LIVE) and not b.origin.archive:
-        attempt("Mercato",lambda:gas(b,"market","Rete SRG" if b.origin.grain=="daily" else "Italia",
+        bundles.setdefault(b.origin.grain,b)
+    for grain,b in bundles.items():
+        if grain not in ("daily","monthly") or b.origin.archive or b.origin.kind not in (Kind.HISTORICAL,Kind.LIVE):continue
+        attempt("Mercato "+grain,lambda:gas(b,"market_"+grain,"Rete SRG" if grain=="daily" else "Italia",
              "Dato pubblico caricato; verificare data e revisioni"))
     def lng():
         r=state.get("acer_lng_result_v1") or bundled_lng()
