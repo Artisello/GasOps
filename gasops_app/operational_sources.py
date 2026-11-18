@@ -260,13 +260,14 @@ def load_alsi(store,api_key,scope="IT",*,now=None,refresh=False):
 
 
 IIP_PAGE_SIZE = 20
+IIP_MAX_PAGE_SIZE = 50  # Actual GIE meta.per_page observed in deployment.
 
 
-def _page_count(value):
+def _page_count(value, field="last_page"):
     if value is None:
         return None
     if isinstance(value,bool) or not re.fullmatch(r"[0-9]{1,9}",str(value)):
-        raise SourceSchemaError("IIP: last_page non è un intero non negativo")
+        raise SourceSchemaError(f"IIP: {field} non è un intero non negativo")
     return int(value)
 
 
@@ -304,14 +305,29 @@ def iip_pagination_diagnostic(payload, pages, record_count):
 def parse_iip(text,acquired,*,cached=False,failed=False):
     """Keep original UMM records. Unknown pagination is explicitly unverified."""
     payload=_gie_payload(text)
-    pages=_page_count(payload.get("last_page"))
+    legacy_pages=_page_count(payload.get("last_page"))
+    meta=payload.get("meta")
+    if meta is not None and not isinstance(meta,dict):
+        raise SourceSchemaError("IIP: meta non valido")
+    meta=meta or {}
+    nested_pages=_page_count(meta.get("last_page"))
+    if legacy_pages is not None and nested_pages is not None and legacy_pages!=nested_pages:
+        raise SourceSchemaError("IIP: metadati di paginazione in conflitto")
+    pages=nested_pages if nested_pages is not None else legacy_pages
+    current=_page_count(meta.get("current_page"),"current_page")
+    per_page=_page_count(meta.get("per_page"),"per_page")
+    total=_page_count(meta.get("total"),"total")
+    if current is not None and current!=1:
+        raise SourceSchemaError("IIP: la pagina restituita non è la prima")
+    if per_page is not None and not 1<=per_page<=IIP_MAX_PAGE_SIZE:
+        raise SourceSchemaError("IIP: dimensione della pagina fuori dal limite supportato (50)")
     if "data" not in payload:
         raise SourceSchemaError("IIP: campo data assente nella risposta JSON")
     data=payload["data"]
     record_keys=None
     if data is None or data=={}:
-        if pages!=0:
-            raise SourceSchemaError("IIP: data vuoto senza conferma di zero pagine")
+        if pages!=0 and not (total==0 and pages==1 and current==1 and per_page is not None):
+            raise SourceSchemaError("IIP: data vuoto senza conferma di zero risultati")
         messages=[]
     elif isinstance(data,list):
         messages=data
@@ -330,15 +346,30 @@ def parse_iip(text,acquired,*,cached=False,failed=False):
             raise SourceSchemaError("IIP: oggetto data non riconducibile a messaggi")
     else:
         raise SourceSchemaError("IIP: data non è una lista o un oggetto JSON")
-    if len(messages)>IIP_PAGE_SIZE:
-        raise SourceSchemaError("IIP: la risposta supera la dimensione di pagina richiesta")
+    if len(messages)>(per_page if per_page is not None else IIP_PAGE_SIZE):
+        raise SourceSchemaError("IIP: la risposta supera la dimensione di pagina supportata")
     if any(not isinstance(r,dict) or not r for r in messages):
         raise SourceSchemaError("IIP: uno o più record non sono oggetti JSON validi")
     if (pages==0 and messages) or (pages is not None and pages>1 and not messages):
         raise SourceSchemaError("IIP: paginazione incompatibile con il numero di record")
     if not messages and (pages is None or payload.get("message")):
         raise SourceSchemaError("IIP: risposta vuota non confermata; consultare il portale")
+    if total is not None:
+        if total<len(messages) or (total>0 and not messages):
+            raise SourceSchemaError("IIP: totale incompatibile con i messaggi ricevuti")
+        if pages==0 and total!=0:
+            raise SourceSchemaError("IIP: zero pagine con totale positivo")
+        if pages==1 and total!=len(messages):
+            raise SourceSchemaError("IIP: pagina unica con conteggio incompleto")
+        if pages is not None and per_page is not None:
+            expected=(total+per_page-1)//per_page
+            if pages!=expected and not (total==0 and pages==1):
+                raise SourceSchemaError("IIP: totale e numero di pagine incoerenti")
+            if len(messages)!=min(total,per_page):
+                raise SourceSchemaError("IIP: conteggio della prima pagina incoerente")
+    verified=(nested_pages is not None and current==1 and per_page is not None and total is not None)
     return {"messages":messages,"record_keys":record_keys,"pages":pages,
+            "reported_total":total,"server_page_size":per_page,"pagination_verified":verified,
             "partial":pages is None or pages>1,"acquired":acquired,"cached":cached,"failed":failed,
             "pagination_diagnostic":iip_pagination_diagnostic(payload,pages,len(messages)),
             "platform":"IIP",**attribution("IIP")}
@@ -362,5 +393,7 @@ def load_iip(store,api_key,*,now=None,refresh=False):
 def attributed_iip_json(result):
     return json.dumps({**attribution("IIP"),"retrieved_at":result["acquired"].isoformat(),
                        "pages":result["pages"],"partial":result["partial"],
+                       "reported_total":result.get("reported_total"),"server_page_size":result.get("server_page_size"),
+                       "pagination_verified":result.get("pagination_verified",False),
                        "record_keys":result.get("record_keys"),"pagination_diagnostic":result.get("pagination_diagnostic"),
                        "messages":result["messages"]},ensure_ascii=False,indent=2,allow_nan=False)

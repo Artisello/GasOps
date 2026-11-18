@@ -196,3 +196,53 @@ def test_iip_diagnostic_preserves_page_metadata_without_response_values():
     for forbidden in ("fixture-private-value","secret-token","never-copy-this","sensitive-text","example.invalid","apiKey"):
         assert forbidden not in rendered
     assert d["source_url"]=="https://iip.gie.eu/"
+
+
+def test_iip_observed_nested_meta_complete():
+    from gasops_app.operational_sources import parse_iip,attributed_iip_json
+    # Real pagination metadata supplied from deployment; dummy messages only.
+    response={"data":[{"messageId":str(i)} for i in range(11)],
+              "meta":{"current_page":1,"last_page":1,"per_page":50,"total":11}}
+    result=parse_iip(json.dumps(response),NOW)
+    assert result["pages"]==1 and result["partial"] is False
+    assert result["pagination_verified"] is True
+    assert result["reported_total"]==11 and result["server_page_size"]==50
+    export=json.loads(attributed_iip_json(result))
+    assert export["reported_total"]==11 and export["pagination_verified"]
+    assert result["pagination_diagnostic"]["recognized_last_page"]==1
+
+
+def test_iip_server_page_size_and_partial():
+    from gasops_app.operational_sources import parse_iip
+    response={"data":[{"messageId":str(i)} for i in range(50)],
+              "meta":{"current_page":1,"last_page":2,"per_page":50,"total":51}}
+    result=parse_iip(json.dumps(response),NOW)
+    assert len(result["messages"])==50 and result["partial"]
+    assert result["pagination_verified"] and result["reported_total"]==51
+
+
+@pytest.mark.parametrize("data,meta",[
+    ([{}],{"current_page":1,"last_page":1,"per_page":50,"total":1}),
+    ([{"messageId":"x"}],{"current_page":2,"last_page":2,"per_page":50,"total":51}),
+    ([{"messageId":"x"}],{"current_page":1,"last_page":1,"per_page":50,"total":2}),
+    ([{"messageId":"x"}],{"current_page":1,"last_page":2,"per_page":50,"total":51}),
+    ([{"messageId":"x"}],{"current_page":1,"last_page":2,"per_page":50,"total":1}),
+    ([{"messageId":"x"}],{"current_page":1,"last_page":1,"per_page":51,"total":1}),
+])
+def test_iip_nested_meta_inconsistent(data,meta):
+    from gasops_app.operational_sources import parse_iip
+    with pytest.raises(ValueError,match="IIP"):
+        parse_iip(json.dumps({"data":data,"meta":meta}),NOW)
+
+
+def test_iip_nested_meta_zero():
+    from gasops_app.operational_sources import parse_iip
+    result=parse_iip(json.dumps({"data":[],"meta":{"current_page":1,"last_page":1,"per_page":50,"total":0}}),NOW)
+    assert result["pagination_verified"] and not result["partial"]
+    assert result["reported_total"]==0
+
+
+def test_iip_legacy_and_nested_page_conflict():
+    from gasops_app.operational_sources import parse_iip
+    with pytest.raises(ValueError,match="conflitto"):
+        parse_iip(json.dumps({"last_page":2,"meta":{"last_page":1},"data":[{"messageId":"x"}]}),NOW)
