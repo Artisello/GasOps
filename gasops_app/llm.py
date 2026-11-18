@@ -10,6 +10,7 @@ import requests
 
 from .models import Agent, Result, Run, Citation
 from .market import demand_trend_question, demand_readout
+from .assistant_sources import citation_requirements, missing_citations
 from .supervisor import Call, Tool, ModelUnavailable
 from .ai_response import (compact_context, parse_sections, SECTION_TITLES, reference_index,
                           normalize_references, InvalidSynthesis)
@@ -246,7 +247,7 @@ class CompatibleReasoner:
                               "Select any additional dependency needed. Leave tool calls empty if sufficient."})
         return self._tool_calls(self._chat(self.messages, remaining), remaining)
 
-    def interpret(self, question: str, results: Mapping[Agent, Result], *, context=None, executive=False, repair=False) -> tuple[str | None, list[Agent]]:
+    def interpret(self, question: str, results: Mapping[Agent, Result], *, context=None, executive=False, repair=False, source_requirements=()) -> tuple[str | None, list[Agent]]:
         # Synthesis is standalone: executed evidence already contains the tool results.
         # Do not resend routing history, tool schemas, or duplicate tool messages.
         self.last_sections=[]
@@ -260,6 +261,7 @@ class CompatibleReasoner:
         if executive:
             # Unrelated annual benchmarks invite invalid price comparisons.
             public.pop("Benchmark storici",None)
+        required=citation_requirements(public,source_requirements)
         narrow=not executive and demand_trend_question(question) and Agent.MARKET in results
         if narrow:
             facts=results[Agent.MARKET].values
@@ -278,7 +280,7 @@ class CompatibleReasoner:
         evidence=json.dumps({"question":question,"verified_tool_results":allowed,
                              "public_operational_context":public,"reference_ids":codes},
                             ensure_ascii=False,separators=(",",":"),allow_nan=False)
-        target=1350 if executive else 450 if narrow else 1200
+        target=1350 if executive else 650 if narrow else min(2000,1200+100*len(required))
         # The provider completion cap already bounds the response. A stricter
         # editorial target should not discard an otherwise valid answer.
         limit=6000
@@ -290,14 +292,17 @@ class CompatibleReasoner:
                      "Ogni sezione cita almeno un codice esatto presente in reference_ids (A1, S1 ecc.). "
                      "Le fonti mancanti supportano solo limiti o verifiche. Niente riferimenti inventati.")
         if narrow:
-            instruction+=" Rispondi in 2–4 frasi: domanda osservata, variazione confrontabile e periodo. Nessun riepilogo di prezzi, scorte o norme non richieste."
+            instruction+=" Rispondi in 2–4 frasi: domanda osservata e variazioni; separa bilancio mensile Eurostat e prelievi giornalieri ENTSOG, specificando date e perimetri; non equipararli. Nessun riepilogo di prezzi, scorte o norme non richieste."
         if repair:
             instruction=(template+"\nRecupero formato: restituisci solo JSON valido con chiavi interpretation (testo italiano), "
                          "references (lista di codici da reference_ids). "
                          f"Obiettivo {target} caratteri; usa brevi paragrafi e solo verifiche pertinenti; "
                          "nessun riferimento inventato, nessun dato mancante trasformato in zero.")
             if narrow:
-                instruction+=" Solo domanda osservata, confronto e periodo. 2–4 frasi."
+                instruction+=" Domanda osservata, confronto e periodo; distingui le frequenze."
+        if required:
+            required_codes=[code for code,ref in codes.items() if ref in required]
+            instruction+="\nFonti pertinenti obbligatorie: "+", ".join(required_codes)+". Per ognuna usa un dato specifico con periodo, unità e perimetro, oppure spiega la lacuna se non disponibile/non recente; cita il codice nei riferimenti. Non limitarti a elencare i nomi delle fonti. Non inventare correlazioni, causalità o confronti fra granularità diverse."
         try:
             response = self._chat([{"role":"system","content":SYSTEM}, {"role": "user", "content": f"{instruction}\n{evidence}"}])
         except requests.Timeout:
@@ -318,6 +323,8 @@ class CompatibleReasoner:
             raise InvalidSynthesis("Formato della sintesi non valido.")
         if "sections" in parsed:
             sections,refs=parse_sections(parsed["sections"],ids,valid_ids,source_ids,limit,aliases=aliases)
+            if missing_citations(refs,required):
+                raise InvalidSynthesis("Sintesi AI priva di riferimenti alle fonti pertinenti.")
             self.last_sections=sections
             narrative="\n\n".join(SECTION_TITLES[section["id"]]+": "+section["text"] for section in sections)
             return narrative,[Agent(ref) for ref in refs if ref in valid_ids]
@@ -326,6 +333,8 @@ class CompatibleReasoner:
         if not isinstance(narrative,str) or not 1<=len(narrative.strip())<=limit:
             raise InvalidSynthesis("Formato o lunghezza della sintesi non validi.")
         refs=normalize_references(parsed.get("references"),aliases)
+        if missing_citations(refs,required):
+            raise InvalidSynthesis("Sintesi AI priva di riferimenti alle fonti pertinenti.")
         cited=[Agent(ref) for ref in refs if ref in valid_ids]
         # Preserve public source references in the compatibility format too.
         if repair or any(ref in source_ids for ref in refs):
@@ -388,7 +397,8 @@ class CompatibleReasoner:
 
     def summarize(self, run: Run) -> tuple[str | None, list[Agent]]:
         args={"context":run.assumptions.get("public_operational_context"),
-              "executive":bool(run.assumptions.get("full_briefing"))}
+              "executive":bool(run.assumptions.get("full_briefing")),
+              "source_requirements":run.assumptions.get("assistant_source_requirements",[])}
         try:
             answer=self.interpret(run.question,run.results,**args)
         except InvalidSynthesis:

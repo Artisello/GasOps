@@ -60,7 +60,7 @@ def demand_trend_question(question):
     """Narrow observational questions need no simulation, causal or forecast model."""
     return bool(re.search(r"\b(?:domanda|consum[oi])\b",question,re.I)
                 and re.search(r"cambiat|variaz|andament|ultim|cresciut|diminuit|evoluz",question,re.I)
-                and not re.search(r"perch[eéè]|caus|prevision|forecast|scenario|simul|settlement|prezz|offert|stoccagg|import|esport|correl|rispetto all.anno|ann[uo]al|confront.*paes",question,re.I))
+                and not re.search(r"perch[eéè]|caus|prevision|forecast|scenario|simul|settlement|prezz|offert|stoccagg|import|esport|correl|rispetto all.anno|ann[uo]al|confront.*paes|meteo|\bhdd\b|temperatur|terna|elettric|riepilog.*fonti|gie|agsi|alsi|acer|indisponibil",question,re.I))
 
 
 def demand_readout(facts,grain):

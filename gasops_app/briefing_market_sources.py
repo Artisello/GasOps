@@ -83,7 +83,8 @@ def market_context(bundle,now):
             price_stale=provider.refresh_failed or provider.retrieved_at>now or not 0<=(today-pday).days<=93
             out["price"]={"source":provider.name,"source_url":provider.url,"period":pday.isoformat(),
                           "acquired":provider.retrieved_at.isoformat(),"status":"stale" if price_stale else "available",
-                          "value":price,"unit":"€/MWh","limitation":"ARERA CMEM,m medio mensile; non prezzo spot."}
+                          "value":price,"change_pct":_num(facts.get("price_eur_mwh_change_pct")) if pday.isoformat()==facts["period"] else None,
+                          "unit":"€/MWh","limitation":"ARERA CMEM,m medio mensile; non prezzo spot."}
     return out
 
 
@@ -145,7 +146,7 @@ def benchmarks():
             "period":"2024/2025 – 2025","values":rows,"limitation":"Riferimenti annuali storici, non situazione attuale."}
 
 
-def collect_market_sources(store,selected,now,state,*,terna=(),clock=utc_now):
+def collect_market_sources(store,selected,now,state,*,terna=(),clock=utc_now,only=None):
     """Use bounded alternate market windows and current API snapshots only on launch."""
     if selected.origin.archive or selected.origin.kind not in (Kind.LIVE,Kind.HISTORICAL):
         return {}
@@ -161,6 +162,8 @@ def collect_market_sources(store,selected,now,state,*,terna=(),clock=utc_now):
         "ACER · GNL":lambda:acer_context(load_lng(store),clock()),
         "Benchmark storici":benchmarks,
     }
+    if only is not None:
+        tasks={name:fn for name,fn in tasks.items() if name in only}
     cache=dict(prior)
     attempted=dict(prior.get("attempted",{}))
     out={}
@@ -186,6 +189,9 @@ def collect_market_sources(store,selected,now,state,*,terna=(),clock=utc_now):
     else:out["Terna · elettricità"]=_missing("Terna · elettricità","Credenziali Terna non configurate.")
     if can_call or prior.get("forward"):tasks["Terna · outlook"]=terna_forecast
     else:out["Terna · outlook"]=_missing("Terna · outlook","Credenziali Terna non configurate.")
+    if only is not None:
+        tasks={name:fn for name,fn in tasks.items() if name in only}
+        out={name:item for name,item in out.items() if name in only}
     for name in ("Terna · elettricità","Terna · outlook"):
         if name not in tasks:continue
         at=attempted.get(name)

@@ -17,14 +17,15 @@ from .llm import CompatibleReasoner, configuration
 from .supervisor import ModelUnavailable
 from .mensile import load_monthly
 from .entsog import load as load_daily
-from .models import Kind, Run, utc_now
+from .models import Agent, Kind, Run, utc_now
 from .public_data import SourceUnavailable
 from .regulatory import Library, read_local_pdfs
 from .store import Store
 from .visuals import chip, info, kind_tag, local_time, steps
-from .workflow import DAILY_BRIEFING, run_workflow
+from .workflow import DAILY_BRIEFING, run_workflow, plan
 from .country_analysis import requested_country, country_report, direct_market_question
 from .market import demand_trend_question
+from .assistant_sources import requested_sources, add_price_source, complete_requirements, MARKET
 
 LOG = logging.getLogger(__name__)
 DEMO, PUBLIC, ARCHIVE = "Dati di esempio · giornalieri", "Eurostat + ARERA · mensili", "JRC · archivio giornaliero"
@@ -419,8 +420,11 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
     stage = status.empty()
     stage.html(steps(None, grid=True))
     try:
-        direct=not full and direct_market_question(question)
-        narrow=direct and demand_trend_question(question)
+        requested=() if full else requested_sources(question)
+        targets={call.agent for call in plan(question,False)} if requested else set()
+        source_direct=bool(requested) and targets<={Agent.QUALITY,Agent.MARKET,Agent.FORECAST}
+        direct=not full and (direct_market_question(question) or source_direct)
+        narrow=direct and demand_trend_question(question) and set(requested)<=set(MARKET)
         docs = Library(include_notes=False) if direct else library()
         from .briefing_context import collect
         from .operational_sources import gie_key
@@ -441,7 +445,7 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
                 public_context=collect(database(),context,utc_now(),key=key,include_gie=include_gie,include_weather=include_weather,
                     weather_snapshots=st.session_state.get(WEATHER_STATE,{}) if include_weather else None,
                     clock=utc_now)
-        if current_context and (full or model is not None) and not narrow:
+        if current_context and (full or model is not None):
             from .briefing_market_sources import collect_market_sources
             from .terna_power import credentials
             try:
@@ -450,9 +454,14 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
                 terna=credentials()
             with st.spinner("Lettura delle fonti di mercato e degli indicatori pubblici…"):
                 public_context.update(collect_market_sources(database(),selection.bundle,utc_now(),
-                    st.session_state,terna=terna,clock=utc_now))
+                    st.session_state,terna=terna,clock=utc_now,only=set(MARKET) if narrow else None))
+        if current_context and model is not None and not full:
+            add_price_source(public_context)
+            complete_requirements(public_context,requested)
+        requirements=requested if current_context and model is not None and not full else ()
         report = run_workflow(
             context, docs, assumptions(), question, full=full, reasoner=model,public_context=public_context,planned_only=planned_only or direct,
+            source_requirements=requirements,
             notify=lambda run: stage.html(steps(run, grid=True)),
         )
     except ValueError as error:

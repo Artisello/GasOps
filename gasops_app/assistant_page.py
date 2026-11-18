@@ -6,6 +6,7 @@ import streamlit as st
 
 from .italiano import ESITI, GRAVITA, TIPI, numero
 from .market import demand_trend_question, demand_readout
+from .assistant_sources import source_rows
 from .models import Agent, AGENT_LABELS, Run, utc_now
 from .reports import markdown
 from . import session
@@ -67,6 +68,26 @@ def _review(report):
     return reviewed
 
 
+def _source_evidence_panel(report):
+    rows=source_rows(report)
+    if not rows:return
+    # Show the relevant numerical evidence without relying on prose generation.
+    # Other acquired sources remain in the existing details expander.
+    selected=[row for row in rows if row["required"] or row["cited"]]
+    if not selected:return
+    by_status={"available":"Disponibile","stale":"Non recente","unavailable":"Non disponibile"}
+    cited=sum(row["cited"] for row in selected)
+    title=f"Fonti pertinenti · {len(selected)}"
+    if report.mode=="LLM-assisted":
+        title+=f" · {cited} citate dall’AI"
+    with st.expander(title,expanded=True):
+        for row in selected:
+            status=by_status.get(row["status"],row["status"])
+            period=str(row["period"] or "")[:10]
+            st.caption(" · ".join(x for x in (row["source"],period,status,"Citata" if row["cited"] else "") if x))
+            st.text(row["evidence"])
+
+
 def _report(report:Run,selection):
     inferred=report.mode=="LLM-assisted" and bool(report.interpretation)
     mode=("AI · "+(report.model or "modello selezionato") if inferred else
@@ -94,6 +115,7 @@ def _report(report:Run,selection):
         st.markdown("**Report di calcolo (senza AI)**")
         if not report.results:
             st.text(report.summary or "Nessun risultato disponibile.")
+    _source_evidence_panel(report)
     if Agent.REGULATORY in report.results:
         st.caption("Normativa: materiali di studio, non PDF caricati.")
         info("Fonti normative","I riscontri normativi del supervisore usano materiali predisposti. Interroga i PDF del tuo archivio in Norme e documenti.")
@@ -136,8 +158,8 @@ def _report(report:Run,selection):
             public=report.assumptions.get("public_operational_context") or {}
             if public:
                 st.markdown("**Fonti operative aggiuntive**")
-                for name,source in public.items():
-                    st.text(str(name)+" · "+str(source.get("status","non indicato"))+" · "+str(source.get("gas_day") or source.get("period") or source.get("acquired") or "data non indicata"))
+                for row in source_rows(report):
+                    st.caption(str(row["source"])+" · "+str(row["status"])+" · "+str(row["period"] or "data non indicata")+" · "+("citata dall’AI" if row["cited"] else "non citata dall’AI"))
                 st.json(public,expanded=False)
     reviewed=_review(report)
     with st.expander("Traccia tecnica e ipotesi"):
@@ -206,7 +228,7 @@ def assistant_page():
     if local:
         info("Come funziona","Report deterministici con parametri e controlli predefiniti. Nessuna chat o interpretazione AI.")
     else:
-        info("Come funziona","Ogni domanda avvia un'analisi indipendente. Il modello seleziona strumenti e interpreta le evidenze. Se non riesce, vengono mostrati solo calcoli di riserva, non una risposta AI.",
+        info("Come funziona","Ogni domanda avvia un'analisi indipendente. Il programma seleziona le fonti pertinenti; il modello interpreta le evidenze e deve citarle. Se non riesce, vengono mostrati solo calcoli di riserva, non una risposta AI.",
              "Le scorciatoie utilizzano un tentativo AI di sintesi; le domande libere fino a tre chiamate. Lo storico rimane nella sessione.")
     disabled=selection.bundle is None
     controls=st.columns([1,1,1,1.4])
