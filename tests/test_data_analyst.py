@@ -58,3 +58,14 @@ def test_analyst_no_model_no_network(monkeypatch):
     assert not app.exception and not app.error
     assert app.session_state[data_analyst_page.STATE]["payload"]["series"]
     assert app.session_state[data_analyst_page.STATE]["answer"] is None
+
+
+def test_native_coefficients_not_mixed_or_shared():
+    f=pd.DataFrame([
+        {"family":"wkr","edition":"Consuntivo","metric":"Zona 11","unit":"coefficiente (come pubblicato)","value":"1.1","gas_day":"2026-11-16","sha256":"a"*64},
+        {"family":"wkr","edition":"Previsione","metric":"Zona 11","unit":"coefficiente (come pubblicato)","value":"1.2","gas_day":"2026-11-16","sha256":"b"*64}])
+    c,_=catalog({"jarvis_native_v1":{"frame":f}},NOW)
+    keys=[k for k in c if k.startswith("jarvis_coef_")]
+    assert len(keys)==2 and not can_share(c,keys)
+    r=analyse(c,keys,"2026-11-01","2026-11-18")
+    assert not r["correlations"] and {x["last_value"] for x in r["series"]}=={1.1,1.2}

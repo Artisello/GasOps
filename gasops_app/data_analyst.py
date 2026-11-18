@@ -23,6 +23,7 @@ from .terna_power import PORTAL
 from .terna_history import merge,stamp,batch_id,METRICS
 from .snam_forecast import daily_vintages
 from .advanced_kpis import benchmark_scores
+from .bso_kpis import closed_gas_day
 from .operational_sources import GIE_LINKS
 from .entsog import SOURCE as ENTSOG
 
@@ -67,8 +68,9 @@ def catalog(state,now):
     last=now.astimezone(ROME).date()
     def add(key,label,unit,grain,scope,source,url,status,origin,rows,remote=True):
         s=unique_series(rows)
+        if s.empty:return
         if grain=="gas_day":
-            s=s[s.index<=str(last-timedelta(days=1))]
+            s=s[s.index<=closed_gas_day(now).isoformat()]
         else:s=s[s.index<=str(last)]
         if len(s):items[key]=Series(key,label,unit,grain,scope,source,url,status,origin,s,remote)
     def attempt(name,fn):
@@ -113,6 +115,23 @@ def catalog(state,now):
                     "Importazione dichiarata; unità inferita da PCS, timestamp assente",
                     sha256("|".join(sorted(set(sub.sha256))).encode()).hexdigest(),zip(sub.gas_day,sub.value))
     attempt("Bilanci Jarvis",native)
+    def coefficients():
+        f=state.get("jarvis_native_v1",{}).get("frame")
+        if f is None:return
+        subset=f[f.family.isin(("wkr","wkr_csv","qk","gas_stock","gas_stock_hs2"))]
+        groups=subset.groupby(["family","edition","metric","unit"],sort=True)
+        for i,((family,edition,metric,unit),part) in enumerate(groups):
+            if i>=240:
+                issues.append("Coefficienti e stock Jarvis · catalogo limitato a 240 serie")
+                break
+            # Distinct declared editions and units; do not join forecast coef/stock
+            # values as measured gas days. Dynamic source labels stay local only.
+            key="jarvis_coef_"+sha256(json.dumps([family,edition,metric,unit],ensure_ascii=False).encode()).hexdigest()[:20]
+            ident=sha256("|".join(sorted(set(part.sha256))).encode()).hexdigest()
+            add(key,str(metric)[:120],str(unit)[:60],"declared_day",str(edition)[:120],
+                "Snam Jarvis · "+family,JARVIS,"Valore pubblicato; può includere stime/proiezioni; non misura certificata",
+                ident,zip(part.gas_day,part.value),False)
+    attempt("WKR / qk / Gas Stock",coefficients)
     def annual():
         annual=state.get("snam_forecast_annual_v1",{})
         if not annual:return
@@ -231,6 +250,16 @@ def forecast_facts(state):
         facts.append({"id":"backtest_snam","source":"Snam Jarvis · backtest I.G.O.R.","url":JARVIS,
             "horizon":cached["h"],"from":r["start"],"to":r["end"],"n":r["n"],"scores":r["scores"],
             "unit":"unità native Jarvis","limitation":"Consuntivo G−1 provvisorio, storico potenzialmente rivisto, modello non promosso."})
+    p=state.get("snam_power_result_v1")
+    batches=state.get("terna_history_v1",[])
+    if p and signatures and batches:
+        signature=p.get("signature",())
+        if len(signature)==5 and signature[0]==signatures and signature[1]==tuple(batch_id(b) for b in batches):
+            r=p["result"]
+            facts.append({"id":"backtest_power_gas","source":"Snam + Terna · backtest I.G.O.R.","url":PORTAL,
+                "horizon":signature[2],"from":r["start"],"to":r["end"],"n":r["n"],"scores":r["scores"],
+                "strict_acquisition":signature[3],"include_load":signature[4],"unit":"unità native Jarvis",
+                "limitation":"Campione comune; G−3 elettrico; consuntivo G−1 provvisorio. Modalità retrospettiva non certifica disponibilità ex ante."})
     return facts
 
 

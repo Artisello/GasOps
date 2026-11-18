@@ -43,7 +43,7 @@ def panel():
     if remote:
         consent=st.checkbox("Autorizzo l'invio al modello esterno della domanda e dei soli aggregati pubblici selezionati; ho verificato le condizioni di utilizzo. Senza dati riservati.",key="analyst_consent")
         if keys and not can_share(items,keys):
-            st.caption("GIE e flussi di interconnessione ENTSOG: elaborazione locale soltanto; nessun invio al modello remoto.")
+            st.caption("GIE, flussi di interconnessione ENTSOG e coefficienti/stock Jarvis selezionati: solo elaborazione locale.")
     elif model:st.caption("Modello locale selezionato.")
     else:st.caption("Modalità senza AI: calcoli disponibili; attiva un modello dalla barra laterale per la risposta testuale.")
     if st.button("Analizza dati",type="primary",key="analyst_run",disabled=not keys):
