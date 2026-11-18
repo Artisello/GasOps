@@ -18,7 +18,7 @@ LIMIT="Dati di sessione e copertura dichiarata, non certificati. Nessuna azione,
 PRIORITY={"Alta":0,"Media":1,"Informativa":2}
 
 
-def report(state,now,year,month,participant=None):
+def report(state,now,year,month,participant=None,*,inspections=None):
     if now.tzinfo is None:raise ValueError("Timestamp senza offset.")
     local=now.astimezone(ROME)
     if date(year,month,1)>local.date():raise ValueError("Mese futuro.")
@@ -140,7 +140,7 @@ def report(state,now,year,month,participant=None):
             metric("Market Operations","Volume lordo azioni",r["gross_mwh"],"MWh",period,SCOPES[scope],cov,"Registro azioni",status)
             if not r["complete_period"]:flag("Market Operations","Media","Copertura azioni parziale",SCOPES[scope]+" · "+cov,"Completare estratto prima di interpretare il totale.")
     def quality():
-        rows=session_health(state,now)
+        rows=session_health(state,now,inspections=inspections)
         good=sum(r["status"]=="Copertura verificata" for r in rows)
         absent=sum(r["status"].startswith("Non disponibile") or r["status"]=="Disattivato" for r in rows)
         review=len(rows)-good-absent

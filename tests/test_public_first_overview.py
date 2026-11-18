@@ -55,4 +55,4 @@ def test_public_overview_populates_without_network(monkeypatch):
     assert metrics["Generazione termoelettrica"]=="351,0 GWh elettrici"
     assert metrics["Prelievi · definitivo"]=="102,0 GWh"
     assert metrics["Sbilanciamenti / volume"]=="7,4 %"
-    assert app.dataframe[0].value["Valore"].isna().all()
+    assert next(t.value for t in app.dataframe if set(t.value.columns)=={"Area","KPI","Valore","Unità","Periodo","Copertura","Stato"})["Valore"].isna().all()

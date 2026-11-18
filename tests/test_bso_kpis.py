@@ -97,11 +97,12 @@ def test_bso_overview_default_and_no_demo_fallback():
     assert len(metrics)==6 and all(v!="—" for v in metrics.values())
     assert not {"Attività aperte in ritardo","|SAS| medio","Definitivi utilizzabili"}&set(metrics)
     assert any("Le assenze non valgono zero" in e.value for e in app.info)
-    operational=app.dataframe[0].value
+    assert any("Priorità" in t.value.columns and "Azione proposta" in t.value.columns for t in app.dataframe)
+    operational=next(t.value for t in app.dataframe if set(t.value.columns)=={"Area","KPI","Valore","Unità","Periodo","Copertura","Stato"})
     assert len(operational)==10
     assert operational["Valore"].isna().all()
     assert operational["Stato"].eq("Non disponibile").all()
-    context=app.dataframe[1].value
+    context=next(t.value for t in app.dataframe if set(t.value.columns)=={"Area","KPI","Valore","Unità","Periodo","Perimetro","Stato","Copertura / fonte"})
     assert len(context)==13
     assert context.loc[context["KPI"]=="Sbilanciamenti / volume","Valore"].iloc[0]==7.4
     assert context.loc[context["KPI"]=="Flusso fisico","Valore"].isna().all()
@@ -113,4 +114,4 @@ def test_bso_overview_default_and_no_demo_fallback():
     app.radio(key="bso_view").set_value("Panoramica").run()
     assert not app.exception
     assert {m.label:m.value for m in app.metric}==metrics
-    assert app.dataframe[0].value["Valore"].isna().all()
+    assert next(t.value for t in app.dataframe if set(t.value.columns)=={"Area","KPI","Valore","Unità","Periodo","Copertura","Stato"})["Valore"].isna().all()

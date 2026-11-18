@@ -47,7 +47,7 @@ def panel(now,year,month):
         st.warning(f'Copertura parziale: {s["partial_days"]} giorni incompleti, {s["missing_days"]} assenti. Totali sui soli giorni completi.')
     kpi_grid([("Volume azioni",s["gross_mwh"],"MWh","Acquisti + vendite",1,""),
               ("Costo netto azioni",s["net_cost_eur"],"€","Acquisti − vendite, non neutralità",2,""),
-              ("Giorni con azioni",s["action_days"],"",f'Su {s["complete_days"]} giorni completi',0,"")])
+              ("Giorni con azioni",s["action_days"] if s["complete_days"] else None,"",f'Su {s["complete_days"]} giorni completi',0,"")])
     kpi_grid([("Prezzo medio acquisto",s["buy_vwap"],"€/MWh","Ponderato per volume",3,""),
               ("Prezzo medio vendita",s["sell_vwap"],"€/MWh","Ponderato per volume",3,""),
               ("Differenziale prezzi",s["spread"],"€/MWh","Acquisto − vendita; mix di giorni",3,"")])

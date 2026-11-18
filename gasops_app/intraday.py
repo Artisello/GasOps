@@ -63,7 +63,8 @@ def _pairs(frame,metric,day,issued,now):
         close=gas_end(d)
         if close>min(issued,now):continue
         cutoff=close-remaining
-        g=g.sort_values("published_at")
+        start=gas_end(d-timedelta(days=1))
+        g=g[(g.published_at>=start)&(g.published_at<close)].sort_values("published_at")
         candidates=g[(g.published_at<=cutoff)&(g.published_at>=cutoff-timedelta(hours=1))]
         labels=g[(g.published_at<close)&(g.published_at>=close-timedelta(minutes=90))]
         if candidates.empty or labels.empty:continue

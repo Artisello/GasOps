@@ -1,8 +1,7 @@
 """Compact 6PI scorecard within the existing BSO overview."""
-from datetime import timedelta
+from .bso_kpis import closed_gas_day
 import streamlit as st
 from . import incentives as model
-from .data import ROME
 from .italiano import numero
 from .visuals import kpi_grid,info
 
@@ -25,8 +24,7 @@ def panel(now):
             raw=st.file_uploader("Carica indicatori giornalieri (CSV)",type="csv",key="incentive_upload")
             if raw is not None and st.button("Valida importazione",key="incentive_import"):
                 try:
-                    local=now.astimezone(ROME)
-                    cutoff=local.date()-timedelta(days=1 if local.hour>=6 else 2)
+                    cutoff=closed_gas_day(now)
                     st.session_state[STATE]=model.parse_csv(raw.getvalue(),cutoff)
                     st.success("Importazione validata per formato; provenienza dichiarata.")
                 except ValueError as e:
