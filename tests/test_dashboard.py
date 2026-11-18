@@ -319,7 +319,7 @@ def test_balancing_page_simple_and_complete(monkeypatch,tmp_path):
     monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
     app=AppTest.from_string("from gasops_app.workbench import balancing\nbalancing()",default_timeout=30).run()
     assert not app.exception
-    assert [tab.label for tab in app.tabs]==["Sbilanciamento del partecipante","Scenario di mercato"]
+    assert [tab.label for tab in app.tabs]==["Stato sistema","Controllo giornaliero","Sbilanciamento del partecipante","Scenario di mercato"]
     assert any("Saldo energetico" in e.proto.body for e in app.get("html"))
     app.radio(key="balancing_mode").set_value("Completo").run()
     assert not app.exception
@@ -585,3 +585,44 @@ def test_visitor_upload_button_indexes_and_removes_pdf(monkeypatch,tmp_path):
     next(b for b in app.button if b.label=="Rimuovi").click().run()
     assert not app.exception and not app.session_state[desk.VISITOR_UPLOADS]
     assert not app.session_state[desk.VISITOR_STATE]["docs"].documents
+
+
+
+def test_daily_settlement_desk_and_jarvis_no_implicit_fetch():
+    from streamlit.testing.v1 import AppTest
+    app=AppTest.from_string("from gasops_app.settlement_desk_page import panel\npanel()",default_timeout=30).run()
+    assert not app.exception
+    assert any("30/30 giorni" in x.value for x in app.caption)
+    assert any("172.200,00" in x.proto.body for x in app.get("html"))
+    app.radio(key="daily_desk_filter").set_value("Rettifiche").run()
+    assert not app.exception
+    rows=next(d.value for d in app.dataframe if "Δ DS (MWh)" in d.value.columns)
+    assert len(rows)==1
+    app.radio(key="daily_desk_filter").set_value("Eccezioni").run()
+    assert not app.exception
+    assert any("Nessuna giornata" in c.value for c in app.caption)
+
+
+def test_jarvis_snapshot_reused_between_panels():
+    from datetime import datetime,timezone,timedelta
+    from gasops_app.data import ROME
+    from gasops_app.operational_sources import parse_jarvis
+    from gasops_app.operational_sources_page import utc_now
+    from streamlit.testing.v1 import AppTest
+    now=utc_now().astimezone(ROME)
+    day=now.date() if now.hour>=6 else now.date()-timedelta(days=1)
+    first=datetime(day.year,day.month,day.day,6,tzinfo=ROME)
+    # Use a historical day so both publications are guaranteed to be in the past.
+    day=day-timedelta(days=1)
+    first=datetime(day.year,day.month,day.day,7,tzinfo=ROME)
+    second=first+timedelta(hours=1)
+    raw=("gas_day,published_at,expected_withdrawal_gwh,sas_gwh,expected_linepack_gwh\n"
+         f"{day},{first.isoformat()},1000,-20,800\n"
+         f"{day},{second.isoformat()},1010,-10,805\n").encode()
+    snapshot=parse_jarvis(raw)
+    app=AppTest.from_string("from gasops_app.operational_sources_page import _jarvis_panel\n_jarvis_panel(prefix='balancing')",default_timeout=30)
+    app.session_state["jarvis_public_snapshot_v1"]=snapshot
+    app.run()
+    assert not app.exception
+    assert any("SAS pubblicato" in e.proto.body for e in app.get("html"))
+    assert any("consultazione storica" in e.value for e in app.warning)

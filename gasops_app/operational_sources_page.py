@@ -49,31 +49,79 @@ def operational_context():
         _jarvis_panel()
 
 
-def _jarvis_panel():
-    st.subheader("Stime della rete Snam")
-    st.markdown("**Italia · rete Snam**")
-    st.caption("Importazione manuale di dati pubblici. Nessun collegamento automatico.")
+def _jarvis_panel(prefix="supply"):
+    import pandas as pd
+    state="jarvis_public_snapshot_v1"
+    st.subheader("Stato del sistema gas")
+    st.caption("Italia · rete Snam · stime pubblicate, non posizioni dei singoli utenti.")
     st.link_button("Apri portale Snam Jarvis",JARVIS_SOURCE,icon=":material/open_in_new:")
-    info("Come importare i dati","Scarica il modello CSV GasOps, compila con i dati pubblici autorizzati e caricalo qui. Il modello non è un export nativo Jarvis.","Usa GWh e date ISO 8601 con offset. Non inserire informazioni riservate o bilanci individuali. I file non vengono inviati a LLM o salvati.")
-    with st.container(border=True,key="panel_jarvis_import"):
-        st.download_button("1. Scarica modello CSV",jarvis_template(),"gasops-jarvis-template.csv","text/csv")
-        file=st.file_uploader("2. Carica il CSV compilato",type=["csv"],key="jarvis_public_extract")
-    if file is not None:
-        try:
-            result=parse_jarvis(file.getvalue())
-            latest=result["latest"]
-            row=latest.iloc[-1]
-            st.caption(f"Giorno gas {row['gas_day']} · versione {local_time(row['published_at'])} · fonte dichiarata, non verificata indipendentemente")
-            kpi_grid([("Prelievo atteso",finite(row["expected_withdrawal_gwh"]),"GWh","Consumo atteso",1,"teal"),
-                      ("SAS pubblicato",finite(row["sas_gwh"]),"GWh","Sbilanciamento atteso di sistema",1,""),
-                      ("Gas presente in rete",finite(row["expected_linepack_gwh"]),"GWh","Linepack atteso",1,"blue")])
-            info("Info stime","Il SAS è il valore riportato dalla fonte e non è calcolato come semplice differenza domanda/offerta. Il linepack indica il gas presente nella rete.")
-            with st.expander("Dati importati e versioni"):
-                st.dataframe(latest,hide_index=True,width="stretch")
-                st.dataframe(result["versions"],hide_index=True,width="stretch")
-                st.text("SHA-256 · "+result["sha256"])
-        except ValueError as error:
-            st.warning(str(error))
+    with st.expander("Importa dati pubblici Jarvis",expanded=state not in st.session_state):
+        info("Come importare i dati","Scarica il modello CSV GasOps, compila con i dati pubblici autorizzati e caricalo qui. Il modello non è un export nativo Jarvis.","Usa GWh e date ISO 8601 con offset. Non inserire informazioni riservate o bilanci individuali. I file non vengono inviati a LLM o salvati su disco.")
+        st.download_button("1. Scarica modello CSV",jarvis_template(),"gasops-jarvis-template.csv","text/csv",key=prefix+"_jarvis_template")
+        with st.form(prefix+"_jarvis_import"):
+            file=st.file_uploader("2. Carica il CSV compilato",type=["csv"],key=prefix+"_jarvis_public_extract")
+            authorized=st.checkbox("Confermo autorizzazione e assenza di dati riservati.")
+            submitted=st.form_submit_button("Importa stime")
+        if submitted:
+            if file is None or not authorized:
+                st.warning("Seleziona il CSV e conferma l’autorizzazione.")
+            elif file.size>1_000_000:
+                st.warning("CSV superiore a 1 MB.")
+            else:
+                try:
+                    st.session_state[state]=parse_jarvis(file.getvalue())
+                    st.success("Stime importate nella sessione.")
+                except (ValueError,TypeError,OverflowError) as error:
+                    st.warning("CSV non valido: "+str(error)+". Le stime precedenti restano disponibili.")
+        if state in st.session_state and st.button("Rimuovi stime dalla sessione",key=prefix+"_jarvis_clear"):
+            st.session_state.pop(state,None)
+            st.rerun()
+    result=st.session_state.get(state)
+    if result is None:
+        st.info("Importa le pubblicazioni autorizzate per osservare SAS, linepack e prelievi attesi. Nessun dato ipotetico sostitutivo.")
+        return
+    versions=result["versions"]
+    days=sorted(versions["gas_day"].unique(),reverse=True)
+    selected=st.selectbox("Giorno gas",days,format_func=data_it,key=prefix+"_jarvis_day")
+    history=versions.loc[versions["gas_day"]==selected].sort_values("published_at")
+    row=history.iloc[-1]
+    now=utc_now().astimezone(ROME)
+    gas_day=now.date() if now.hour>=6 else now.date()-timedelta(days=1)
+    st.caption(f"Giorno gas {data_it(selected)} · versione {local_time(row['published_at'])} · fonte dichiarata, non verificata indipendentemente")
+    if selected!=gas_day:
+        st.warning("Giorno gas diverso da quello corrente: consultazione storica.")
+    elif utc_now()-row["published_at"]>timedelta(hours=3):
+        st.warning("Ultima pubblicazione importata oltre 3 ore fa. Verifica il portale; soglia informativa GasOps.")
+    fields=(("Prelievo atteso","expected_withdrawal_gwh","Consumo atteso"),
+            ("SAS pubblicato","sas_gwh","Sbilanciamento atteso di sistema"),
+            ("Gas presente in rete","expected_linepack_gwh","Linepack atteso"))
+    previous=history.iloc[-2] if len(history)>1 else None
+    cards=[]
+    for label,field,detail in fields:
+        value=finite(row[field])
+        prior=finite(previous[field]) if previous is not None else None
+        change=" · Δ "+numero(value-prior,1,signed=True)+" GWh dalla versione precedente" if value is not None and prior is not None else ""
+        cards.append((label,value,"GWh",detail+change,1,""))
+    kpi_grid(cards)
+    st.caption("Evoluzione delle stime nello stesso giorno gas (GWh)")
+    frame=history.copy()
+    frame["Pubblicazione"]=pd.to_datetime(frame["published_at"],utc=True).dt.tz_convert(ROME)
+    for label,field,_ in fields:
+        frame[label]=pd.to_numeric(frame[field],errors="coerce")
+    chart_fields=[label for label,_,_ in fields if frame[label].notna().any()]
+    if len(frame)>1 and chart_fields:
+        sas_fields=[label for label in chart_fields if label=="SAS pubblicato"]
+        other_fields=[label for label in chart_fields if label!="SAS pubblicato"]
+        if sas_fields:
+            st.line_chart(frame,x="Pubblicazione",y=sas_fields)
+        if other_fields:
+            st.line_chart(frame,x="Pubblicazione",y=other_fields)
+    else:
+        st.caption("Servono almeno due pubblicazioni per mostrare l'evoluzione infragiornaliera.")
+    info("Info stime","Il SAS è il valore riportato dalla fonte, non una differenza domanda/offerta calcolata da GasOps e non il DS del partecipante. Il linepack indica il gas presente nella rete. Il segno del SAS è mantenuto come pubblicato.","Dati importati nella sessione, nessun aggiornamento automatico. Verifica perimetro, convenzioni e orari della fonte.")
+    with st.expander("Dati importati e versioni"):
+        st.dataframe(history,hide_index=True,width="stretch")
+        st.text("SHA-256 · "+result["sha256"])
 
 
 def _credit(platform):

@@ -84,8 +84,9 @@ def panel():
                 "DS (MWh)":r["ds_mwh"],"Flusso utente (€)":r["cash_eur"],"Δ DS (MWh)":r["delta_ds_mwh"],
                 "Δ €":r["delta_cash_eur"],"Effetto quantità (€)":r["quantity_effect_eur"],
                 "Effetto prezzo (€)":r["price_effect_eur"],"Eccezioni":"; ".join(r["issues"])}
-    st.dataframe([display(r) for r in shown],hide_index=True,width="stretch")
-    if not shown:
+    if shown:
+        st.dataframe([display(r) for r in shown],hide_index=True,width="stretch")
+    else:
         st.caption("Nessuna giornata corrispondente al filtro.")
     export=[{"user":user,"period":f"{year}-{month:02d}","source":"CSV_NON_VERIFICATO" if uploaded else "SYNTHETIC",
              **r,"issues":"; ".join(r["issues"])} for r in daily]
