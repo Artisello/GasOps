@@ -79,7 +79,12 @@ def library() -> Library:
     path = Path(os.environ.get("GASOPS_PDF_DIR") or ROOT / "data" / "regulatory")
     uploads = st.session_state.get("pdf_uploads", ())
     with st.spinner("Indicizzazione dei documenti…", show_time=False):
-        return indexed_library((*read_local_pdfs(path), *uploads))
+        local = read_local_pdfs(path)
+        # The process-wide resource cache is for server-provided public PDFs only.
+        # Never include session uploads in its keys, arguments or cached results.
+        if uploads:
+            return Library((*local, *uploads))
+        return indexed_library(local)
 
 
 def assumptions() -> Assumptions:
@@ -164,7 +169,7 @@ def sidebar() -> None:
     except ValueError:
         pass
     modes=["Deterministic",config.model] if config else ["Deterministic"]
-    st.selectbox("Modalità di analisi",modes,index=1 if config and config.groq else 0,
+    st.selectbox("Modalità di analisi",modes,index=0,
                  format_func=lambda value:"Calcoli senza AI" if value=="Deterministic" else value,key="execution_mode")
     ai_controls()
     with st.expander("Fonti aggiuntive AI",expanded=False):
@@ -174,7 +179,7 @@ def sidebar() -> None:
                     help="Consulta Open-Meteo solo con ENTSOG recente; i riepiloghi possono essere condivisi con il modello selezionato.")
         st.caption("Solo dati pubblici autorizzati alla condivisione.")
     if config and not config.local:
-        st.caption("Non inserire dati riservati.")
+        st.caption("Non inserire dati riservati. Selezionando il modello remoto autorizzi l’invio delle domande e dei risultati pubblici al provider; i PDF richiedono conferma separata.")
 
 
 def reasoner() -> CompatibleReasoner | None:
@@ -332,7 +337,7 @@ def briefing_run() -> Run | None:
 
 
 def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool = False,
-           persist: bool = True, planned_only: bool = False, compact: bool = False) -> Run | None:
+           persist: bool = False, planned_only: bool = False, compact: bool = False) -> Run | None:
     if selection.bundle is None:
         return None
     context = MarketContext(selection.bundle, selection.model, utc_now())
@@ -365,7 +370,9 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
     st.session_state["last_run"] = report
     if full:
         st.session_state["last_briefing"] = report
-    if persist:
+    # UI runs are session-only. Even an explicit caller must opt in on an
+    # operator-controlled private deployment before writing a shared history.
+    if persist and os.getenv("GASOPS_PRIVATE_RUN_HISTORY") == "1":
         try:
             database().save(report)
         except (OSError, RuntimeError, sqlite3.Error):
