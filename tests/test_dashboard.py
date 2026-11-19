@@ -588,7 +588,7 @@ def test_visitor_pdf_survives_rerun_but_is_not_shared(monkeypatch,tmp_path):
     assert search(first.session_state[desk.VISITOR_STATE]["docs"],"deposito cauzionale")
     first.run()
     assert not first.exception and first.session_state[desk.VISITOR_UPLOADS][0][1]==raw
-    assert not first.session_state[desk.STATE]["docs"].documents
+    assert desk.STATE not in first.session_state
     second=AppTest.from_string(script).run()
     assert not second.exception and desk.VISITOR_UPLOADS not in second.session_state
     assert not second.session_state[desk.STATE]["docs"].documents

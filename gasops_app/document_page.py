@@ -1,6 +1,7 @@
 """Shared persistent archive and independent visitor-only PDF workspaces."""
 import json
 import os
+import re
 from threading import Lock
 from pathlib import Path
 
@@ -39,10 +40,75 @@ def _archive_config():
     return ArchiveConfig(url.rstrip("/"),key,admin,contributors)
 
 
-@st.cache_data(ttl=30,max_entries=3,show_spinner=False)
+@st.cache_resource(ttl=300,max_entries=8,show_spinner=False)
+def _read_remote_pdf(config,key):
+    # Immutable, content-addressed public object. Never cache admin tokens or visitor PDFs.
+    return Archive(config).read_document(key)
+
+
+@st.cache_resource(ttl=30,max_entries=1,show_spinner=False)
 def _read_remote(config):
-    # Only public archives are cached across visitors; never credentials or chat.
-    return Archive(config).read()
+    # Refresh the manifest, not every unchanged PDF. Legacy names cannot be
+    # assumed immutable and are fetched again. Removed keys are never returned.
+    archive=Archive(config)
+    return archive.read(reader=lambda key:_read_remote_pdf(config,key)
+                        if re.fullmatch(r"[a-f0-9]{64}--.+\.pdf",key,re.I) and key[:64]==key[:64].lower()
+                        else archive.read_document(key))
+
+
+def _manifest(directory):
+    """Cheap file identity; detect changes without reopening large PDFs."""
+    entries=[]
+    for path in sorted(directory.glob("*.pdf"))[:MAX_DOCUMENTS]:
+        if not path.is_file():continue
+        info=path.stat()
+        if info.st_size<=MAX_PDF_BYTES:
+            entries.append((path.name,info.st_size,info.st_mtime_ns,info.st_ctime_ns,info.st_ino,info.st_dev))
+    return tuple(entries)
+
+
+def _load_local(directory,manifest):
+    result=read_local_pdfs(directory)
+    if _manifest(directory)!=manifest:
+        raise OSError("Archivio locale cambiato durante la lettura.")
+    return result
+
+
+@st.cache_resource(max_entries=1,show_spinner=False)
+def _public_local(directory,manifest):
+    return _load_local(directory,manifest)
+
+
+def _local_inputs(directory,*,shared):
+    manifest=_manifest(directory)
+    if shared:
+        return _public_local(directory,manifest)
+    # Explicit server override paths stay session-local.
+    key=(directory,manifest)
+    prior=st.session_state.get("document_local_snapshot_v2")
+    if prior and prior[0]==key:return prior[1]
+    inputs=_load_local(directory,manifest)
+    st.session_state["document_local_snapshot_v2"]=(key,inputs)
+    return inputs
+
+
+@st.cache_resource(max_entries=1,show_spinner=False)
+def _public_index(key,_inputs):
+    # Library is read-only after construction: transform/search and rendering
+    # open separate PDF handles; all mutable UI state stays in session_state.
+    docs=build(_inputs)
+    return docs,searchable_pages(docs)
+
+
+def _public_snapshot(local,remote,*,shared):
+    prior=st.session_state.get("document_public_snapshot_v2")
+    if prior and prior[0] is local and prior[1] is remote:
+        inputs,key=prior[2:]
+    else:
+        inputs=tuple((display_name(k),v) for k,v in remote)+local
+        key=identity(inputs)
+        st.session_state["document_public_snapshot_v2"]=(local,remote,inputs,key)
+    return _update_index(inputs,key=key,shared=shared)
 
 
 def _admin_panel(config,archive,local,remote):
@@ -89,6 +155,7 @@ def _admin_panel(config,archive,local,remote):
                     st.session_state[NOTICE]=("",["Pubblicazione non completata; verifica i PDF già salvati prima di riprovare."])
                 finally:
                     _read_remote.clear()
+                    _read_remote_pdf.clear()
                 st.rerun()
         if remote and session.is_admin(config):
             labels={k:display_name(k) for k,_ in remote}
@@ -108,24 +175,31 @@ def _admin_panel(config,archive,local,remote):
                         st.session_state[NOTICE]=("",[str(exc)])
                     finally:
                         _read_remote.clear()
+                        _read_remote_pdf.clear()
                     st.rerun()
 
 
-def _update_index(inputs,docs=None,*,state_key=STATE):
-    key=identity(inputs)
+def _update_index(inputs,docs=None,*,state_key=STATE,key=None,shared=False):
+    key=identity(inputs) if key is None else key
     cached=st.session_state.get(state_key)
     if cached and cached["identity"]==key:
+        if "coverage" not in cached:cached["coverage"]=searchable_pages(cached["docs"])
         return cached
+    coverage=None
     if docs is None:
         with st.spinner("Lettura e indicizzazione dei PDF…"):
-            docs=build(inputs)
+            if shared and state_key==STATE:
+                docs,coverage=_public_index(key,inputs)
+            else:
+                docs=build(inputs)
+    if coverage is None:coverage=searchable_pages(docs)
     # Preserve bookmarks for unchanged document editions only. Search/RAG
     # results and previews must be regenerated against the updated index.
     editions={(name,pdf.digest) for name,pdf in docs.documents.items()}
     refs=[item for item in (cached or {}).get("reference_list",[])
           if (item["document"],item["sha256"]) in editions]
     cases=valid_cases((cached or {}).get(REVIEW_KEY,[]),docs)
-    cached={"identity":key,"docs":docs,"reference_list":refs,REVIEW_KEY:cases}
+    cached={"identity":key,"docs":docs,"coverage":coverage,"reference_list":refs,REVIEW_KEY:cases}
     st.session_state[state_key]=cached
     return cached
 
@@ -178,27 +252,34 @@ def _archive(scope_slot=None):
     # Keep the explicit public repository folder separate from ignored local PDFs.
     override=os.environ.get("GASOPS_PDF_DIR")
     directory=Path(override) if override else ROOT/"data"/"public-regulatory"
-    try:
-        local=read_local_pdfs(directory)
-    except OSError:
-        local=()
-        st.warning("Archivio predisposto sul server non leggibile.")
     upload_slot=st.container()
     config=None
     try:
         config=_archive_config()
     except ValueError:
         st.warning("Configurazione archivio persistente non valida.")
-    remote=()
+    public_selected=st.session_state.get(SCOPE,"Archivio pubblico")!="I miei PDF"
+    admin_saved=st.session_state.get(ADMIN)
+    managing=bool(config and admin_saved and admin_saved[0]==config and admin_saved[1].valid(config))
+    local=remote=()
+    if public_selected or managing:
+        try:
+            local=_local_inputs(directory,shared=not bool(override))
+        except OSError:
+            st.warning("Archivio predisposto sul server non leggibile.")
     if config:
         archive=Archive(config)
-        try:
-            with st.spinner("Aggiornamento archivio…"):
+        if public_selected or managing:
+            try:
                 remote=_read_remote(config)
-        except ArchiveError as exc:
-            st.warning(str(exc)+" Sono mostrati soltanto eventuali PDF predisposti sul server.")
+            except ArchiveError as exc:
+                st.warning(str(exc)+" Sono mostrati soltanto eventuali PDF predisposti sul server.")
+            else:
+                _admin_panel(config,archive,local,remote)
         else:
-            _admin_panel(config,archive,local,remote)
+            # Login does not need any PDF. After authorization the management
+            # path fetches the current archive before allowing mutation.
+            _admin_panel(config,archive,(),())
     else:
         st.caption("Archivio remoto non configurato · caricamento personale disponibile.")
         with st.expander("Pubblicazione permanente · configurazione",expanded=False):
@@ -207,14 +288,12 @@ def _archive(scope_slot=None):
             st.caption("Solo per gestori del progetto: è ancora possibile predisporre PDF pubblici nel repository.")
             st.link_button("Apri cartella pubblica","https://github.com/Artisello/GasOps/tree/main/data/public-regulatory")
     with upload_slot:
-        _visitor_upload_panel(has_public=bool(local or remote))
+        _visitor_upload_panel(has_public=bool(local or remote or (not public_selected and (config or directory.is_dir()))))
     message,notices=st.session_state.pop(NOTICE,("",[]))
     if message:
         st.success(message)
     for notice in notices:
         st.warning(notice)
-    public_inputs=tuple((display_name(k),v) for k,v in remote)+local
-    cached_public=_update_index(public_inputs)
     personal=st.session_state.get(VISITOR_UPLOADS,())
     with scope_slot if scope_slot is not None else st.container():
         selected=st.radio("Archivio",["Archivio pubblico","I miei PDF"],horizontal=True,key=SCOPE,
@@ -223,12 +302,12 @@ def _archive(scope_slot=None):
             cached=_update_index(personal,state_key=VISITOR_STATE)
             description="Solo sessione · non pubblicati"
         else:
-            cached=cached_public
+            cached=_public_snapshot(local,remote,shared=not bool(override))
             description="Consultabili da tutti"
         docs=cached["docs"]
         count=len(docs.documents)
         pages=sum(p.pages for p in docs.documents.values())
-        searchable=sum(searchable_pages(docs).values())
+        searchable=sum(cached["coverage"].values())
         st.caption(f"{count} PDF · {searchable}/{pages} pagine con testo · {description}")
         for warning in docs.errors:
             st.warning(warning)
@@ -242,7 +321,7 @@ def _render_documents(cached, *, show_errors=True):
         for warning in docs.errors:
             st.warning(warning)
     if docs.documents:
-        coverage=searchable_pages(docs)
+        coverage=cached["coverage"]
         with st.expander(f"Documenti disponibili · {len(docs.documents)} PDF"):
             st.caption(f"{sum(coverage.values())} / {sum(p.pages for p in docs.documents.values())} pagine con testo")
             for name,pdf in docs.documents.items():
