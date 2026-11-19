@@ -196,12 +196,13 @@ def page():
     demo=selection=="Demo"
     now=DEMO_NOW if demo else utc_now().astimezone(ROME)
     st.caption(("Demo sintetica · " if demo else "Dati di sessione · ")+stamp(now)+" · calcolato alla visualizzazione")
-    deadlines,public,bal,settl=st.tabs(["Scadenze","Calendario Snam","Balancing","Settlement"])
-    with deadlines:
+    section=st.radio("Area operativa",["Scadenze","Calendario Snam","Balancing","Settlement"],
+                     horizontal=True,label_visibility="collapsed",key="bso_register_section")
+    if section=="Scadenze":
         _deadlines(demo,now)
-    with public:
+    elif section=="Calendario Snam":
         _public(utc_now().astimezone(ROME))
-    with bal:
+    elif section=="Balancing":
         _balancing(demo,now)
-    with settl:
+    else:
         _settlement(demo,now)

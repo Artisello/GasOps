@@ -71,14 +71,22 @@ def test_bso_page_demo_and_imported_empty():
     assert not app.exception
     app.radio(key="bso_view").set_value("Registro operativo").run()
     assert not app.exception
-    assert [t.label for t in app.tabs]==["Scadenze","Calendario Snam","Balancing","Settlement"]
+    assert app.radio(key="bso_register_section").options==["Scadenze","Calendario Snam","Balancing","Settlement"]
+    assert app.radio(key="bso_register_section").value=="Scadenze"
     assert app.radio(key="bso_mode").value=="Dati importati"
     app.radio(key="bso_mode").set_value("Demo").run()
     assert not app.exception
     assert any("Puntualità" in e.proto.body and "60,0" in e.proto.body for e in app.get("html"))
     assert any("Scadute aperte" in e.proto.body for e in app.get("html"))
+    app.radio(key="bso_register_section").set_value("Balancing").run()
+    assert not app.exception
     assert any("Copertura SAS" in e.proto.body and "16/17" in e.proto.body for e in app.get("html"))
+    app.radio(key="bso_register_section").set_value("Settlement").run()
+    assert not app.exception
     assert any("Definitivi utilizzabili" in e.proto.body and "30/30" in e.proto.body for e in app.get("html"))
+    app.radio(key="bso_register_section").set_value("Calendario Snam").run()
+    assert not app.exception
+    app.radio(key="bso_register_section").set_value("Scadenze").run()
     app.radio(key="bso_mode").set_value("Dati importati").run()
     assert not app.exception
     assert any("Importa il registro" in e.value for e in app.info)

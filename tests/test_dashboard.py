@@ -416,13 +416,19 @@ def test_risk_workspace_stress_and_confidence_without_recompute(monkeypatch,tmp_
     saved=app.session_state["risk_workspace_v2"]
     assert saved["result"].summary["stress"]=={"demand_pct":10.,"supply_pct":-10.,"price_delta":10.}
     assert saved["result"].summary["probability_deficit"]>=saved["base"]["probability_deficit"]
-    assert [tab.label for tab in app.tabs]==["Carenza di gas","Impatto economico","Ipotesi e metodo"]
+    assert app.radio(key="risk_result_view").options==["Carenza di gas","Impatto economico","Ipotesi e metodo"]
+    assert app.radio(key="risk_result_view").value=="Carenza di gas"
     assert any("Probabilità di carenza" in e.proto.body for e in app.get("html"))
     first=saved["result"].summary["executed_at"]
     app.radio(key="risk_confidence").set_value("99").run()
     assert not app.exception
     assert app.session_state["risk_workspace_v2"]["result"].summary["executed_at"]==first
     assert any("Carenza al percentile 99" in e.proto.body for e in app.get("html"))
+    for view in ("Impatto economico","Ipotesi e metodo","Carenza di gas"):
+        app.radio(key="risk_result_view").set_value(view).run()
+        assert not app.exception
+        assert app.session_state["risk_workspace_v2"]["result"].summary["executed_at"]==first
+    assert app.radio(key="risk_confidence").value=="99"
     app.selectbox(key="risk_preset").set_value("Base").run()
     assert not app.exception
     assert any("Fonte, previsione o scenario cambiati" in e.value for e in app.warning)
