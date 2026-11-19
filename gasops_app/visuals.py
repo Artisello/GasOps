@@ -158,7 +158,7 @@ def _line(name: str, x, y, color: str, unit: str, grain: str, dash: str = "solid
                       xhoverformat="%d/%m/%Y" if grain == "daily" else "%m/%Y")
 
 
-def demand_chart(data: pd.DataFrame, projection: Forecast, grain: str, *, height: int = 330) -> go.Figure:
+def demand_chart(data: pd.DataFrame, projection: Forecast, grain: str, *, height: int = 330, compact: bool = False) -> go.Figure:
     fig = go.Figure()
     future = projection.points
     if future:
@@ -180,7 +180,10 @@ def demand_chart(data: pd.DataFrame, projection: Forecast, grain: str, *, height
     demand = _line("Consumi osservati", data.index, data["demand_gwh"], TEAL, "GWh", grain)
     demand.legendrank = 1
     fig.add_trace(demand)
-    if data["supply_gwh"].notna().any():
+    coincident=(compact and grain=="monthly" and data["demand_gwh"].notna().any()
+                and data["supply_gwh"].equals(data["demand_gwh"]))
+    if coincident:fig.update_layout(meta="coincident_accounting")
+    if not coincident and data["supply_gwh"].notna().any():
         label = "Disponibilità contabile" if grain == "monthly" else "Offerta"
         supply = _line(label, data.index, data["supply_gwh"], "#afc3de", "GWh", grain)
         supply.update(line=dict(color="#afc3de", width=1.3, dash="dot"),
@@ -190,7 +193,11 @@ def demand_chart(data: pd.DataFrame, projection: Forecast, grain: str, *, height
         dotted = _line("Consumi previsti", dates, [p.estimate for p in future], BLUE, "GWh", grain, "dash")
         dotted.update(mode="lines+markers", marker=dict(size=4, color=BLUE), legendrank=3)
         fig.add_trace(dotted)
-    return _frame(fig, grain, "GWh", height)
+    _frame(fig, grain, "GWh", height)
+    if compact:
+        fig.update_xaxes(nticks=6)
+        fig.update_yaxes(nticks=5)
+    return fig
 
 
 def mini_chart(values: pd.Series, label: str, grain: str, unit: str, color: str, *, zero: bool = False) -> go.Figure:
@@ -227,23 +234,24 @@ def plot(figure: go.Figure, key: str) -> None:
                             "modeBarButtonsToRemove": ["lasso2d", "select2d"]})
 
 
-def ai_readout(run: Run):
+def ai_readout(run: Run, *, section_ids=None, usage=True):
     """Fixed headings and plain-text output; provider markup is not executed."""
     from .ai_response import SECTION_TITLES, reference_labels
     sections=getattr(run,"ai_sections",[])
     if sections:
         for section in sections:
+            if section_ids is not None and section["id"] not in section_ids:continue
             st.markdown("**"+SECTION_TITLES.get(section["id"],"Analisi")+"**")
             st.text(section["text"])
             labels=reference_labels(run,section["references"])
             if labels:st.caption("Fonti · "+"; ".join(labels))
-    elif run.interpretation:
+    elif run.interpretation and section_ids is None:
         for paragraph in run.interpretation.splitlines():
             if paragraph.strip():st.text(paragraph.strip())
         if run.interpretation_sources:
             labels=reference_labels(run,[a.value for a in run.interpretation_sources])
             st.caption("Fonti · "+"; ".join(labels))
-    usage=getattr(run,"ai_usage",{})
+    usage=getattr(run,"ai_usage",{}) if usage else {}
     if usage:
         calls=usage.get("calls",0)
         note=f"Chiamate: {calls}"

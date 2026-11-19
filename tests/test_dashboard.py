@@ -754,3 +754,34 @@ _briefing_operational_context({"AGSI+":{"status":"stale","gas_day":"2026-11-16",
     assert any("Prelievi dei tre aggregati SRG" in c.value and "medie delle due finestre" in c.value for c in app.caption)
     assert any("Prezzo GNL UE" in c.value and "Differenziale" in c.value for c in app.caption)
     assert any("ultimo dato non recente" in h.proto.body and "86,8" in h.proto.body for h in app.get("html"))
+
+
+def test_overview_compact_chart_hides_only_exact_duplicate_accounting_series():
+    import pandas as pd
+    from types import SimpleNamespace
+    from gasops_app.visuals import demand_chart
+    frame=pd.DataFrame({"demand_gwh":[10.,20.],"supply_gwh":[10.,20.]},
+                       index=pd.to_datetime(["2026-09-01","2026-10-01"]))
+    projection=SimpleNamespace(points=[])
+    compact=demand_chart(frame,projection,"monthly",compact=True)
+    assert compact.layout.meta=="coincident_accounting"
+    assert [trace.name for trace in compact.data]==["Consumi osservati"]
+    assert len(demand_chart(frame,projection,"monthly").data)==2
+    frame.loc[frame.index[-1],"supply_gwh"]=None
+    assert len(demand_chart(frame,projection,"monthly",compact=True).data)==2
+
+
+def test_ai_readout_can_show_sections_without_repeating_usage():
+    from gasops_app.data import synthetic
+    from gasops_app.models import Run
+    data=synthetic()
+    run=Run(question="briefing",source=data.origin,input_sha256=data.fingerprint,assumptions={},
+            ai_sections=[{"id":"summary","text":"Executive fixture","references":[]},
+                         {"id":"market","text":"Market fixture","references":[]}],
+            ai_usage={"calls":1})
+    app=AppTest.from_string("from gasops_app.visuals import ai_readout\nimport streamlit as st\nai_readout(st.session_state['fixture'],section_ids={'summary'},usage=False)")
+    app.session_state["fixture"]=run
+    app.run()
+    assert not app.exception
+    assert any(t.value=="Executive fixture" for t in app.text)
+    assert not any(t.value=="Market fixture" for t in app.text)

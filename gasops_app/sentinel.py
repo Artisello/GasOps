@@ -42,17 +42,20 @@ def snapshot(context):
             "demo":origin.archive or origin.kind==Kind.SYNTHETIC}
 
 
-def panel(context):
+def panel(context, *, compact=False):
     report=snapshot(context)
     origin=context.bundle.origin
-    st.subheader("Sentinella")
-    info("Controlli","Controlli sui dati selezionati all’apertura e all’aggiornamento; nessun monitoraggio in continuo.")
+    st.subheader("Qualità dei dati" if compact else "Sentinella")
+    if not compact:info("Controlli","Controlli sui dati selezionati all’apertura e all’aggiornamento; nessun monitoraggio in continuo.")
     if report["demo"]:
         st.caption("Storico o demo · non mercato corrente")
     coverage=f'{report["observed"]}/{report["expected"]}' if report["expected"] else "—"
-    rows([("Periodi utilizzabili · finestra recente",coverage),
-          ("Rilievi da verificare",str(len(report["findings"]))),
-          ("Ultima osservazione",context.facts.get("label","Non disponibile"))])
+    if compact:
+        st.caption(f"Periodi utilizzabili: {coverage} · Rilievi sui dati: {len(report['findings'])}")
+    else:
+        rows([("Periodi utilizzabili · finestra recente",coverage),
+              ("Rilievi da verificare",str(len(report["findings"]))),
+              ("Ultima osservazione",context.facts.get("label","Non disponibile"))])
     if report["trend"]:
         st.caption("Variazione: "+numero(report["delta"],1,signed=True)+"% · soglia esplorativa ±15%, non limite Snam.")
     for f in report["findings"]:
@@ -65,6 +68,7 @@ def panel(context):
     else:
         st.caption("Nessun segnale dai controlli eseguiti.")
     with st.expander("Dettaglio controlli"):
+        if compact:st.caption("Controlli locali, non monitoraggio continuo. Ultima osservazione: "+context.facts.get("label","Non disponibile"))
         st.caption(f"Finestra: fino a {report['window']} periodi ({'giorni gas' if origin.grain=='daily' else 'mesi'}); include eventuali lacune finali.")
         for f in context.inspection.findings:
             st.markdown("**"+f.title+"** · "+GRAVITA[f.severity])
