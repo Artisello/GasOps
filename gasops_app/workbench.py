@@ -223,12 +223,18 @@ def balancing() -> None:
         from .operational_sources_page import _jarvis_panel
         _jarvis_panel(prefix="balancing")
     with daily:
-        from .settlement_desk_page import panel
-        panel()
-        from .adjustments_page import panel as adjustments_panel
-        adjustments_panel()
-        from .operating_rules_page import network_panel
-        network_panel()
+        mode=st.radio("Controlli",["Settlement e rettifiche","Riconciliazione infrastrutture"],
+                      horizontal=True,key="balancing_daily_mode",label_visibility="collapsed")
+        if mode=="Riconciliazione infrastrutture":
+            from .interface_reconciliation_page import panel
+            panel()
+        else:
+            from .settlement_desk_page import panel
+            panel()
+            from .adjustments_page import panel as adjustments_panel
+            adjustments_panel()
+            from .operating_rules_page import network_panel
+            network_panel()
 
 
 def regulatory() -> None:
