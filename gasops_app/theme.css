@@ -3,7 +3,7 @@
 :root {
   --gas-bg:#0d131d; --gas-panel:#141e2b; --gas-panel-hover:#1e2b3c;
   --gas-border:#2e4054; --gas-control:#63768b; --gas-muted:#b0bed0; --gas-text:#f1f5f9;
-  --gas-selected:#173b38; --gas-on-primary:#10231f; --gas-primary-hover:#8be9d0;
+  --gas-selected:#173b38; --gas-on-primary:#10231f; --gas-primary-hover:#8be9d0; --gas-primary-active:#50c6a7;
   --gas-teal:#65dfbf; --gas-blue:#83b4ff; --gas-amber:#f2be72; --gas-rose:#f6929d;
   --gas-font:Inter,"Avenir Next",system-ui,sans-serif;
   --gas-mono:ui-monospace,SFMono-Regular,Consolas,monospace;
@@ -56,8 +56,7 @@
 .gas-chip.high,.gas-chip.failed {color:var(--gas-rose);background:#38232e;border-color:#593141;}
 .stApp button:not(:disabled),.stApp a[href],.stApp [role="tab"]:not([aria-disabled="true"]) {cursor:pointer;}
 .stApp button:focus-visible,.stApp a:focus-visible,.stApp input:focus-visible,.stApp textarea:focus-visible,.stApp select:focus-visible,.stApp [role="tab"]:focus-visible,.stApp [role="combobox"]:focus-visible {outline:2px solid var(--gas-blue);outline-offset:2px;}
-.stApp [data-testid="stButton"] button[kind="primary"]:not(:disabled),.stApp [data-testid="stFormSubmitButton"] button[kind="primary"]:not(:disabled) {background:var(--gas-teal);border-color:var(--gas-teal);color:var(--gas-on-primary);min-height:var(--gas-target);border-radius:var(--gas-radius);font-weight:650;}
-.stApp [data-testid="stButton"] button[kind="primary"]:not(:disabled):hover,.stApp [data-testid="stFormSubmitButton"] button[kind="primary"]:not(:disabled):hover {background:var(--gas-primary-hover);border-color:var(--gas-primary-hover);color:var(--gas-on-primary);}
+
 .stApp [data-testid="stPopoverButton"] {background:transparent;border-color:var(--gas-border);border-radius:var(--gas-radius);min-height:var(--gas-target);padding:.4rem .65rem;}
 .stApp [data-testid="stPopoverButton"] p {font-size:.8rem;}
 .stApp [data-testid="stPopoverButton"]:hover {border-color:var(--gas-teal);}
@@ -159,8 +158,29 @@ div[data-testid="stVerticalBlockBorderWrapper"] {border-color:var(--gas-border);
 }
 
 /* Consistent contrast and adaptive controls across every desk. */
-.stApp :is([data-testid="stButton"],[data-testid="stFormSubmitButton"]) button[kind="primary"]:not(:disabled) :is(p,span) {
-  color:inherit;
+/* Streamlit's form submit variant uses a distinct kind. Cover native primary
+   actions and their Markdown/icon descendants, including links and popovers.
+   Do not override disabled controls or secondary/tertiary actions. */
+.stApp :is(button,a):is([kind="primary"],[kind="primaryFormSubmit"],[kind="primary-form-submit"],[data-testid="stBaseButton-primary"],[data-testid="stBaseButton-primaryFormSubmit"],[data-testid="stBaseButton-primary-form-submit"],[data-testid="baseButton-primary"],[data-testid="baseButton-primaryFormSubmit"],[data-testid="baseButton-primary-form-submit"]):not(:disabled):not([aria-disabled="true"]) {
+  background-color:var(--gas-teal)!important;
+  border-color:var(--gas-teal)!important;
+  color:var(--gas-on-primary)!important;
+  min-height:var(--gas-target);border-radius:var(--gas-radius);font-weight:650;
+}
+.stApp :is(button,a):is([kind="primary"],[kind="primaryFormSubmit"],[kind="primary-form-submit"],[data-testid="stBaseButton-primary"],[data-testid="stBaseButton-primaryFormSubmit"],[data-testid="stBaseButton-primary-form-submit"],[data-testid="baseButton-primary"],[data-testid="baseButton-primaryFormSubmit"],[data-testid="baseButton-primary-form-submit"]):not(:disabled):not([aria-disabled="true"]) :is(div,p,span,strong,em,svg) {
+  color:var(--gas-on-primary)!important;
+}
+.stApp :is(button,a):is([kind="primary"],[kind="primaryFormSubmit"],[kind="primary-form-submit"],[data-testid="stBaseButton-primary"],[data-testid="stBaseButton-primaryFormSubmit"],[data-testid="stBaseButton-primary-form-submit"],[data-testid="baseButton-primary"],[data-testid="baseButton-primaryFormSubmit"],[data-testid="baseButton-primary-form-submit"]):not(:disabled):not([aria-disabled="true"]):is(:hover,:focus-visible) {
+  background-color:var(--gas-primary-hover)!important;
+  border-color:var(--gas-primary-hover)!important;
+}
+.stApp :is(button,a):is([kind="primary"],[kind="primaryFormSubmit"],[kind="primary-form-submit"],[data-testid="stBaseButton-primary"],[data-testid="stBaseButton-primaryFormSubmit"],[data-testid="stBaseButton-primary-form-submit"],[data-testid="baseButton-primary"],[data-testid="baseButton-primaryFormSubmit"],[data-testid="baseButton-primary-form-submit"]):not(:disabled):not([aria-disabled="true"]):is(:active,[aria-expanded="true"]) {
+  background-color:var(--gas-primary-active)!important;
+  border-color:var(--gas-primary-active)!important;
+  filter:none;
+}
+.stApp :is(button,a):is([kind="primary"],[kind="primaryFormSubmit"],[kind="primary-form-submit"],[data-testid="stBaseButton-primary"],[data-testid="stBaseButton-primaryFormSubmit"],[data-testid="stBaseButton-primary-form-submit"],[data-testid="baseButton-primary"],[data-testid="baseButton-primaryFormSubmit"],[data-testid="baseButton-primary-form-submit"]):not(:disabled):not([aria-disabled="true"]):focus-visible {
+  outline:2px solid var(--gas-blue);outline-offset:3px;
 }
 .stApp [data-testid="stRadio"] [role="radiogroup"] {
   flex-wrap:wrap;column-gap:.85rem;row-gap:.2rem;
