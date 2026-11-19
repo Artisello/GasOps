@@ -785,3 +785,38 @@ def test_ai_readout_can_show_sections_without_repeating_usage():
     assert not app.exception
     assert any(t.value=="Executive fixture" for t in app.text)
     assert not any(t.value=="Market fixture" for t in app.text)
+
+
+def test_document_workspace_precedes_management_and_keeps_tools(monkeypatch,tmp_path):
+    import pymupdf
+    from gasops_app import document_page as desk
+    monkeypatch.setenv("GASOPS_PDF_DIR",str(tmp_path))
+    monkeypatch.setattr(desk,"_archive_config",lambda:None)
+    monkeypatch.setattr(desk,"reasoner",lambda:None)
+    with pymupdf.open() as pdf:
+        for phrase in ("Garanzia economica deposito cauzionale.", "Garanzia economica pagamento."):
+            pdf.new_page().insert_text((70,80),phrase)
+        pdf.save(tmp_path/"regole.pdf")
+    app=AppTest.from_string("from gasops_app.document_page import document_page\ndocument_page()").run()
+    assert not app.exception
+    assert app.radio(key="desk_mode").value=="Cerca"
+    assert len(app.radio(key="desk_mode").options)==8
+    assert any("1 PDF · 2/2 pagine con testo" in c.value for c in app.caption)
+    search=next(e for e in app.text_input if e.label=="Cosa vuoi cercare?")
+    upload=next(e for e in app.expander if e.label=="Carica PDF")
+    assert search and upload
+    search.set_value("Garanzia economica")
+    next(b for b in app.button if b.label=="Cerca nei PDF").click().run()
+    assert not app.exception
+    assert len(app.selectbox(key="desk_search_hit").options)==2
+    assert any(e.label=="Altri passaggi · 1" for e in app.expander)
+    app.button(key="desk_search_save").click().run()
+    assert not app.exception
+    assert len(app.session_state[desk.STATE]["reference_list"])==1
+    app.radio(key="desk_mode").set_value("Riferimenti salvati").run()
+    assert not app.exception
+    assert any("1 riferimenti" in c.value for c in app.caption)
+    app.radio(key=desk.SCOPE).set_value("I miei PDF").run()
+    assert not app.exception
+    assert any("Aggiungi almeno un PDF" in e.value for e in app.info)
+    assert len(app.session_state[desk.STATE]["reference_list"])==1

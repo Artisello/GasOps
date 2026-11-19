@@ -296,6 +296,9 @@ def _results(cached,hits,prefix,*,allow_preview=True):
                 st.text(hit.document+f" · PDF p. {hit.page}")
                 st.text(hit.evidence)
         return
+    previous=st.session_state.get(prefix+"_hit")
+    if previous is not None and previous not in range(len(hits)):
+        st.session_state.pop(prefix+"_hit",None)
     index=st.selectbox("Passaggio da consultare",range(len(hits)),
                        format_func=lambda i:f"{hits[i].document} · p. {hits[i].page}",key=prefix+"_hit")
     hit=hits[index]
