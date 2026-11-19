@@ -312,7 +312,8 @@ def _iip_panel(key):
         if result["cached"]:
             st.caption("Da cache")
     if result["failed"] or utc_now()-result["acquired"]>timedelta(hours=2) or st.session_state.get("gie_iip",{}).get("error"):
-        st.warning("Aggiornamento non riuscito o dati non recenti. Consulta il portale IIP.")
+        reason=result.get("refresh_error") or st.session_state.get("gie_iip",{}).get("error")
+        st.warning("Ultima acquisizione non recente o aggiornamento non riuscito."+((" "+str(reason)) if reason else "")+" Consulta il portale IIP.")
     if state=="Parziale":
         st.warning(f"Prima pagina di {result['pages']}. Non tutti i risultati sono stati acquisiti.")
     elif state=="Non verificata":
@@ -326,6 +327,7 @@ def _iip_panel(key):
         with col,st.container(border=True):
             st.caption(label)
             st.markdown("**"+value+"**")
+    st.caption("Copertura della richiesta API, non completezza di tutti gli avvisi sul mercato.")
     rows=project_messages(result["messages"])
     if not rows:
         st.info("Nessun messaggio restituito per questa richiesta. Non dimostra assenza di indisponibilità.")
@@ -373,7 +375,7 @@ def _iip_panel(key):
                         if value and value not in (MISSING,"Consulta dettaglio"):
                             st.caption(label)
                             st.text(value)
-                missing=[label for label,field in (("paese","country"),("inizio","start"),("fine","stop"),("tipo evento","event_type"),("capacità","unavailable")) if not row.get(field)]
+                missing=[label for label,field in (("paese","country"),("inizio","start"),("fine","stop"),("tipo evento","event_type"),("capacità","unavailable")) if not row.get(field) or (field=="unavailable" and row["impact"]=="Consulta dettaglio")]
                 if missing:st.caption("Campi non disponibili o non riconosciuti: "+", ".join(missing)+".")
                 with st.expander("Messaggio originale e intervalli di capacità"):
                     st.json(result["messages"][chosen],expanded=False)

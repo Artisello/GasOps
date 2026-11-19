@@ -101,7 +101,7 @@ def parse_network(payload, point, first, last, acquired, *, cached=False, failed
         raise SourceSchemaError("Metadati ENTSOG non validi.")
     count,total,offset,limit=(_meta_int(meta,k,d) for k,d in
                              (("count",None),("total",None),("offset",0),("limit",LIMIT)))
-    if offset!=0 or (count is not None and count!=len(items)) or (limit is not None and limit<=len(items)):
+    if offset!=0 or (count is not None and count!=len(items)) or (total is not None and total<len(items)) or (limit is not None and limit<=len(items)):
         raise SourceSchemaError("Conteggi o pagina ENTSOG incoerenti.")
     warning=count is None or total is None or total!=len(items)
     groups={}

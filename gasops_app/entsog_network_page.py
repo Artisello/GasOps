@@ -8,7 +8,6 @@ from .entsog_network import (PRESETS,PRESET_REFERENCE,MANUAL,TERMS,CATALOG,INDIC
                              check_point,load_network,daily_metrics,export_csv)
 from .models import utc_now
 from .public_data import SourceUnavailable, SourceSchemaError
-from .italiano import numero
 from .terna_charts import timeseries, day_label, acquisition_label
 from .visuals import kpi_grid, plot, info
 from .session import database
@@ -20,10 +19,11 @@ ATTEMPT="entsog_network_attempt_v1"
 def panel():
     st.subheader("Interconnessioni gas")
     st.caption("ENTSOG · singolo operatore, punto e direzione · GWh/giorno gas")
-    with st.expander("Fonti e condizioni"):
-        st.markdown(f"[Portale ENTSOG]({SOURCE}) · [Manuale API]({MANUAL}) · [Condizioni d'uso]({TERMS})")
-        st.markdown(f"[Catalogo ufficiale operatori/punti/direzioni (CSV)]({CATALOG}) · [Riferimento mapping candidati]({PRESET_REFERENCE})")
-        st.caption("Le due preimpostazioni sono candidate da verificare con le etichette ENTSOG restituite. Per altri punti italiani/europei copia il codice ITP dal catalogo. Non sommare i lati opposti di una stessa interconnessione.")
+    def sources():
+        with st.expander("Fonti e condizioni"):
+            st.markdown(f"[Portale ENTSOG]({SOURCE}) · [Manuale API]({MANUAL}) · [Condizioni d'uso]({TERMS})")
+            st.markdown(f"[Catalogo ufficiale operatori/punti/direzioni (CSV)]({CATALOG}) · [Riferimento mapping candidati]({PRESET_REFERENCE})")
+            st.caption("Le due preimpostazioni sono candidate da verificare con le etichette ENTSOG restituite. Per altri punti italiani/europei copia il codice ITP dal catalogo. Non sommare i lati opposti di una stessa interconnessione.")
     last=_last_completed(utc_now())
     selected=st.selectbox("Interconnessione",[*PRESETS,"Altro punto ENTSOG"],key="network_point")
     with st.form("network_query",border=False):
@@ -59,6 +59,7 @@ def panel():
     if result is None:
         st.info("Seleziona un’interconnessione e carica i dati.")
         archive_panel()
+        sources()
         return
     if len(result.labels)==1:
         operator,point_label=result.labels[0]
@@ -115,3 +116,4 @@ def panel():
         st.caption(result.credit+" · elaborazioni I.G.O.R.; nessuna somma tra direzioni, nessuna imputazione.")
 
     archive_panel()
+    sources()
