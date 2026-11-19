@@ -659,7 +659,11 @@ def _market_data(context, visible):
 
 def market() -> None:
     header("Mercato e previsioni", "")
-    view=st.radio("Vista mercato",["Domanda e previsioni","Mercato europeo ACER","Sistema elettrico Terna","Laboratorio previsionale","Forecasting Snam"],horizontal=True,label_visibility="collapsed",key="market_view")
+    view=st.radio("Vista mercato",["Domanda e previsioni","Mercato europeo ACER","Sistema elettrico Terna","Mercato gas GME","Laboratorio previsionale","Forecasting Snam"],horizontal=True,label_visibility="collapsed",key="market_view")
+    if view=="Mercato gas GME":
+        from .gme_market_page import panel
+        panel()
+        return
     if view=="Forecasting Snam":
         from .snam_forecast_page import panel
         panel()
