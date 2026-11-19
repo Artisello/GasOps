@@ -22,6 +22,7 @@ VISITOR_STATE="document_visitor_index_v1"
 VISITOR_UPLOADS="document_visitor_uploads_v1"
 VISITOR_NOTICE="document_visitor_notice_v1"
 SCOPE="document_archive_scope"
+NEXT_SCOPE="document_archive_next_scope"
 ADMIN="gasops_document_admin"
 NOTICE="gasops_document_notice"
 WRITE_LOCK=Lock()
@@ -231,7 +232,7 @@ def _visitor_upload_panel(*, has_public=False):
                     st.session_state[VISITOR_UPLOADS]=retained
                     _update_index(retained,docs,state_key=VISITOR_STATE)
                     if retained:
-                        st.session_state[SCOPE]="I miei PDF"
+                        st.session_state[NEXT_SCOPE]="I miei PDF"
                     st.session_state[VISITOR_NOTICE]=(f"{added} PDF aggiunti." if added else "",notes+docs.errors)
                     st.rerun()
                 except (ValueError,RuntimeError):
@@ -248,7 +249,7 @@ def _visitor_upload_panel(*, has_public=False):
                 st.rerun()
 
 
-def _archive(scope_slot=None):
+def _archive(selected,scope_slot):
     # Keep the explicit public repository folder separate from ignored local PDFs.
     override=os.environ.get("GASOPS_PDF_DIR")
     directory=Path(override) if override else ROOT/"data"/"public-regulatory"
@@ -258,7 +259,7 @@ def _archive(scope_slot=None):
         config=_archive_config()
     except ValueError:
         st.warning("Configurazione archivio persistente non valida.")
-    public_selected=st.session_state.get(SCOPE,"Archivio pubblico")!="I miei PDF"
+    public_selected=selected=="Archivio pubblico"
     admin_saved=st.session_state.get(ADMIN)
     managing=bool(config and admin_saved and admin_saved[0]==config and admin_saved[1].valid(config))
     local=remote=()
@@ -295,9 +296,7 @@ def _archive(scope_slot=None):
     for notice in notices:
         st.warning(notice)
     personal=st.session_state.get(VISITOR_UPLOADS,())
-    with scope_slot if scope_slot is not None else st.container():
-        selected=st.radio("Archivio",["Archivio pubblico","I miei PDF"],horizontal=True,key=SCOPE,
-                          label_visibility="collapsed")
+    with scope_slot:
         if selected=="I miei PDF":
             cached=_update_index(personal,state_key=VISITOR_STATE)
             description="Solo sessione · non pubblicati"
@@ -741,29 +740,34 @@ def _references(cached):
 
 def document_page():
     header("Norme e documenti","")
+    pending=st.session_state.pop(NEXT_SCOPE,None)
+    if pending in ("Archivio pubblico","I miei PDF"):
+        st.session_state[SCOPE]=pending
     target=st.session_state.pop("desk_finding_target",None)
     if isinstance(target,str) and registered_case(target):
         st.session_state[SCOPE]="Archivio pubblico"
         st.session_state["desk_mode"]="Registro rilievi"
         st.session_state["desk_register_origin"]="Edizioni esaminate"
         st.session_state["desk_historical_case"]=target
-    # Reserve readable positions before acquiring the archive. Upload happens
-    # before the scope widget is instantiated so successful uploads can switch
-    # to the personal workspace without mutating an instantiated widget.
+    # Emit navigation before disk/network/index work. Upload requests switch
+    # scope on the next rerun via NEXT_SCOPE, not an instantiated widget.
     scope_slot=st.container(key="document_scope")
+    with scope_slot:
+        selected=st.radio("Archivio",["Archivio pubblico","I miei PDF"],horizontal=True,key=SCOPE,
+                          label_visibility="collapsed")
     tool_slot=st.container(key="document_tools")
-    body=st.container(key="document_workspace")
-    with st.container(key="document_management"):
-        st.subheader("Archivio PDF")
-        cached=_archive(scope_slot)
-        info("Archivio e privacy","Ricerca sul testo estratto, senza OCR; la vigenza non è certificata. Non caricare documenti riservati sul deployment pubblico.",
-             "I PDF personali sono disponibili solo in sessione; i PDF pubblicati da account autorizzati sono condivisi. Solo l’amministratore può rimuovere documenti condivisi.",
-             "Il bollettino non riceve i PDF. Chiedi AI invia solo domanda ed estratti al modello; per provider remoti occorre consenso.")
     with tool_slot:
         action=st.radio("Strumento",["Cerca","Chiedi all’AI","Leggi PDF","Confronta","Revisore","Registro rilievi","Riferimenti salvati","Compliance"],
                         horizontal=True,label_visibility="collapsed",key="desk_mode",
                         format_func={"Cerca":"Cerca","Chiedi all’AI":"Chiedi AI","Leggi PDF":"Leggi","Confronta":"Confronta",
                                      "Revisore":"Verifica","Registro rilievi":"Rilievi","Riferimenti salvati":"Salvati","Compliance":"Compliance"}.__getitem__)
+    body=st.container(key="document_workspace")
+    with st.container(key="document_management"):
+        st.subheader("Archivio PDF")
+        cached=_archive(selected,scope_slot)
+        info("Archivio e privacy","Ricerca sul testo estratto, senza OCR; la vigenza non è certificata. Non caricare documenti riservati sul deployment pubblico.",
+             "I PDF personali sono disponibili solo in sessione; i PDF pubblicati da account autorizzati sono condivisi. Solo l’amministratore può rimuovere documenti condivisi.",
+             "Il bollettino non riceve i PDF. Chiedi AI invia solo domanda ed estratti al modello; per provider remoti occorre consenso.")
     with body:
         if not cached["docs"].documents and action!="Registro rilievi":
             st.info("Aggiungi almeno un PDF per iniziare a cercare. Usa Carica PDF nell’archivio qui sotto.")
