@@ -19,6 +19,7 @@ def test_overview_button_completes_offline_run(monkeypatch, tmp_path):
     assert not app.exception
     assert app.title[0].value == "Panoramica del mercato"
     assert app.button(key="analysis_launch").label == "Genera bollettino di mercato"
+    assert sum(b.key=="analysis_launch" for b in app.button)==1
     assert app.checkbox(key="briefing_gie").value is True
     assert any("Nessun bollettino generato" in e.value for e in app.caption)
     assert app.selectbox(key="overview_model").value == AUTOMATIC
