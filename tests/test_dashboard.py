@@ -288,8 +288,16 @@ def test_market_layout_and_no_weather_request_for_demo(monkeypatch,tmp_path):
     app.run()
     assert not app.exception
     assert any("**Simulazione**" in e.value for e in app.markdown)
-    assert [tab.label for tab in app.tabs]==["Consumi e previsioni","Composizione e prezzi","Meteo","Modelli e dati"]
+    assert app.radio(key="market_section").options==["Consumi e previsioni","Composizione e prezzi","Meteo","Modelli e dati"]
+    assert app.radio(key="market_section").value=="Consumi e previsioni"
     assert any("Variazione dei consumi" in e.proto.body for e in app.get("html"))
+    assert not any("Dati osservati e previsioni"==e.label for e in app.expander)
+    app.radio(key="market_section").set_value("Composizione e prezzi").run()
+    assert not app.exception
+    app.radio(key="market_section").set_value("Meteo").run()
+    assert not app.exception
+    app.radio(key="market_section").set_value("Modelli e dati").run()
+    assert not app.exception
     assert any("Dati osservati e previsioni"==e.label for e in app.expander)
     assert any("Provenienza e metodologia"==e.label for e in app.expander)
 
@@ -328,7 +336,11 @@ def test_balancing_page_simple_and_complete(monkeypatch,tmp_path):
     monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
     app=AppTest.from_string("from gasops_app.workbench import balancing\nbalancing()",default_timeout=30).run()
     assert not app.exception
-    assert [tab.label for tab in app.tabs]==["Scenario di mercato","Sbilanciamento del partecipante","Stato sistema","Controllo giornaliero"]
+    assert app.radio(key="balancing_view").options==["Scenario di mercato","Sbilanciamento del partecipante","Stato sistema","Controllo giornaliero"]
+    assert app.radio(key="balancing_view").value=="Scenario di mercato"
+    assert not any("Saldo energetico" in e.proto.body for e in app.get("html"))
+    app.radio(key="balancing_view").set_value("Sbilanciamento del partecipante").run()
+    assert not app.exception
     assert any("Saldo energetico" in e.proto.body for e in app.get("html"))
     app.radio(key="balancing_mode").set_value("Completo").run()
     assert not app.exception
@@ -404,13 +416,19 @@ def test_risk_workspace_stress_and_confidence_without_recompute(monkeypatch,tmp_
     saved=app.session_state["risk_workspace_v2"]
     assert saved["result"].summary["stress"]=={"demand_pct":10.,"supply_pct":-10.,"price_delta":10.}
     assert saved["result"].summary["probability_deficit"]>=saved["base"]["probability_deficit"]
-    assert [tab.label for tab in app.tabs]==["Carenza di gas","Impatto economico","Ipotesi e metodo"]
+    assert app.radio(key="risk_result_view").options==["Carenza di gas","Impatto economico","Ipotesi e metodo"]
+    assert app.radio(key="risk_result_view").value=="Carenza di gas"
     assert any("Probabilità di carenza" in e.proto.body for e in app.get("html"))
     first=saved["result"].summary["executed_at"]
     app.radio(key="risk_confidence").set_value("99").run()
     assert not app.exception
     assert app.session_state["risk_workspace_v2"]["result"].summary["executed_at"]==first
     assert any("Carenza al percentile 99" in e.proto.body for e in app.get("html"))
+    for view in ("Impatto economico","Ipotesi e metodo","Carenza di gas"):
+        app.radio(key="risk_result_view").set_value(view).run()
+        assert not app.exception
+        assert app.session_state["risk_workspace_v2"]["result"].summary["executed_at"]==first
+    assert app.radio(key="risk_confidence").value=="99"
     app.selectbox(key="risk_preset").set_value("Base").run()
     assert not app.exception
     assert any("Fonte, previsione o scenario cambiati" in e.value for e in app.warning)

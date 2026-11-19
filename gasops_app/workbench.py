@@ -25,7 +25,9 @@ LOG = logging.getLogger(__name__)
 def _settlement_panel() -> None:
     state=assumptions()
     mode=st.radio("Tipo di calcolo",["Semplice","Completo"],horizontal=True,
+                  index=1 if st.session_state.get("balancing_saved_mode")=="Completo" else 0,
                   key="balancing_mode",help="Completo: aggiunge stoccaggio e transazioni nette al PSV.")
+    st.session_state["balancing_saved_mode"]=mode
     advanced=mode=="Completo"
     saved=st.session_state.get("commercial_settlement") if advanced else None
     inputs=(CommercialInput.model_validate(saved) if saved else CommercialInput(**state.settlement.model_dump())) if advanced else state.settlement
@@ -214,15 +216,16 @@ def _scenario_panel() -> None:
 
 def balancing() -> None:
     header("Bilanciamento", "Stime pubblicate · controlli · simulazioni separate")
-    aggregate, participant, system, daily = st.tabs(["Scenario di mercato", "Sbilanciamento del partecipante", "Stato sistema", "Controllo giornaliero"])
-    with aggregate:
+    view=st.radio("Vista bilanciamento",["Scenario di mercato","Sbilanciamento del partecipante","Stato sistema","Controllo giornaliero"],
+                  horizontal=True,label_visibility="collapsed",key="balancing_view")
+    if view=="Scenario di mercato":
         _scenario_panel()
-    with participant:
+    elif view=="Sbilanciamento del partecipante":
         _settlement_panel()
-    with system:
+    elif view=="Stato sistema":
         from .operational_sources_page import _jarvis_panel
         _jarvis_panel(prefix="balancing")
-    with daily:
+    else:
         mode=st.radio("Controlli",["Settlement e rettifiche","Riconciliazione infrastrutture"],
                       horizontal=True,key="balancing_daily_mode",label_visibility="collapsed")
         if mode=="Riconciliazione infrastrutture":

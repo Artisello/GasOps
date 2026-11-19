@@ -37,3 +37,6 @@ Before merging, exercise all nine routes, keyboard focus, tabs with long labels,
 
 ## Primary CTA contrast
 Keep the teal accent; enabled primary controls (including native form submit variants and Markdown/Material icon descendants) use dark #10231f foreground in default, hover, focus and pressed states. The pressed background is #50c6a7; disabled and secondary controls retain their own styling. Static contrast regression requires at least 7:1 for these three backgrounds. Browser computed-style verification remains required after deployment.
+
+## Responsive rendering
+Use horizontal, wrapping native radio navigation for expensive mutually exclusive workspaces; run only the selected branch instead of eager tabs. Preserve committed domain inputs and computed reports separately from transient widgets; unsubmitted edits can be lost on switching views. Public market selections may reuse a successful snapshot in the same session for under 60 seconds without altering its acquisition date, warnings or refresh semantics; explicit refresh always bypasses that reuse. Do not cache authorization decisions or AI reservations. Measure browser timings after deployment; fewer rendered branches are a structural improvement, not a measured latency claim.

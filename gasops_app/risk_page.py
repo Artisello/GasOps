@@ -51,10 +51,13 @@ def _results(result,base,r,unit):
                           for label,key in (("Carenza media (GWh)","expected_deficit_gwh"),
                                             ("Costo lordo medio (€)","expected_gross_cost_eur"))],
                          hide_index=True,width="stretch")
-    energy,cost,method=st.tabs(["Carenza di gas","Impatto economico","Ipotesi e metodo"])
-    with energy:
+    view=st.radio("Risultati",["Carenza di gas","Impatto economico","Ipotesi e metodo"],
+                  horizontal=True,label_visibility="collapsed",key="risk_result_view")
+    if view!="Ipotesi e metodo":
         level=st.radio("Livello di analisi",["95","99"],format_func=lambda v:v+"%",horizontal=True,
-                       key="risk_confidence")
+                       index=1 if st.session_state.get("risk_saved_confidence")=="99" else 0,key="risk_confidence")
+        st.session_state["risk_saved_confidence"]=level
+    if view=="Carenza di gas":
         tail=r["deficit_tail_gwh"][level]
         kpi_grid([("Carenza al percentile "+level,tail["var"],unit,"Soglia empirica (VaR)",1,""),
                   ("Media dei casi peggiori",tail["cvar"],unit,"CVaR · coda "+str(100-int(level))+"%",1,"")])
@@ -71,7 +74,7 @@ def _results(result,base,r,unit):
         lo,hi=r["probability_deficit_mc_interval95"]
         st.caption("Intervallo Monte Carlo 95%: "+numero(100*lo,2)+"–"+numero(100*hi,2)+"% · solo errore di campionamento.")
         info("Info percentili","Il VaR è il percentile empirico della carenza; il CVaR è la media della coda peggiore, anche con valori uguali. Non è una riserva fisicamente disponibile né un requisito normativo.")
-    with cost:
+    elif view=="Impatto economico":
         if result.loss is None:
             st.info("Rischio economico non calcolato. Attiva il prezzo nelle ipotesi e ripeti la simulazione.")
         else:
@@ -90,7 +93,7 @@ def _results(result,base,r,unit):
                 plot(fig,"risk_cost_distribution")
                 st.caption("Tratteggio: VaR. Puntini: CVaR. Frequenze sul totale, zeri esclusi dal grafico.")
             info("Info costo","Costo lordo ipotetico = carenza × 1.000 × max(prezzo, 0). Non è una perdita contabile o un corrispettivo di sbilanciamento.")
-    with method:
+    else:
         st.caption("Fonte: "+r["source"]+" · "+r["source_kind"]+" · "+r["analysis_period"])
         st.dataframe([{"Variabile":label,**r[key]} for label,key in
                       (("Domanda","demand_gwh"),("Offerta","supply_gwh"),("Saldo","gap_gwh"),("Carenza","deficit_gwh"))],

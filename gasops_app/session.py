@@ -1,6 +1,7 @@
 """Streamlit session state, source selection and workflow execution."""
 
 from dataclasses import dataclass
+from .source_session_cache import recent_source, remember_source, forget_source
 from html import escape
 import logging
 import os
@@ -321,12 +322,22 @@ def source_filters(page: str, *, lookback: bool = True) -> Selection:
         bundle = archive()
     else:
         try:
-            if name == DAILY:
-                with st.spinner("Aggiornamento ENTSOG (finestre mensili; primo caricamento più lungo)…"):
-                    bundle, warning = load_daily(database(), refresh=refresh)
+            from .live_sources import BUNDLES
+            public_key="daily" if name==DAILY else "monthly"
+            now=utc_now()
+            shared=st.session_state.get(BUNDLES,{}).get(public_key)
+            saved=None if refresh else recent_source(st.session_state,name,now,shared)
+            if saved is not None:
+                bundle,warning=saved
             else:
-                with st.spinner("Caricamento dei dati Eurostat e ARERA…"):
-                    bundle, warning = load_monthly(database(), refresh=refresh)
+                forget_source(st.session_state,name)
+                if name == DAILY:
+                    with st.spinner("Caricamento ENTSOG…"):
+                        bundle, warning = load_daily(database(), refresh=refresh)
+                else:
+                    with st.spinner("Caricamento Eurostat e ARERA…"):
+                        bundle, warning = load_monthly(database(), refresh=refresh)
+                remember_source(st.session_state,name,bundle,warning,utc_now())
             visible_warning, note = source_notices(warning)
             if visible_warning:
                 st.warning(visible_warning)
@@ -352,8 +363,10 @@ def source_filters(page: str, *, lookback: bool = True) -> Selection:
                               bundle.fingerprint)
                 st.warning("Ultimo dato valido della stessa fonte · aggiornamento non riuscito.")
     if bundle is not None and name in (PUBLIC,DAILY) and not bundle.origin.refresh_failed:
-        from .live_sources import remember_bundle
-        remember_bundle(st.session_state,bundle,utc_now())
+        from .live_sources import BUNDLES,remember_bundle
+        public_key="daily" if name==DAILY else "monthly"
+        if st.session_state.get(BUNDLES,{}).get(public_key) is not bundle:
+            remember_bundle(st.session_state,bundle,utc_now())
     st.session_state["active_bundle"] = bundle
     return Selection(name, model, periods, bundle)
 
