@@ -66,9 +66,17 @@ def test_physical_panel_defaults_empty():
     from streamlit.testing.v1 import AppTest
     app=AppTest.from_string("from gasops_app.linepack_page import physical_panel\nfrom gasops_app.models import utc_now\nphysical_panel(utc_now(),'test')").run()
     assert not app.exception
-    assert app.number_input(key="test_lpc_open").value is None
-    assert app.number_input(key="test_lpc_close").value is None
-    app.number_input(key="test_lpc_open").set_value(100.)
-    app.number_input(key="test_lpc_close").set_value(90.).run()
+    day=app.date_input(key="test_lpc_day").value
+    prefix="test_"+day.isoformat()
+    assert app.number_input(key=prefix+"_lpc_open").value is None
+    assert app.number_input(key=prefix+"_lpc_close").value is None
+    app.number_input(key=prefix+"_lpc_open").set_value(100.)
+    app.number_input(key=prefix+"_lpc_close").set_value(90.).run()
     assert not app.exception
     assert any("ΔLPC ricostruito" in x.proto.body and "Solo calcolo" in x.proto.body for x in app.get("html"))
+
+    app.date_input(key="test_lpc_day").set_value(day-timedelta(days=1)).run()
+    assert not app.exception
+    new_prefix="test_"+(day-timedelta(days=1)).isoformat()
+    assert app.number_input(key=new_prefix+"_lpc_open").value is None
+    assert app.number_input(key=new_prefix+"_lpc_close").value is None

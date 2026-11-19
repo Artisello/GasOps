@@ -7,7 +7,7 @@ import streamlit as st
 from . import linepack as m
 from .italiano import numero
 from .data import ROME
-from .visuals import kpi_grid,plot,local_time,info,TEAL,BLUE,AMBER,MUTED
+from .visuals import kpi_grid,plot,local_time,info,BLUE,MUTED
 from .operating_rules import STATE as BALANCE_STATE
 
 
@@ -59,22 +59,23 @@ def physical_panel(now,prefix):
         st.caption("Controllo separato dalle stime Jarvis · "+m.REF)
         yesterday=(now.astimezone(ROME)-timedelta(hours=6)).date()-timedelta(days=1)
         day=st.date_input("Giorno gas concluso",value=yesterday,max_value=yesterday,key=prefix+"_lpc_day")
+        day_key=prefix+"_"+day.isoformat()
         a,b=st.columns(2)
-        opening=a.number_input("Energia in rete alle 06:00 G · GWh",min_value=0.,max_value=1e9,value=None,key=prefix+"_lpc_open")
-        closing=b.number_input("Energia in rete alle 06:00 G+1 · GWh",min_value=0.,max_value=1e9,value=None,key=prefix+"_lpc_close")
+        opening=a.number_input("Energia in rete alle 06:00 G · GWh",min_value=0.,max_value=1e9,value=None,key=day_key+"_lpc_open")
+        closing=b.number_input("Energia in rete alle 06:00 G+1 · GWh",min_value=0.,max_value=1e9,value=None,key=day_key+"_lpc_close")
         st.caption("Inserisci soltanto valori indipendenti, pubblici autorizzati o sintetici dello stesso perimetro SRG e PCS. Non usare valori di linepack atteso.")
         saved=st.session_state.get(BALANCE_STATE,{})
         options=m.balance_candidates(saved.get("rows",()),day)
         source=st.selectbox("Confronto con ΔLPC indipendente",["Nessuno","Valore manuale",*sorted(options)],
-            format_func=lambda x:{"provisional":"Bilancio rete importato · provvisorio","definitive":"Bilancio rete importato · definitivo"}.get(x,x),key=prefix+"_lpc_source")
+            format_func=lambda x:{"provisional":"Bilancio rete importato · provvisorio","definitive":"Bilancio rete importato · definitivo"}.get(x,x),key=day_key+"_lpc_source")
         reported=None
         if source=="Valore manuale":
-            v=st.number_input("ΔLPC riportato · GWh",min_value=-1e9,max_value=1e9,value=None,key=prefix+"_lpc_reported")
+            v=st.number_input("ΔLPC riportato · GWh",min_value=-1e9,max_value=1e9,value=None,key=day_key+"_lpc_reported")
             if v is not None:reported=D(str(v))
         elif source in options:
             reported=options[source]
             st.caption("ΔLPC importato: "+numero(reported,3,signed=True)+" GWh")
-        tolerance=st.number_input("Tolleranza diagnostica · GWh",min_value=0.,max_value=1e6,value=.01,step=.01,key=prefix+"_lpc_tol")
+        tolerance=st.number_input("Tolleranza diagnostica · GWh",min_value=0.,max_value=1e6,value=.01,step=.01,key=day_key+"_lpc_tol")
         if opening is None or closing is None:
             st.caption("Inserisci entrambe le energie ai confini del giorno gas.")
             return
