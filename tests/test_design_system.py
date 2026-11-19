@@ -38,8 +38,8 @@ def test_interactive_theme_contrast_and_consistency():
             assert contrast(tokens["control"],tokens[bg])>=3
         assert contrast(tokens["blue"],tokens[bg])>=3
     assert contrast(tokens["teal"],tokens["selected"])>=4.5
-    for bg in ("teal","primary-hover"):
-        assert contrast(tokens["on-primary"],tokens[bg])>=4.5
+    for bg in ("teal","primary-hover","primary-active"):
+        assert contrast(tokens["on-primary"],tokens[bg])>=7
     theme=tomllib.loads((ROOT/".streamlit/config.toml").read_text())["theme"]
     for key, token in (("primaryColor","teal"),("backgroundColor","bg"),
                        ("secondaryBackgroundColor","panel"),("textColor","text"),
@@ -51,6 +51,13 @@ def test_native_interaction_and_local_reflow_rules():
     css=(ROOT/"gasops_app/theme.css").read_text()
     assert "--gas-target:2.75rem" in css
     assert '[role="tablist"]' in css and "overflow-x:auto" in css
-    assert 'button[kind="primary"]:not(:disabled)' in css
+    assert '[kind="primary"]' in css
+    assert '[kind="primaryFormSubmit"]' in css
+    assert '[data-testid="stBaseButton-primaryFormSubmit"]' in css
+    assert ':not(:disabled):not([aria-disabled="true"])' in css
+    assert 'color:var(--gas-on-primary)!important' in css
+    assert ':is(div,p,span,strong,em,svg)' in css
+    assert ':is(:hover,:focus-visible)' in css
+    assert 'background-color:var(--gas-primary-active)!important' in css
     assert "scroll-margin-block:4rem 1rem" in css
     assert "font-variant-numeric:tabular-nums" in css
