@@ -157,3 +157,28 @@ div[data-testid="stVerticalBlockBorderWrapper"] {border-color:var(--gas-border);
 @media(prefers-reduced-motion:reduce) {
  .stApp :is([data-testid="stFormSubmitButton"],[data-testid="stDownloadButton"]) button {transition:none;}
 }
+
+/* Consistent contrast and adaptive controls across every desk. */
+.stApp :is([data-testid="stButton"],[data-testid="stFormSubmitButton"]) button[kind="primary"]:not(:disabled) :is(p,span) {
+  color:inherit;
+}
+.stApp [data-testid="stRadio"] [role="radiogroup"] {
+  flex-wrap:wrap;column-gap:.85rem;row-gap:.2rem;
+}
+.stApp [data-testid="stRadio"] [role="radiogroup"] label {
+  min-width:0;min-height:2.75rem;align-items:center;
+}
+.stApp [data-testid="stRadio"] [role="radiogroup"] label p {overflow-wrap:anywhere;}
+.stApp [data-testid="stExpander"] details summary {overflow-wrap:anywhere;}
+.stApp [data-testid="stMarkdownContainer"] {min-width:0;overflow-wrap:anywhere;}
+.stApp .st-key-document_scope {gap:.3rem;}
+.stApp .st-key-document_tools {border-bottom:1px solid var(--gas-border);padding-bottom:.3rem;}
+.stApp .st-key-document_management {border-top:1px solid var(--gas-border);padding-top:.8rem;}
+.stApp .st-key-document_workspace [data-testid="stText"] {line-height:1.6;}
+.stApp [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {gap:.35rem;}
+.gas-brand {padding-bottom:.55rem;}
+.gas-nav-group {margin-top:.45rem;}
+@media(max-width:768px) {
+ .stApp [data-testid="stRadio"] [role="radiogroup"] {column-gap:.5rem;}
+ .stApp [data-testid="stRadio"] [role="radiogroup"] label {max-width:100%;}
+}

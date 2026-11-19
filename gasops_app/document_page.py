@@ -9,7 +9,7 @@ import streamlit as st
 from .data import ROOT
 from .document_desk import build, identity, search, searchable_pages, bookmark, page_text, extend_uploads, MAX_RESULTS, MAX_TOTAL_BYTES
 from .regulatory import read_local_pdfs, MAX_DOCUMENTS, MAX_PDF_BYTES, REGISTER, registered_case, matching_edition
-from .visuals import info
+from .visuals import info, header
 from .session import reasoner
 from .document_rag import answer, MAX_PASSAGES
 from .review_register import KEY as REVIEW_KEY, LIMIT as REVIEW_LIMIT, STATUSES, valid_cases, register, decide, export_json, export_markdown
@@ -174,7 +174,7 @@ def _visitor_upload_panel(*, has_public=False):
                 st.rerun()
 
 
-def _archive():
+def _archive(scope_slot=None):
     # Keep the explicit public repository folder separate from ignored local PDFs.
     override=os.environ.get("GASOPS_PDF_DIR")
     directory=Path(override) if override else ROOT/"data"/"public-regulatory"
@@ -216,22 +216,31 @@ def _archive():
     public_inputs=tuple((display_name(k),v) for k,v in remote)+local
     cached_public=_update_index(public_inputs)
     personal=st.session_state.get(VISITOR_UPLOADS,())
-    selected=st.radio("Archivio",["Archivio pubblico","I miei PDF"],horizontal=True,key=SCOPE,
-                      label_visibility="collapsed")
-    if selected=="I miei PDF":
-        cached=_update_index(personal,state_key=VISITOR_STATE)
-        st.caption("PDF di lavoro · solo in questa sessione, non pubblicati.")
-    else:
-        cached=cached_public
-        st.caption("Archivio pubblico · documenti consultabili da tutti.")
-    _render_documents(cached)
+    with scope_slot if scope_slot is not None else st.container():
+        selected=st.radio("Archivio",["Archivio pubblico","I miei PDF"],horizontal=True,key=SCOPE,
+                          label_visibility="collapsed")
+        if selected=="I miei PDF":
+            cached=_update_index(personal,state_key=VISITOR_STATE)
+            description="Solo sessione · non pubblicati"
+        else:
+            cached=cached_public
+            description="Consultabili da tutti"
+        docs=cached["docs"]
+        count=len(docs.documents)
+        pages=sum(p.pages for p in docs.documents.values())
+        searchable=sum(searchable_pages(docs).values())
+        st.caption(f"{count} PDF · {searchable}/{pages} pagine con testo · {description}")
+        for warning in docs.errors:
+            st.warning(warning)
+    _render_documents(cached,show_errors=False)
     return cached
 
 
-def _render_documents(cached):
+def _render_documents(cached, *, show_errors=True):
     docs=cached["docs"]
-    for warning in docs.errors:
-        st.warning(warning)
+    if show_errors:
+        for warning in docs.errors:
+            st.warning(warning)
     if docs.documents:
         coverage=searchable_pages(docs)
         with st.expander(f"Documenti disponibili · {len(docs.documents)} PDF"):
@@ -281,23 +290,36 @@ def _results(cached,hits,prefix,*,allow_preview=True):
         st.info("Nessun passaggio trovato. Prova parole diverse o la ricerca esatta.")
         return
     st.caption(f"{len(hits)} pagine pertinenti mostrate (massimo {MAX_RESULTS}).")
-    for hit in hits:
-        with st.container(border=True):
-            st.text(hit.document+f" · PDF p. {hit.page}")
-            st.text(hit.evidence)
-    if allow_preview:
-        index=st.selectbox("Seleziona un riferimento",range(len(hits)),
-                           format_func=lambda i:f"{hits[i].document} · p. {hits[i].page}",key=prefix+"_hit")
-        hit=hits[index]
+    if not allow_preview:
+        for hit in hits:
+            with st.container(border=True):
+                st.text(hit.document+f" · PDF p. {hit.page}")
+                st.text(hit.evidence)
+        return
+    previous=st.session_state.get(prefix+"_hit")
+    if previous is not None and previous not in range(len(hits)):
+        st.session_state.pop(prefix+"_hit",None)
+    index=st.selectbox("Passaggio da consultare",range(len(hits)),
+                       format_func=lambda i:f"{hits[i].document} · p. {hits[i].page}",key=prefix+"_hit")
+    hit=hits[index]
+    with st.container(border=True,key=prefix+"_selected"):
+        st.text(hit.document+f" · PDF p. {hit.page}")
+        st.text(hit.evidence)
         a,b=st.columns(2)
         with a:
-            if st.button("Apri pagina originale",key=prefix+"_open",icon=":material/description:"):
+            if st.button("Apri pagina originale",key=prefix+"_open",icon=":material/description:",width="stretch"):
                 cached[prefix+"_preview"]=(hit.document,hit.page)
         with b:
-            if st.button("Salva riferimento",key=prefix+"_save",icon=":material/bookmark_add:"):
+            if st.button("Salva riferimento",key=prefix+"_save",icon=":material/bookmark_add:",width="stretch"):
                 _save(cached,hit)
         if cached.get(prefix+"_preview")== (hit.document,hit.page):
             _preview(cached["docs"].documents[hit.document],hit.page,prefix)
+    if len(hits)>1:
+        with st.expander(f"Altri passaggi · {len(hits)-1}"):
+            for i,other in enumerate(hits):
+                if i==index:continue
+                st.text(other.document+f" · PDF p. {other.page}")
+                st.text(other.evidence)
 
 
 def _mode_label(mode):
@@ -308,7 +330,7 @@ def _search(cached):
     docs=cached["docs"]
     with st.form("desk_search",border=False):
         query=st.text_input("Cosa vuoi cercare?",placeholder="Es. corrispettivo di sbilanciamento",max_chars=600)
-        a,b=st.columns(2)
+        a,b=st.columns([2,1])
         document=a.selectbox("Documento",["Tutti i PDF",*docs.documents])
         mode=b.selectbox("Tipo di ricerca",["keywords","exact"],format_func=_mode_label)
         submitted=st.form_submit_button("Cerca nei PDF",type="primary",width="stretch",icon=":material/search:")
@@ -325,8 +347,8 @@ def _search(cached):
     saved=cached.get("desk_search_result")
     if saved:
         query,document,mode,hits=saved
-        st.caption("Ultima ricerca · "+_mode_label(mode))
-        st.text(query+" · "+document)
+        st.markdown("**Risultati della ricerca**")
+        st.text(query+" · "+document+" · "+_mode_label(mode))
         _results(cached,hits,"desk_search")
 
 
@@ -639,42 +661,53 @@ def _references(cached):
 
 
 def document_page():
-    st.title("Norme e documenti")
-    info("Info archivio","La ricerca mostra testo estratto dalle pagine dei PDF presenti, non note precompilate. Le corrispondenze per parole chiave non sono un parere legale.",
-         "Usa solo copie pubbliche o autorizzate. I PDF autorizzati pubblicati nel repository o in Storage sono condivisi tra tutti i visitatori e conservati indipendentemente dalla sessione Streamlit. Chiunque può caricare PDF nel proprio spazio di sessione senza account. Solo gli account I.G.O.R. autorizzati possono pubblicare nell’archivio condiviso; la rimozione dei documenti condivisi è riservata all’amministratore. Non caricare dati riservati. I PDF non entrano nel bollettino; la ricerca è sul server. Con Chiedi all’AI, soltanto la domanda e gli estratti sono inviati al modello selezionato, previo consenso per provider remoti. Non caricare documenti riservati su un deployment pubblico. Nessun OCR. La vigenza delle edizioni non è verificata.")
+    header("Norme e documenti","")
     target=st.session_state.pop("desk_finding_target",None)
     if isinstance(target,str) and registered_case(target):
         st.session_state[SCOPE]="Archivio pubblico"
         st.session_state["desk_mode"]="Registro rilievi"
         st.session_state["desk_register_origin"]="Edizioni esaminate"
         st.session_state["desk_historical_case"]=target
-    cached=_archive()
-    action=st.radio("Strumento",["Cerca","Chiedi all’AI","Leggi PDF","Confronta","Revisore","Registro rilievi","Riferimenti salvati","Compliance"],
-                    horizontal=True,label_visibility="collapsed",key="desk_mode",
-                    format_func={"Cerca":"Cerca","Chiedi all’AI":"Chiedi AI","Leggi PDF":"Leggi","Confronta":"Confronta",
-                                 "Revisore":"Verifica","Registro rilievi":"Rilievi","Riferimenti salvati":"Salvati","Compliance":"Compliance"}.__getitem__)
-    if not cached["docs"].documents and action!="Registro rilievi":
-        st.info("Aggiungi almeno un PDF per iniziare a cercare.")
-        return
-    if action=="Cerca":
-        _search(cached)
-    elif action=="Chiedi all’AI":
-        _ask(cached)
-    elif action=="Leggi PDF":
-        _read(cached)
-    elif action=="Confronta":
-        _compare(cached)
-    elif action=="Revisore":
-        _review_documents(cached)
-    elif action=="Registro rilievi":
-        origin=st.radio("Origine dei rilievi",["Edizioni esaminate","Rilievi di sessione"],horizontal=True,
-                        key="desk_register_origin",label_visibility="collapsed")
-        if origin=="Edizioni esaminate":
-            _historical_register(cached)
+    # Reserve readable positions before acquiring the archive. Upload happens
+    # before the scope widget is instantiated so successful uploads can switch
+    # to the personal workspace without mutating an instantiated widget.
+    scope_slot=st.container(key="document_scope")
+    tool_slot=st.container(key="document_tools")
+    body=st.container(key="document_workspace")
+    with st.container(key="document_management"):
+        st.subheader("Archivio PDF")
+        cached=_archive(scope_slot)
+        info("Archivio e privacy","Ricerca sul testo estratto, senza OCR; la vigenza non è certificata. Non caricare documenti riservati sul deployment pubblico.",
+             "I PDF personali sono disponibili solo in sessione; i PDF pubblicati da account autorizzati sono condivisi. Solo l’amministratore può rimuovere documenti condivisi.",
+             "Il bollettino non riceve i PDF. Chiedi AI invia solo domanda ed estratti al modello; per provider remoti occorre consenso.")
+    with tool_slot:
+        action=st.radio("Strumento",["Cerca","Chiedi all’AI","Leggi PDF","Confronta","Revisore","Registro rilievi","Riferimenti salvati","Compliance"],
+                        horizontal=True,label_visibility="collapsed",key="desk_mode",
+                        format_func={"Cerca":"Cerca","Chiedi all’AI":"Chiedi AI","Leggi PDF":"Leggi","Confronta":"Confronta",
+                                     "Revisore":"Verifica","Registro rilievi":"Rilievi","Riferimenti salvati":"Salvati","Compliance":"Compliance"}.__getitem__)
+    with body:
+        if not cached["docs"].documents and action!="Registro rilievi":
+            st.info("Aggiungi almeno un PDF per iniziare a cercare. Usa Carica PDF nell’archivio qui sotto.")
+            return
+        if action=="Cerca":
+            _search(cached)
+        elif action=="Chiedi all’AI":
+            _ask(cached)
+        elif action=="Leggi PDF":
+            _read(cached)
+        elif action=="Confronta":
+            _compare(cached)
+        elif action=="Revisore":
+            _review_documents(cached)
+        elif action=="Registro rilievi":
+            origin=st.radio("Origine dei rilievi",["Edizioni esaminate","Rilievi di sessione"],horizontal=True,
+                            key="desk_register_origin",label_visibility="collapsed")
+            if origin=="Edizioni esaminate":
+                _historical_register(cached)
+            else:
+                _review_register(cached)
+        elif action=="Compliance":
+            from .compliance_page import panel as compliance_panel
+            compliance_panel(cached,public=st.session_state.get(SCOPE)=="Archivio pubblico")
         else:
-            _review_register(cached)
-    elif action=="Compliance":
-        from .compliance_page import panel as compliance_panel
-        compliance_panel(cached,public=st.session_state.get(SCOPE)=="Archivio pubblico")
-    else:
-        _references(cached)
+            _references(cached)
