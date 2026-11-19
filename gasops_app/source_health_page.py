@@ -20,10 +20,24 @@ def panel():
     kpi_grid([("Copertura verificata",good,"","Serie / misure, non provider",0,""),
               ("Da verificare",review,"","Cache, lacune, metadati",0,""),
               ("Non disponibili",absent,"","Incluse misure disattivate",0,"")])
-    st.dataframe([{"Serie":r["source"],"Perimetro":r["scope"],"Tipo":r["kind"],"Stato":r["status"],
-                   "Ultimo periodo":r["latest"],"Copertura":f'{r["valid"]}/{r["expected"]}' if r["expected"] else "—",
-                   "Acquisito":r["acquired"],"Ultimo tentativo":r["attempt"]} for r in rows],hide_index=True,width="stretch")
-    st.download_button("Esporta controllo qualità",_csv(rows),"igor-qualita-fonti.csv","text/csv",key="source_health_export")
+    view=st.radio("Serie mostrate",["Tutte","Da verificare","Non disponibili","Verificate"],
+                  horizontal=True,key="source_health_filter",label_visibility="collapsed")
+    def group(r):
+        if r["status"]=="Copertura verificata":return "Verificate"
+        if r["status"].startswith("Non disponibile") or r["status"]=="Disattivato":return "Non disponibili"
+        return "Da verificare"
+    visible=[r for r in rows if view=="Tutte" or group(r)==view]
+    st.caption(f"{len(visible)}/{len(rows)} serie · stato riferito ai controlli della sessione")
+    if visible:
+        st.dataframe([{"Serie":r["source"],"Stato":r["status"],"Ultimo periodo":r["latest"],
+                       "Copertura":f'{r["valid"]}/{r["expected"]}' if r["expected"] else "—",
+                       "Perimetro":r["scope"],"Tipo":r["kind"],"Acquisito":r["acquired"],
+                       "Ultimo tentativo":r["attempt"]} for r in visible],hide_index=True,width="stretch",
+                     column_config={"Serie":st.column_config.TextColumn(width="medium"),
+                                    "Stato":st.column_config.TextColumn(width="medium")})
+    else:st.caption("Nessuna serie per questo filtro.")
+    if rows:
+        st.download_button("Esporta controllo qualità completo",_csv(rows),"igor-qualita-fonti.csv","text/csv",key="source_health_export",help="Include tutte le serie, indipendentemente dal filtro.")
     with st.expander("Coerenza tra acquisizioni · ENTSOG"):
         st.caption("Stesso aggregato termoelettrico SRG, stesso giorno gas: serie mercato vs contesto Terna. Non confronto gas/elettricità e non fonte indipendente.")
         try:paired=compare_srg(st.session_state,now)

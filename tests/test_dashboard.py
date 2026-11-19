@@ -821,3 +821,25 @@ def test_document_workspace_precedes_management_and_keeps_tools(monkeypatch,tmp_
     assert not app.exception
     assert any("Aggiungi almeno un PDF" in e.value for e in app.info)
     assert len(app.session_state[desk.STATE]["reference_list"])==1
+
+
+def test_assistant_retains_last_result_when_launch_fails(monkeypatch,tmp_path):
+    from gasops_app import session, assistant_page as assistant
+    monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
+    monkeypatch.setenv("GASOPS_PDF_DIR",str(tmp_path))
+    monkeypatch.setattr(session,"reasoner",lambda:None)
+    monkeypatch.setattr(assistant,"reasoner",lambda:None)
+    monkeypatch.setattr(assistant,"ai_configured",lambda:False)
+    app=AppTest.from_string("from gasops_app.assistant_page import assistant_page\nassistant_page()",default_timeout=30)
+    app.session_state["selected_source"]=DEMO
+    app.run()
+    app.button(key="assistant_starter_Consumi").click().run()
+    assert not app.exception
+    prior=app.session_state[assistant.HISTORY][0]
+    def fail(*args,**kwargs):raise RuntimeError("fixture")
+    monkeypatch.setattr(assistant,"launch",fail)
+    app.button(key="assistant_starter_Stress +10%").click().run()
+    assert not app.exception
+    assert app.session_state[assistant.HISTORY][0].id==prior.id
+    assert any("Ultimo risultato conservato" in c.value for c in app.caption)
+    assert any(e.value==prior.question for e in app.text)

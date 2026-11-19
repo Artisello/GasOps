@@ -11,7 +11,7 @@ from .models import Agent, AGENT_LABELS, Run, utc_now
 from .reports import markdown
 from . import session
 from .session import analysis_label, launch, market_scope, reasoner, source_filters, ai_activation_panel
-from .visuals import evidence, info, local_time, steps, ai_readout
+from .visuals import evidence, info, local_time, steps, ai_readout, header
 from .workflow import DAILY_BRIEFING
 
 LOG=logging.getLogger(__name__)
@@ -176,18 +176,32 @@ def _report(report:Run,selection):
                            f"igor-{suffix}.json","application/json",key="assistant_json_"+report.id)
 
 
-def _history():
+def _visible_history(local=False):
     history=st.session_state.get(HISTORY,[])
-    if not history:
-        return
+    return [r for r in history if not(local and r.mode=="LLM-assisted" and r.interpretation)]
+
+
+def _history(local=False):
+    history=_visible_history(local)
+    total=len(st.session_state.get(HISTORY,[]))
+    if not total:
+        return None
     entries={r.id:r for r in history}
-    if st.session_state.get(SELECTED) not in entries:
+    if history and st.session_state.get(SELECTED) not in entries:
         st.session_state[SELECTED]=history[0].id
-    with st.expander(f"Storico della sessione · {len(history)}"):
-        st.selectbox("Consulta un’analisi",list(entries),key=SELECTED,
-                     format_func=lambda k:local_time(entries[k].started_at)+" · "+entries[k].question[:80])
+    with st.expander(f"Storico della sessione · {len(history)}"+(f" / {total}" if local and total!=len(history) else "")):
+        if history:
+            def label(k):
+                item=entries[k]
+                mode="AI" if item.mode=="LLM-assisted" and item.interpretation else "Locale"
+                return local_time(item.started_at)+" · "+mode+" · "+item.question[:80]
+            st.selectbox("Consulta un’analisi",list(entries),key=SELECTED,format_func=label)
+        else:
+            st.caption("Nessun risultato locale. Le risposte AI sono consultabili in Assistente operativo.")
         st.caption("Solo in questa sessione. Scarica le analisi per conservarle.")
-        st.button("Svuota storico dell’assistente",key="assistant_clear",on_click=_clear)
+        st.button("Svuota storico dell’assistente",key="assistant_clear",on_click=_clear,
+                  help="Rimuove tutti i risultati dell’assistente, anche quelli AI. Non elimina i bollettini della Panoramica.")
+    return entries.get(st.session_state.get(SELECTED))
 
 
 def ai_configured() -> bool:
@@ -203,7 +217,7 @@ def ai_configured() -> bool:
 
 
 def assistant_page():
-    st.title("Assistente AI")
+    header("Assistente AI","")
     modes=["Assistente operativo","Analista dati","Report locali"]
     default=0 if reasoner() or ai_configured() else 2
     view=st.radio("Modalità assistente",modes,index=default,horizontal=True,key="assistant_view",label_visibility="collapsed")
@@ -224,13 +238,13 @@ def assistant_page():
     st.caption(area+" · "+scope+" · "+mode_label)
     if model and not model.config.local:
         st.caption("Provider esterno · solo dati pubblici.")
-    st.markdown("[Cerca nei PDF](/regulatory)")
     if local:
         info("Come funziona","Report deterministici con parametri e controlli predefiniti. Nessuna chat o interpretazione AI.")
     else:
         info("Come funziona","Ogni domanda avvia un'analisi indipendente. Il programma seleziona le fonti pertinenti; il modello interpreta le evidenze e deve citarle. Se non riesce, vengono mostrati solo calcoli di riserva, non una risposta AI.",
              "Le scorciatoie utilizzano un tentativo AI di sintesi; le domande libere fino a tre chiamate. Lo storico rimane nella sessione.")
     disabled=selection.bundle is None
+    st.caption("Per interrogare documenti specifici: [Cerca nei PDF](/regulatory).")
     controls=st.columns([1,1,1,1.4])
     shortcut=None
     for col,(label,question) in zip(controls[:3],STARTERS):
@@ -239,8 +253,8 @@ def assistant_page():
     full=controls[3].button("Genera bollettino locale" if local else "Genera bollettino AI",key="assistant_briefing",type="secondary",width="stretch",disabled=disabled)
     question=None if local else st.chat_input("Chiedi qualcosa sul mercato del gas…",key="assistant_question",max_chars=600,disabled=disabled)
     requested=DAILY_BRIEFING if full else shortcut or (question.strip() if question else "")
-    answer_slot=st.container()
     history_slot=st.container()
+    answer_slot=st.container()
     def render(report):
         if local:
             if report.mode=="LLM-assisted" and report.interpretation:
@@ -253,29 +267,30 @@ def assistant_page():
                 st.text(report.question)
             with st.chat_message("assistant"):
                 _report(report,selection)
+    generated=None
+    attempted=bool(requested)
     if requested:
         with answer_slot:
             try:
-                report=launch(selection,requested,full=full,persist=False,planned_only=bool(local or full or shortcut),compact=True,
-                              ai_policy="off" if local else "required")
+                generated=launch(selection,requested,full=full,persist=False,planned_only=bool(local or full or shortcut),compact=True,
+                                 ai_policy="off" if local else "required")
             except Exception as error:
                 LOG.warning("Assistant workflow failed (%s)",type(error).__name__)
-                report=None
+            if generated:
+                _remember(generated)
+            else:
                 st.error("Analisi non riuscita. Verifica il modello o le fonti; nessuna risposta AI generata." if not local else "Report locale non disponibile. Verifica le fonti.")
-            if report:
-                _remember(report)
-                render(report)
-    else:
-        history=st.session_state.get(HISTORY,[])
-        chosen=st.session_state.get(SELECTED)
-        report=next((r for r in history if r.id==chosen),history[0] if history else None)
-        with answer_slot:
-            if report:
-                st.caption("Risultato precedente · modalità effettiva indicata nel report")
-                render(report)
-            elif not disabled:
+    with history_slot:
+        previous=_history(local)
+    with answer_slot:
+        report=generated or previous
+        if report:
+            if not generated:
+                st.caption("Ultimo risultato conservato · la nuova analisi non è riuscita." if attempted else
+                           "Risultato precedente · modalità effettiva indicata nel report")
+            render(report)
+        elif not attempted:
+            if not disabled:
                 st.caption("Scegli un report. Il risultato apparirà qui." if local else "Scrivi una domanda o scegli una scorciatoia. Il risultato apparirà qui.")
             else:
                 st.info("Seleziona una fonte disponibile per iniziare.")
-    with history_slot:
-        _history()
