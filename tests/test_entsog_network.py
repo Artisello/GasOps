@@ -81,3 +81,48 @@ def test_loader_bounded_cached_and_no_future(monkeypatch):
     assert called[0]["attempts"]==1 and called[0]["ttl"]==timedelta(hours=12)
     with pytest.raises(ValueError):
         en.load_network(None,POINT,NOW.date(),NOW.date(),now=NOW)
+
+
+def test_network_group_fallback_recovers_valid_flow_without_other_indicators(monkeypatch):
+    from gasops_app.public_data import SourceUnavailable
+    calls=[]
+    def fake(store,**kwargs):
+        indicator=kwargs["params"]["indicator"]
+        calls.append(indicator)
+        if indicator!=",".join(en.INDICATORS[:4]):
+            raise SourceUnavailable("ENTSOG Network: risposta non validabile.")
+        return kwargs["parse"](json.dumps({"operationalData":[record()],"meta":{"count":1,"total":1}}),NOW)
+    monkeypatch.setattr(en,"retrieve",fake)
+    result=en.load_network(None,POINT,DAY,DAY,now=NOW)
+    assert len(calls)==3
+    assert result.metadata_warning and result.diagnostic
+    assert en.daily_metrics(result)[0]["Physical Flow"]==Decimal("2")
+    assert en.daily_metrics(result)[0]["Firm Technical"] is None
+
+
+def test_network_fallback_merges_only_requested_and_keeps_oldest_timestamp(monkeypatch):
+    from gasops_app.public_data import SourceUnavailable
+    def fake(store,**kwargs):
+        indicators=kwargs["params"]["indicator"].split(",")
+        if len(indicators)==7:raise SourceUnavailable("tempo di risposta superato")
+        items=[record("Physical Flow")] if indicators[0]=="Physical Flow" else [record("Firm Technical",4000000)]
+        stamp=NOW if indicators[0]=="Physical Flow" else NOW-timedelta(hours=1)
+        return kwargs["parse"](json.dumps({"operationalData":items}),stamp,cached=stamp<NOW)
+    monkeypatch.setattr(en,"retrieve",fake)
+    result=en.load_network(None,POINT,DAY,DAY,now=NOW)
+    assert result.cached and result.acquired==NOW-timedelta(hours=1)
+    assert en.daily_metrics(result)[0]["technical_utilization_pct"]==50
+    with pytest.raises(ValueError):
+        en.parse_network({"operationalData":[record("Firm Technical")]},POINT,DAY,DAY,NOW,requested=en.INDICATORS[:4])
+
+
+def test_network_rate_limit_does_not_trigger_extra_requests(monkeypatch):
+    from gasops_app.public_data import SourceUnavailable
+    calls=[]
+    def fake(*args,**kwargs):
+        calls.append(kwargs)
+        raise SourceUnavailable("ENTSOG Network: HTTP 429.")
+    monkeypatch.setattr(en,"retrieve",fake)
+    with pytest.raises(SourceUnavailable,match="429"):
+        en.load_network(None,POINT,DAY,DAY,now=NOW)
+    assert len(calls)==1 and calls[0]["params"]["timezone"]=="CET"
