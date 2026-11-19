@@ -122,26 +122,39 @@ class Archive:
         except (ValueError,KeyError,TypeError):
             raise ArchiveError("Archivio remoto non conforme: verifica PDF e limiti nel bucket.") from None
 
-    def read(self,session=None):
+    def read_document(self,key):
+        """Download and validate a single public object."""
+        if not isinstance(key,str) or "/" in key or "\\" in key or not key.lower().endswith(".pdf"):
+            raise ArchiveError("Nome documento remoto non valido.")
+        data=bytearray()
+        with self._request("GET","/storage/v1/object/public/"+BUCKET+"/"+quote(key,safe=""),
+                           stream=True) as response:
+            try:
+                for chunk in response.iter_content(65536):
+                    data.extend(chunk)
+                    if len(data)>MAX_PDF_BYTES:
+                        raise ArchiveError("Limiti dell’archivio remoto superati.")
+            except requests.RequestException:
+                raise ArchiveError("Download archivio interrotto.") from None
+        raw=bytes(data)
+        if not raw.startswith(b"%PDF-"):
+            raise ArchiveError("Documento remoto non valido.")
+        if re.match(r"^[a-f0-9]{64}--",key) and sha256(raw).hexdigest()!=key[:64]:
+            raise ArchiveError("SHA-256 non corrispondente al documento remoto.")
+        return raw
+
+    def read(self,session=None,*,reader=None):
+        # Always enumerate the current public manifest. The optional reader is
+        # only for public UI reads, never the authorized write path.
+        if session is not None and reader is not None:
+            raise ArchiveError("Cache non ammessa per operazioni autorizzate.")
         result=[]
         total=0
         for key in self.list_keys(session):
-            data=bytearray()
-            with self._request("GET","/storage/v1/object/public/"+BUCKET+"/"+quote(key,safe=""),
-                               stream=True) as response:
-                try:
-                    for chunk in response.iter_content(65536):
-                        data.extend(chunk)
-                        if len(data)>MAX_PDF_BYTES or total+len(data)>MAX_TOTAL_BYTES:
-                            raise ArchiveError("Limiti dell’archivio remoto superati.")
-                except requests.RequestException:
-                    raise ArchiveError("Download archivio interrotto.") from None
-            total+=len(data)
-            raw=bytes(data)
-            if not raw.startswith(b"%PDF-"):
-                raise ArchiveError("Documento remoto non valido.")
-            if re.match(r"^[a-f0-9]{64}--",key) and sha256(raw).hexdigest()!=key[:64]:
-                raise ArchiveError("SHA-256 non corrispondente al documento remoto.")
+            raw=reader(key) if reader is not None else self.read_document(key)
+            total+=len(raw)
+            if len(raw)>MAX_PDF_BYTES or total>MAX_TOTAL_BYTES:
+                raise ArchiveError("Limiti dell’archivio remoto superati.")
             result.append((key,raw))
         return tuple(result)
 
