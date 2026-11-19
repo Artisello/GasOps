@@ -352,15 +352,13 @@ def _briefing_operational_context(public):
         st.caption("Copertura incompleta · "+", ".join(missing)+". Dettagli nelle fonti consultate.")
 
 
-def _briefing_panel(selection, *, clicked=None) -> None:
+def _briefing_panel(selection) -> None:
     with st.container(border=True,key="panel_overview_brief"):
-        if clicked is None:
-            lead,action=st.columns([2.2,1],vertical_alignment="center")
-            with lead:st.subheader("Bollettino di mercato")
-            with action:
-                clicked=st.button(analysis_label(),type="primary",icon=":material/auto_awesome:",width="stretch",key="analysis_launch",disabled=selection.bundle is None)
-        else:
+        lead,action=st.columns([2.2,1],vertical_alignment="center")
+        with lead:
             st.subheader("Bollettino di mercato")
+        with action:
+            clicked=st.button(analysis_label(),type="primary",icon=":material/auto_awesome:",width="stretch",key="analysis_launch",disabled=selection.bundle is None)
         with st.popover("Fonti e metodo",icon=":material/info:"):
             st.write("Sei strumenti locali; il modello interpreta soltanto le evidenze condivisibili. Scenari e settlement restano separati.")
             extras=["Eurostat, ARERA, ENTSOG, ACER, Terna (perimetro disponibile)"]
@@ -503,7 +501,7 @@ def overview() -> None:
         selection=source_filters("overview")
     area,perimeter=market_scope(selection.name)
     with top:
-        clicked=header("Panoramica del mercato","",action=analysis_label(),disabled=selection.bundle is None)
+        header("Panoramica del mercato","")
         st.markdown("**"+area+"** · "+perimeter)
     context=None
     if selection.bundle:
@@ -538,7 +536,7 @@ def overview() -> None:
     # briefing first, so its freshly acquired public snapshot is reusable
     # in the same rerun. No second request or change to the report timestamp.
     indicators=st.container() if selection.name in (PUBLIC,DAILY) else None
-    _briefing_panel(selection,clicked=clicked)
+    _briefing_panel(selection)
     if indicators is not None:
         from .overview_indicators import panel
         with indicators:
