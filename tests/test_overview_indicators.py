@@ -81,3 +81,11 @@ def test_agsi_snapshot_does_not_flag_previous_gas_day_at_midnight():
     data={"scope":"IT","frame":frame,"failed":False,"acquired":now}
     assert not supply_snapshot(data,now,"AGSI+")["stale"]
     assert supply_snapshot(data,now+timedelta(hours=8),"AGSI+")["stale"]
+
+
+def test_stored_inventory_rechecks_gas_day_on_rerun():
+    now=datetime(2026,11,18,23,30,tzinfo=timezone.utc)
+    frame=pd.DataFrame([{"gas_day":date(2026,11,16),"stock_twh":100.,"fill_pct":86.8,"status":"C"}])
+    snap=supply_snapshot({"scope":"IT","frame":frame,"failed":False,"acquired":now},now,"AGSI+")
+    assert "Da aggiornare" not in current_rows({"storage":snap},now,gie_enabled=True)[1][3]
+    assert "Da aggiornare" in current_rows({"storage":snap},now+timedelta(hours=8),gie_enabled=True)[1][3]

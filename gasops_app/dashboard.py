@@ -534,10 +534,15 @@ def overview() -> None:
                     sentinel_panel(context,compact=True)
         with st.expander("Fonti e aggiornamento"):
             _source_panel(context)
+    # Reserve the market indicators above the briefing while running the
+    # briefing first, so its freshly acquired public snapshot is reusable
+    # in the same rerun. No second request or change to the report timestamp.
+    indicators=st.container() if selection.name in (PUBLIC,DAILY) else None
     _briefing_panel(selection,clicked=clicked)
-    if selection.name in (PUBLIC,DAILY):
+    if indicators is not None:
         from .overview_indicators import panel
-        panel(context,briefing=briefing_run())
+        with indicators:
+            panel(context,briefing=briefing_run())
 
 
 

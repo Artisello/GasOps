@@ -81,7 +81,14 @@ def current_rows(snapshot,now,*,gie_enabled):
         elapsed=now-item["acquired"]
         old=elapsed>timedelta(hours=12 if name=="price" else 24) or elapsed<timedelta(0)
         detail=source+" · "+item["period"]
-        if item["stale"] or old:
+        gas_day_old=False
+        if name!="price" and item.get("gas_day"):
+            try:
+                age=((now.astimezone(ROME)-timedelta(hours=6)).date()-date.fromisoformat(item["gas_day"])).days
+                gas_day_old=not 0<=age<=2
+            except (ValueError,TypeError):
+                gas_day_old=True
+        if item["stale"] or old or gas_day_old:
             detail+=" · Da aggiornare"
         if item.get("quality_review"):
             detail+=" · Valore da verificare"
