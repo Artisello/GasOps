@@ -104,6 +104,8 @@ def _jarvis_panel(prefix="supply"):
     result=st.session_state.get(state)
     if result is None:
         st.info("Importa le pubblicazioni autorizzate per osservare SAS, linepack e prelievi attesi. Nessun dato ipotetico sostitutivo.")
+        from .linepack_page import physical_panel
+        physical_panel(utc_now(),prefix)
         return
     versions=result["versions"]
     days=sorted(versions["gas_day"].unique(),reverse=True)
@@ -139,13 +141,16 @@ def _jarvis_panel(prefix="supply"):
     chart_fields=[label for label,_,_ in fields if frame[label].notna().any()]
     if len(frame)>1 and chart_fields:
         sas_fields=[label for label in chart_fields if label=="SAS pubblicato"]
-        other_fields=[label for label in chart_fields if label!="SAS pubblicato"]
+        other_fields=[label for label in chart_fields if label=="Prelievo atteso"]
         if sas_fields:
             st.line_chart(frame,x="Pubblicazione",y=sas_fields)
         if other_fields:
             st.line_chart(frame,x="Pubblicazione",y=other_fields)
     else:
         st.caption("Servono almeno due pubblicazioni per mostrare l'evoluzione infragiornaliera.")
+    from .linepack_page import panel as linepack_panel, physical_panel
+    linepack_panel(versions,selected,utc_now(),prefix)
+    physical_panel(utc_now(),prefix)
     info("Info stime","Il SAS è il valore riportato dalla fonte, non una differenza domanda/offerta calcolata da I.G.O.R. e non il DS del partecipante. Il linepack indica il gas presente nella rete. Il segno del SAS è mantenuto come pubblicato.","Dati importati nella sessione, nessun aggiornamento automatico. Verifica perimetro, convenzioni e orari della fonte.")
     from .intraday_page import panel as closing_panel
     closing_panel(versions,selected,utc_now(),prefix)
