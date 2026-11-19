@@ -537,7 +537,7 @@ def overview() -> None:
     _briefing_panel(selection,clicked=clicked)
     if selection.name in (PUBLIC,DAILY):
         from .overview_indicators import panel
-        panel(context)
+        panel(context,briefing=briefing_run())
 
 
 

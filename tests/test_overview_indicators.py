@@ -53,3 +53,31 @@ def test_reuse_only_validated_monthly_price_and_italian_supply():
     values=reuse_indicators({},ctx,{},now)
     assert values["price"]["value"]==35 and values["price"]["period"]=="Settembre 2026"
     assert reuse_indicators({"price":{"error":True}},ctx,{},now)=={"price":{"error":True}}
+
+
+def test_reuse_briefing_uses_actual_gas_day_and_does_not_replace_newer_snapshot():
+    from gasops_app.overview_indicators import reuse_briefing
+    from gasops_app.models import Kind
+    now=datetime(2026,11,18,23,30,tzinfo=timezone.utc)
+    run=SimpleNamespace(source=SimpleNamespace(archive=False,kind=Kind.HISTORICAL),
+        assumptions={"public_operational_context":{
+            "AGSI+":{"scope":"IT","status":"available","gas_day":"2026-11-16",
+                     "acquired":now.isoformat(),"values":{"fill_pct":86.8}},
+            "ALSI":{"scope":"EU","status":"available","gas_day":"2026-11-16",
+                    "acquired":now.isoformat(),"values":{"sendout_gwh_d":615.5}}}})
+    data=reuse_briefing({},run,now)
+    assert data["storage"]["value"]==86.8 and not data["storage"]["stale"]
+    assert data["storage"]["acquired"]==now and "lng" not in data
+    newer={"storage":{"acquired":now,"value":87.1}}
+    assert reuse_briefing(newer,run,now)==newer
+    assert reuse_briefing({},run,now+timedelta(days=2))["storage"]["stale"]
+    run.source.kind=Kind.SYNTHETIC
+    assert reuse_briefing({},run,now)=={}
+
+
+def test_agsi_snapshot_does_not_flag_previous_gas_day_at_midnight():
+    now=datetime(2026,11,18,23,30,tzinfo=timezone.utc)
+    frame=pd.DataFrame([{"gas_day":date(2026,11,16),"stock_twh":100.,"fill_pct":86.8,"status":"C"}])
+    data={"scope":"IT","frame":frame,"failed":False,"acquired":now}
+    assert not supply_snapshot(data,now,"AGSI+")["stale"]
+    assert supply_snapshot(data,now+timedelta(hours=8),"AGSI+")["stale"]
