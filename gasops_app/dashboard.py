@@ -694,9 +694,9 @@ def market() -> None:
     st.caption("Fonte: "+origin.name+" · "+("mensile" if origin.grain=="monthly" else "giornaliera"))
     _market_headlines(context)
     _market_quality_notice(context)
-    main,details,weather,methods=st.tabs(["Consumi e previsioni","Composizione e prezzi","Meteo","Modelli e dati"])
-    visible=context.inspection.usable.tail(selection.periods)
-    with main:
+    section=st.radio("Analisi",["Consumi e previsioni","Composizione e prezzi","Meteo","Modelli e dati"],
+                     horizontal=True,label_visibility="collapsed",key="market_section")
+    if section=="Consumi e previsioni":
         with st.container(border=True,key="panel_market_chart"):
             _charts(context,selection.periods,"market",height=390,readout=False)
             if context.projection.points:
@@ -706,7 +706,8 @@ def market() -> None:
                                ": "+numero(p.lower_80)+" – "+numero(p.upper_80)+" GWh.")
             info("Come leggere il grafico","Linea continua: consumi osservati. Tratteggio: stima del modello; la fascia rappresenta l’incertezza.",
                  "La previsione parte dall’ultimo periodo utilizzabile, non necessariamente da oggi. GWh misura energia.")
-    with details:
+    elif section=="Composizione e prezzi":
+        visible=context.inspection.usable.tail(selection.periods)
         st.caption(area+" · "+perimeter)
         _metrics(context)
         _supporting_charts(context,visible,"market")
@@ -719,14 +720,15 @@ def market() -> None:
                 st.write("Media stagionale massima: "+facts["peak_month"]+". Minima: "+facts["low_month"]+".")
             if facts.get("weekend_vs_weekday_pct") is None and not facts.get("peak_month"):
                 st.caption("Dati insufficienti per descrivere le abitudini di consumo.")
-    with weather:
+    elif section=="Meteo":
         from .weather_page import weather_panel,outlook_panel
         if origin.kind in (Kind.HISTORICAL,Kind.LIVE) and not origin.archive:
             if origin.grain=="daily" and origin.name.startswith("ENTSOG"):weather_panel(context)
             else:outlook_panel()
         else:
             st.caption("Meteo disponibile per le fonti reali correnti.")
-    with methods:
+    else:
+        visible=context.inspection.usable.tail(selection.periods)
         if st.checkbox("Confronta i modelli previsionali",key="market_show_models"):
             _model_comparison(context)
         _quality_panel(context)
