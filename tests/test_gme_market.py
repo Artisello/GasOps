@@ -47,3 +47,32 @@ def test_demo_views_are_offline(monkeypatch):
         app.button(key="gme_demo").click().run()
         assert not app.exception
         assert any("Demo sintetica" in c.value for c in app.caption)
+
+
+def test_private_fetch_correct_endpoints_and_bounded_response(monkeypatch):
+    from gasops_app.bso_kpis import closed_gas_day
+    from gasops_app.models import utc_now
+    day=closed_gas_day(utc_now())
+    payload=json.dumps([{"FlowDate":int(day.strftime("%Y%m%d")),"MaxPurchaseSRGPrice":45,
+              "MinSaleSRGPrice":40,"WeightedAveragePrice":42,"MGASVolumes":12000}]).encode()
+    z=io.BytesIO()
+    with zipfile.ZipFile(z,"w") as f:f.writestr("data.json",payload)
+    answer=json.dumps({"requestId":"1","formatType":".json.zip","resultRequest":None,
+                      "contentResponse":base64.b64encode(z.getvalue()).decode()}).encode()
+    class Response:
+        status_code=200
+        def __init__(self,data):self.data=data
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def iter_content(self,size):yield self.data
+    calls=[]
+    def post(url,**kw):
+        calls.append((url,kw))
+        return Response(b'{"success":true,"token":"fixture"}' if url.endswith("/Auth") else answer)
+    monkeypatch.setenv("IGOR_GME_PRIVATE_AUTHORIZED","1")
+    assert g.fetch_private("prices",day,day,"demo","fake",post=post)==payload
+    assert [u for u,_ in calls]==[g.ENDPOINT+"/Auth",g.ENDPOINT+"/RequestData"]
+    assert calls[1][1]["headers"]=={"Authorization":"Bearer fixture"}
+    assert calls[1][1]["json"]["dataName"]=="GAS_ImbalancePrice"
+    assert all(kw["allow_redirects"] is False and kw["stream"] for _,kw in calls)
+    assert len(calls)==2
