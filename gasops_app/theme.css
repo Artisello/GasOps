@@ -53,7 +53,7 @@
 .st-key-bso_launch_balancing {border-top:3px solid var(--gas-teal)!important;}
 .st-key-bso_launch_settlement {border-top:3px solid var(--gas-blue)!important;}
 .st-key-bso_launch_operations {border-top:3px solid var(--gas-amber)!important;}
-.gas-task {min-height:16rem;overflow-wrap:anywhere;}
+.gas-task {min-height:17rem;overflow-wrap:anywhere;}
 .gas-task-label {display:block;color:var(--gas-muted);font-size:.77rem;font-weight:550;margin-bottom:.7rem;}
 .stApp .gas-task h2 {font-size:1.5rem;letter-spacing:-.035em;margin:0 0 .65rem;padding:0;}
 .gas-task p {font-size:.94rem;line-height:1.5;color:var(--gas-text);margin:0 0 1rem;}
