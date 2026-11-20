@@ -173,6 +173,8 @@ def _settlement(demo,now):
 
 
 def page():
+    from .workspace import apply_intent, guide
+    apply_intent("kpi")
     st.title("KPI operativi")
     st.caption("Balancing · Settlement · Operations")
     view=st.radio("Vista KPI",["Panoramica","Registro operativo","Monitoraggio fonti","Executive demo","Centro operativo"],horizontal=True,label_visibility="collapsed",key="bso_view")
@@ -193,6 +195,7 @@ def page():
         panel()
         return
     selection=st.radio("Modalità dati",["Dati importati","Demo"],horizontal=True,key="bso_mode")
+    guide("operations")
     demo=selection=="Demo"
     now=DEMO_NOW if demo else utc_now().astimezone(ROME)
     st.caption(("Demo sintetica · " if demo else "Dati di sessione · ")+stamp(now)+" · calcolato alla visualizzazione")

@@ -25,7 +25,11 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-La panoramica parte dal bilancio mensile italiano. **Avvia analisi di mercato AI** esegue i controlli qualità, le previsioni, la ricerca documentale e le simulazioni con verifica dei risultati. L’analisi funziona anche senza un modello linguistico. La [guida di tre minuti](DEMO.md) mostra anche le opzioni offline. Esegui i test con `python -m pytest -q`.
+La **Scrivania operativa** propone tre accessi diretti: sistema gas, bilanci e rettifiche, attività e scadenze. Ogni accesso indica quali dati servono e cosa si ottiene. **Prova il settlement** apre un esempio guidato con dati sintetici, senza modificare eventuali registri importati.
+
+La vista **Mercato in sintesi** conserva bilancio mensile italiano, previsioni e **Genera bollettino di mercato**, utilizzabile anche senza AI. La [guida rapida](DEMO.md) descrive il primo percorso e le analisi di approfondimento. Esegui i test con `python -m pytest -q`.
+
+**Come usare questa vista** include un glossario contestuale con pagine e sezioni delle edizioni Snam fornite. La guida al modello CSV chiarisce unità, segni e significato delle componenti. [Riferimenti della guida BSO](docs/BSO_REFERENCE_GUIDE.md).
 
 Il prototipo CLI originale è disponibile con `python gasops.py example.json` e `python -m unittest -v`.
 

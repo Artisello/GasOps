@@ -8,12 +8,18 @@ from gasops_app.public_data import SourceUnavailable
 from gasops_app.session import ARCHIVE, DEMO
 
 
+def _market_app(*args, **kwargs):
+    app=AppTest.from_file(*args, **kwargs)
+    app.session_state["overview_workspace"]="Mercato in sintesi"
+    return app
+
+
 def test_overview_button_completes_offline_run(monkeypatch, tmp_path):
     monkeypatch.setenv("GASOPS_STATE_DIR", str(tmp_path))
     monkeypatch.setenv("GASOPS_PDF_DIR", str(tmp_path))
     monkeypatch.setenv("GASOPS_LLM_MODEL", "")
     monkeypatch.delenv("GROQ_API_KEY",raising=False)
-    app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=30)
+    app = _market_app(Path(__file__).resolve().parents[1] / "app.py", default_timeout=30)
     app.session_state["selected_source"] = DEMO
     app.run()
     assert not app.exception
@@ -50,7 +56,7 @@ def test_unavailable_public_feed_can_open_the_real_offline_archive(monkeypatch, 
         raise SourceUnavailable("Eurostat non disponibile")
 
     monkeypatch.setattr("gasops_app.session.load_monthly", unavailable)
-    app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=30).run()
+    app = _market_app(Path(__file__).resolve().parents[1] / "app.py", default_timeout=30).run()
     assert any("Eurostat non disponibile" in x.value for x in app.text)
     app.button(key="overview_archive").click().run()
     assert not app.exception
@@ -118,7 +124,7 @@ def test_entsog_notice_does_not_hide_other_warnings():
 
 def test_overview_compact_model_controls(monkeypatch,tmp_path):
     monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
-    app=AppTest.from_file(Path(__file__).resolve().parents[1]/"app.py",default_timeout=30)
+    app=_market_app(Path(__file__).resolve().parents[1]/"app.py",default_timeout=30)
     app.session_state["selected_source"]=DEMO
     app.run()
     assert not app.exception
@@ -195,7 +201,7 @@ def test_briefing_keeps_previous_report_when_source_changes(monkeypatch,tmp_path
     monkeypatch.setattr(session,"_configuration",lambda:None)
     report=run_workflow(MarketContext(synthetic(),"Seasonal regression",utc_now()),Library(),Assumptions(),full=True)
     report.assumptions["model"]="Seasonal regression"
-    app=AppTest.from_file(Path(__file__).resolve().parents[1]/"app.py",default_timeout=30)
+    app=_market_app(Path(__file__).resolve().parents[1]/"app.py",default_timeout=30)
     app.session_state["selected_source"]=DEMO
     app.session_state["last_briefing"]=report
     app.run()
@@ -210,7 +216,7 @@ def test_lean_interface_preserves_diagnostics_and_author_credit(monkeypatch,tmp_
     from gasops_app import session
     monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
     monkeypatch.setattr(session,"_configuration",lambda:None)
-    app=AppTest.from_file(Path(__file__).resolve().parents[1]/"app.py",default_timeout=30)
+    app=_market_app(Path(__file__).resolve().parents[1]/"app.py",default_timeout=30)
     app.session_state["selected_source"]=DEMO
     app.run()
     assert not app.exception
@@ -249,7 +255,7 @@ def test_overview_has_plain_language_and_responsive_cards(monkeypatch,tmp_path):
     from gasops_app import session
     monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
     monkeypatch.setattr(session,"_configuration",lambda:None)
-    app=AppTest.from_file(Path(__file__).resolve().parents[1]/"app.py",default_timeout=30)
+    app=_market_app(Path(__file__).resolve().parents[1]/"app.py",default_timeout=30)
     app.session_state["selected_source"]=DEMO
     app.run()
     assert not app.exception
@@ -337,7 +343,7 @@ def test_balancing_page_simple_and_complete(monkeypatch,tmp_path):
     app=AppTest.from_string("from gasops_app.workbench import balancing\nbalancing()",default_timeout=30).run()
     assert not app.exception
     assert app.radio(key="balancing_view").options==["Scenario di mercato","Sbilanciamento del partecipante","Stato sistema","Controllo giornaliero"]
-    assert app.radio(key="balancing_view").value=="Scenario di mercato"
+    assert app.radio(key="balancing_view").value=="Stato sistema"
     assert not any("Saldo energetico" in e.proto.body for e in app.get("html"))
     app.radio(key="balancing_view").set_value("Sbilanciamento del partecipante").run()
     assert not app.exception
@@ -364,6 +370,7 @@ def test_balancing_missing_storage_shock_does_not_crash(monkeypatch,tmp_path):
     monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
     app=AppTest.from_string("from gasops_app.workbench import balancing\nbalancing()",default_timeout=30)
     data=synthetic()
+    app.session_state["balancing_view"]="Scenario di mercato"
     app.session_state["active_bundle"]=data
     app.session_state["scenario_case_"+data.fingerprint]={"demand_gwh":"100","supply_gwh":"120","storage_gwh":None,"price_eur_mwh":"42"}
     ass=Assumptions()
@@ -627,13 +634,14 @@ def test_daily_settlement_desk_and_jarvis_no_implicit_fetch():
     app=AppTest.from_string("from gasops_app.settlement_desk_page import panel\npanel()",default_timeout=30).run()
     assert not app.exception
     assert not app.get("html") or not any("172.200,00" in x.proto.body for x in app.get("html"))
-    app.checkbox(key="daily_desk_demo").check().run()
-    assert any("30/30 giorni" in x.value for x in app.caption)
+    app.radio(key="daily_desk_data_mode").set_value("Esempio guidato").run()
+    assert any("30/30 giorni" in x.value for x in app.success)
     assert any("172.200,00" in x.proto.body for x in app.get("html"))
     app.radio(key="daily_desk_filter").set_value("Rettifiche").run()
     assert not app.exception
-    rows=next(d.value for d in app.dataframe if "Δ DS (MWh)" in d.value.columns)
+    rows=next(d.value for d in app.dataframe if "Rettifica (€)" in d.value.columns)
     assert len(rows)==1
+    assert float(rows["Rettifica (€)"].iloc[0])==-4200
     app.radio(key="daily_desk_filter").set_value("Eccezioni").run()
     assert not app.exception
     assert any("Nessuna giornata" in c.value for c in app.caption)
