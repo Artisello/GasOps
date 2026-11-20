@@ -50,7 +50,7 @@ def _settlement_panel() -> None:
                 with a:
                     storage=field("Stoccaggio netto",inputs.storage_net,"Prelievo da stoccaggio positivo, iniezione negativa.")
                 with b:
-                    psv=field("Transazioni nette (PSV)",inputs.psv_net,"Acquisti positivi, vendite negative. Inserisci il termine netto completo.")
+                    psv=field("Transazioni nette (PSV)",inputs.psv_net,"Termine T netto completo del bilancio, incluse le componenti previste dalla fonte: acquisti positivi, vendite negative. CdR XCII, cap. 9 §3.1.2, PDF p. 372.")
             st.caption("Prezzi di sbilanciamento (€/MWh)")
             a,b=st.columns(2)
             with a:
@@ -215,14 +215,17 @@ def _scenario_panel() -> None:
 
 
 def balancing() -> None:
-    header("Bilanciamento", "Stime pubblicate · controlli · simulazioni separate")
+    from .workspace import apply_intent, guide
+    apply_intent("balancing")
+    header("Bilanciamento", "Sistema gas · bilanci e rettifiche · simulazioni")
     view=st.radio("Vista bilanciamento",["Scenario di mercato","Sbilanciamento del partecipante","Stato sistema","Controllo giornaliero"],
-                  horizontal=True,label_visibility="collapsed",key="balancing_view")
+                  index=2,horizontal=True,label_visibility="collapsed",key="balancing_view")
     if view=="Scenario di mercato":
         _scenario_panel()
     elif view=="Sbilanciamento del partecipante":
         _settlement_panel()
     elif view=="Stato sistema":
+        guide("system")
         from .operational_sources_page import _jarvis_panel
         _jarvis_panel(prefix="balancing")
     else:

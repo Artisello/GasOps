@@ -496,12 +496,21 @@ def _overview_mix(context):
 
 
 def overview() -> None:
+    from .workspace import render
+    top = st.container()
+    view = st.radio("Vista iniziale", ["Scrivania BSO", "Mercato in sintesi"],
+                    horizontal=True, label_visibility="collapsed", key="overview_workspace")
+    with top:
+        header("Scrivania operativa" if view == "Scrivania BSO" else "Panoramica del mercato",
+               "Bilanciamento · Settlement · Operations" if view == "Scrivania BSO" else "")
+    if view == "Scrivania BSO":
+        render()
+        return
     top,controls=st.container(),st.container()
     with controls:
         selection=source_filters("overview")
     area,perimeter=market_scope(selection.name)
     with top:
-        header("Panoramica del mercato","")
         st.markdown("**"+area+"** · "+perimeter)
     context=None
     if selection.bundle:

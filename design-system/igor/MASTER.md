@@ -1,6 +1,6 @@
 # I.G.O.R. — Design system
 
-Scope: operational analytics and credit/settlement support, desktop-first Streamlit and Plotly. Existing routes, models, public data sources and controls stay unchanged.
+Scope: operational analytics and credit/settlement support, desktop-first Streamlit and Plotly. Preserve existing routes, calculations, models and public data sources; use native controls for task-oriented navigation.
 
 ## Method and provenance
 Manual selection from UI UX Pro Max catalogs at [reviewed revision](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/tree/ed766d3bf62f32c8d27762ad49abdc3a4744c84f), not CLI-generated output. See [reasoning](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/blob/ed766d3bf62f32c8d27762ad49abdc3a4744c84f/src/ui-ux-pro-max/data/ui-reasoning.csv) (Financial Dashboard 6, Analytics Dashboard 7, Invoice & Billing Tool 105), styles (Minimalism & Swiss Style), typography (Minimal Swiss 5), chart guidance (Trend Over Time 1), UX (9, 28, 36, 37, 41, 67, 69, 71, 79). Adapt recommendations to an operational console, not a landing page. No upstream scripts/dependencies shipped or executed.
@@ -40,3 +40,11 @@ Keep the teal accent; enabled primary controls (including native form submit var
 
 ## Responsive rendering
 Use horizontal, wrapping native radio navigation for expensive mutually exclusive workspaces; run only the selected branch instead of eager tabs. Preserve committed domain inputs and computed reports separately from transient widgets; unsubmitted edits can be lost on switching views. Public market selections may reuse a successful snapshot in the same session for under 60 seconds without altering its acquisition date, warnings or refresh semantics; explicit refresh always bypasses that reuse. Do not cache authorization decisions or AI reservations. Measure browser timings after deployment; fewer rendered branches are a structural improvement, not a measured latency claim.
+
+## Task-oriented BSO entry
+
+The default overview is the operational desk: Balancing, Settlement and Operations each state the required input, resulting evidence and one direct action. Market overview and briefing remain available in the second view. The desk itself makes no source requests. Imported-version counts describe the presence of session data, never completeness, freshness or validation.
+
+The example action opens synthetic settlement explicitly and preserves imported registers. A one-use navigation intent selects the exact existing page and view before its widgets render. Visiting another page must not replay it. Balancing starts with published system data; calculations and market scenarios are explicit alternatives.
+
+Use short contextual guides, full names at the first use of an acronym, human-readable months, side-by-side participant/month controls and a compact exception table. Source classification, signs, incomplete periods and accounting limits stay visible. The example points to an actual revision in the displayed records. Preserve full detail and export even when the first table shows fewer columns.

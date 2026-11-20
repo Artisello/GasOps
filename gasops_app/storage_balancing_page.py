@@ -139,6 +139,9 @@ def _mgs():
 def panel():
     st.subheader("Bilanciamento stoccaggio · HS1")
     st.caption("Edizione di studio 2026-I · dati ipotetici salvo CSV esplicitamente importato · vigenza da verificare.")
+    with st.expander("Segni e giorno gas: guida dai documenti Snam"):
+        from .bso_reference import render_terms
+        render_terms("storage", "hs1_reference_term")
     view=st.radio("Controllo",["Sistema","Utente","Limiti MGS"],horizontal=True,key="hs1_mode",label_visibility="collapsed")
     if view=="Sistema":_system()
     elif view=="Utente":_user()

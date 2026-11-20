@@ -2,6 +2,18 @@
 
 Prototipo indipendente, non ufficiale Snam. Per una presentazione stabile, avvia `streamlit run app.py`, seleziona **Calcoli senza AI** e tieni pronto **Archivio JRC** (funziona offline). Non mostrare informazioni aziendali riservate.
 
+## Primo percorso: settlement in due minuti
+
+1. Dalla **Scrivania operativa**, scegli **Prova il settlement**. Non occorrono file, chiavi API o AI.
+2. Leggi la classificazione **Esempio guidato · dati sintetici** e i quattro indicatori. Il filtro parte dalle rettifiche.
+3. Esamina il **5 settembre 2026**: nell’esempio il saldo cambia da −200 a −300 MWh e l’importo da −8.400 a −12.600 €, con rettifica di −4.200 €.
+4. Apri **Esamina una giornata e tutte le sue versioni** per vedere quantità, prezzi e scomposizione della rettifica.
+5. Scarica il controllo giornaliero e il registro completo. Passando a **Dati importati**, eventuali file già acquisiti restano disponibili.
+
+Per il lavoro sulle altre aree, torna alla scrivania: **Apri il sistema gas** porta alle pubblicazioni Jarvis; **Apri le attività** porta al registro di scadenze. In ciascuna vista, **Come usare questa vista** riassume i passaggi. Le importazioni conservano i dati nella sessione: esportali prima di chiuderla. Gli importi sono simulazioni per verifica, non fatture ufficiali.
+
+## Approfondimenti
+
 | Tempo | Vista | Messaggio |
 |---|---|---|
 | 0:00–0:45 | KPI operativi > Panoramica | Tre KPI operativi proposti. Senza registri autorizzati sono indisponibili, non zero. Benchmark annuali ACER, Terna e MASE con fonte e periodo. |

@@ -107,7 +107,7 @@ def reconcile_days(balances,reported,user,year,month,closed_day):
         if r.version in by[r.day] and by[r.day][r.version]!=r:raise ValueError("Versioni comunicate discordanti.")
         by[r.day][r.version]=r
     results=[]
-    for row in daily_controls(balances,user,year,month):
+    for row in daily_controls(balances,user,year,month,closed_day=closed_day):
         day=date.fromisoformat(row["day"])
         if day>closed_day:continue
         versions=by.get(day,{})
@@ -149,7 +149,7 @@ def score(results):
 
 
 def reconcile_documents(balances,documents,user,year,month,closed_day):
-    daily=daily_controls(balances,user,year,month)
+    daily=daily_controls(balances,user,year,month,closed_day=closed_day)
     complete=monthly_summary(daily)["complete"] and date.fromisoformat(daily[-1]["day"])<=closed_day
     selected=[r for r in documents if (r.user,r.year,r.month)==(user,year,month)]
     result=[]

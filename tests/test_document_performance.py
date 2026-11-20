@@ -35,8 +35,11 @@ def test_shared_repository_index_reused_and_changed_file_reindexed(monkeypatch,t
         assert calls==[1]
         first.radio(key="desk_mode").set_value("Riferimenti salvati").run()
         assert calls==[1]
-        first.session_state[desk.STATE]["reference_list"].append({"document":"test.pdf",
-            "sha256":first.session_state[desk.STATE]["docs"].documents["test.pdf"].digest,"page":1,"excerpt":"Garanzia"})
+        documents=first.session_state[desk.STATE]["docs"].documents
+        title,pdf=next(iter(documents.items()))
+        assert len(documents)==1 and pdf.name=="test.pdf"
+        first.session_state[desk.STATE]["reference_list"].append({"document":title,
+            "sha256":pdf.digest,"page":1,"excerpt":"Garanzia"})
         assert not second.session_state[desk.STATE]["reference_list"]
         path.write_bytes(_pdf("Nuovo testo normativo revisione."))
         first.run()
@@ -59,7 +62,10 @@ def test_personal_scope_never_fetches_or_indexes_public(monkeypatch,tmp_path):
     app.session_state[desk.VISITOR_UPLOADS]=(("privato.pdf",raw),)
     app.run()
     assert not app.exception and desk.STATE not in app.session_state
-    assert "privato.pdf" in app.session_state[desk.VISITOR_STATE]["docs"].documents
+    documents=app.session_state[desk.VISITOR_STATE]["docs"].documents
+    assert len(documents)==1
+    pdf=next(iter(documents.values()))
+    assert pdf.name=="privato.pdf" and pdf.data==raw
 
 
 def test_remote_manifest_refresh_reuses_hash_addressed_pdf(monkeypatch):

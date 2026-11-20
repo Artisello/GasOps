@@ -5,9 +5,11 @@ References: Network Code XCII, chapter 9 §§3.1.2, 4.1, 4.2, 4.4.2
 Applicability and rounding conventions are not certified.
 """
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_EVEN
 from calendar import monthrange
+
+from .gas_calendar import closed_gas_day
 
 D = Decimal
 CENT = D("0.01")
@@ -33,13 +35,17 @@ class BalanceRow:
     sell: Decimal | None
 
     def __post_init__(self):
-        if not self.user or self.stage not in ("provisional", "definitive") or self.version < 1:
-            raise ValueError("Invalid user, stage or version")
+        if (not isinstance(self.user, str) or not self.user.strip()
+                or type(self.day) is not date or not 2000 <= self.day.year <= 2100 or type(self.version) is not int
+                or self.stage not in ("provisional", "definitive") or self.version < 1):
+            raise ValueError("Partecipante, giorno gas, fase o versione non validi (anni 2000–2100).")
         for value in (self.injected, self.storage_net, self.psv_net, self.withdrawn, self.buy, self.sell):
             if value is not None and (not isinstance(value, D) or not value.is_finite()):
                 raise ValueError("Use finite Decimal inputs")
         if any(v is None for v in (self.injected, self.storage_net, self.psv_net, self.withdrawn)):
             raise ValueError("Missing energy component; never substitute zero")
+        if self.injected < 0 or self.withdrawn < 0:
+            raise ValueError("Immissioni e prelievi devono essere positivi o nulli.")
 
     @property
     def imbalance(self) -> Decimal:
@@ -74,9 +80,12 @@ def revision_pairs(rows: list[BalanceRow]):
     return result
 
 
-def monthly_preview(rows: list[BalanceRow], user: str, year: int, month: int) -> dict:
+def monthly_preview(rows: list[BalanceRow], user: str, year: int, month: int, *, closed_day: date | None = None) -> dict:
     """Separate negative and positive DS groups; never treat net as invoice."""
     days = monthrange(year, month)[1]
+    cutoff = closed_day if closed_day is not None else closed_gas_day(datetime.now(timezone.utc))
+    if date(year, month, days) > cutoff:
+        return {"status": "BLOCKED_REVIEW", "reason": "Il mese include giorni gas non ancora conclusi.", "days": 0}
     selected = [r for r in rows if r.user == user and (r.day.year, r.day.month) == (year, month)]
     pairs = revision_pairs(selected)
     if len(pairs) != days or any(last.stage != "definitive" or last.cash is None for _, last in pairs):
@@ -85,9 +94,10 @@ def monthly_preview(rows: list[BalanceRow], user: str, year: int, month: int) ->
     short = sum((-r.cash for r in latest if r.imbalance < 0), D("0"))
     long = sum((r.cash for r in latest if r.imbalance > 0), D("0"))
     negative_price = any(r.imbalance and (r.buy if r.imbalance < 0 else r.sell) < 0 for r in latest)
-    return {"status": "REVIEW_REQUIRED" if negative_price else "SIMULATION_ONLY", "days": days,
+    inverted_prices = any(r.buy is not None and r.sell is not None and r.buy < r.sell for r in latest)
+    return {"status": "REVIEW_REQUIRED" if negative_price or inverted_prices else "SIMULATION_ONLY", "days": days,
             "short_group_eur": short, "long_group_eur": long, "net_user_cash_eur": long-short,
-            "negative_price_review": negative_price, "reference": REFERENCE,
+            "negative_price_review": negative_price, "price_order_review": inverted_prices, "reference": REFERENCE,
             "short_payment_days": 15, "long_payment_days": 30}
 
 

@@ -7,6 +7,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from math import isfinite
 
 from .data import ROME
+from .gas_calendar import closed_gas_day
 from .settlement_desk import daily_controls, monthly_summary, csv_text
 
 FIELDS=("task_id","area","activity","due_at","completed_at")
@@ -176,13 +177,6 @@ def finite(value):
         return None
 
 
-def closed_gas_day(now):
-    local=now.astimezone(ROME)
-    # Latest completed gas day: the active 06:00-06:00 gas day is excluded.
-    active=local.date() if local.hour>=6 else local.date()-timedelta(days=1)
-    return active-timedelta(days=1)
-
-
 def balancing_metrics(versions,year,month,now,band=None):
     """Last available publication per completed gas day; estimates, not actual SAS."""
     days=month_days(year,month,closed_gas_day(now))
@@ -205,7 +199,7 @@ def balancing_metrics(versions,year,month,now,band=None):
 
 def settlement_metrics(rows,user,year,month,cutoff):
     # Month-end coverage, not a timeliness KPI: the file has no release timestamps.
-    days=[r for r in daily_controls(rows,user,year,month) if date.fromisoformat(r["day"])<=cutoff]
+    days=[r for r in daily_controls(rows,user,year,month,closed_day=cutoff) if date.fromisoformat(r["day"])<=cutoff]
     result=monthly_summary(days)
     definitive=sum(r["stage"]=="definitive" for r in days)
     comparable=[r for r in days if r["delta_ds_mwh"] is not None]

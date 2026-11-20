@@ -20,7 +20,7 @@ def test_sidebar_navigation_home_unique_and_current_route(monkeypatch,active):
     monkeypatch.setattr(navigation.st,"page_link",lambda page:rendered.append(page.url_path))
     monkeypatch.setattr(navigation.st,"html",headings.append)
     navigation.sidebar_navigation(pages,pages[active])
-    order=[0,1,2,8,3,4,5,6,7]
+    order=[0,3,4,8,1,2,5,6,7]
     assert rendered==[pages[i].url_path for i in order]
     assert keys[0]==("gas_nav_home_active" if active==0 else "gas_nav_home_idle")
     assert len([key for key in keys if key.endswith("_active")])==1

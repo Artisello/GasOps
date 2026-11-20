@@ -46,6 +46,26 @@
 .gas-byline strong {display:block;font-weight:550;}
 .gas-byline small {display:block;color:var(--gas-muted);font-size:.73rem;margin-top:.23rem;}
 .gas-header-meta {display:flex;gap:.45rem;align-items:center;flex-wrap:wrap;color:var(--gas-muted);font-size:.85rem;line-height:1.45;overflow-wrap:anywhere;}
+/* Task-first BSO workspace. Scope all additions to the entry cards. */
+.gas-desk-context {display:flex;justify-content:space-between;gap:.5rem 1.5rem;flex-wrap:wrap;color:var(--gas-muted);font-size:.82rem;padding:.15rem 0 .55rem;}
+.gas-desk-context strong {color:var(--gas-text);font-weight:550;margin-left:.35rem;}
+.st-key-bso_launch_balancing,.st-key-bso_launch_settlement,.st-key-bso_launch_operations {background:var(--gas-panel);border-radius:var(--gas-radius);}
+.st-key-bso_launch_balancing {border-top:3px solid var(--gas-teal)!important;}
+.st-key-bso_launch_settlement {border-top:3px solid var(--gas-blue)!important;}
+.st-key-bso_launch_operations {border-top:3px solid var(--gas-amber)!important;}
+.gas-task {min-height:17rem;overflow-wrap:anywhere;}
+.gas-task-label {display:block;color:var(--gas-muted);font-size:.77rem;font-weight:550;margin-bottom:.7rem;}
+.stApp .gas-task h2 {font-size:1.5rem;letter-spacing:-.035em;margin:0 0 .65rem;padding:0;}
+.gas-task p {font-size:.94rem;line-height:1.5;color:var(--gas-text);margin:0 0 1rem;}
+.gas-task dl {margin:0 0 1rem;padding:0;}
+.gas-task dt {color:var(--gas-muted);font-size:.75rem;font-weight:600;margin-top:.6rem;}
+.gas-task dd {font-size:.83rem;line-height:1.45;color:var(--gas-text);margin:.18rem 0 0;}
+.st-key-bso_example {background:var(--gas-panel);border-left:3px solid var(--gas-teal)!important;}
+@media(max-width:1100px) {
+ .st-key-bso_workspaces [data-testid="stHorizontalBlock"] {flex-direction:column;}
+ .st-key-bso_workspaces [data-testid="stColumn"] {width:100%!important;flex:1 1 auto!important;}
+ .gas-task {min-height:0;}
+}
 .gas-topline {height:1px;background:var(--gas-border);margin-top:var(--gas-space-2);}
 .gas-controls {margin-bottom:.15rem;}
 .gas-chip {display:inline-flex;align-items:center;max-width:100%;min-width:0;white-space:normal;overflow-wrap:anywhere;line-height:1.35;font-size:.75rem;font-weight:550;padding:.25rem .45rem;border-radius:.35rem;color:var(--gas-muted);background:#1a2839;border:1px solid #34455b;}
