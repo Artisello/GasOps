@@ -109,7 +109,7 @@ def _results(result,base,r,unit):
                        "igor-risk.json","application/json",key="risk_export")
 
 
-def risk_page():
+def risk_page(*, auto_demo=False):
     st.title("Simulazione rischi")
     st.caption("Scenario ipotetico · non rischio ufficiale")
     state=assumptions()
@@ -195,7 +195,7 @@ def risk_page():
             submitted=st.form_submit_button("Esegui simulazione",type="primary",width="stretch")
     fingerprint={"source_fingerprint":data.fingerprint,"forecast_period":forecast_period,
                  "forecast_model":forecast_model,"scenario":preset}
-    if submitted:
+    if submitted or (auto_demo and "risk_workspace_v2" not in st.session_state):
         try:
             if preset=="Personalizzato":
                 stress=Stress(demand_pct=dp,supply_pct=sp,price_delta=pp)

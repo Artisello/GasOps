@@ -248,6 +248,12 @@ def _developments():
                     "[Riferimenti BSO](https://github.com/Artisello/GasOps/blob/main/docs/BSO_REFERENCE_GUIDE.md)")
 
 
+def home():
+    """Compact landing page inside the complete application's sidebar shell."""
+    with st.container(key="demo_content"):
+        _overview(cases())
+
+
 def page():
     st.html('<div class="demo-masthead"><div class="gas-brand"><div class="gas-mark" aria-hidden="true">'
             '<span></span><span></span><span></span></div><div><strong>I.G.O.R.</strong>'
