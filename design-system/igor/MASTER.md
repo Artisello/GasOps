@@ -56,3 +56,7 @@ The audience views the potential in five minutes, without using operational tool
 Lead each view with its concrete result and explanation. All BSO examples are explicitly synthetic; the fixed scenario dates remain visible. Use the actual settlement/task engines for displayed numbers. The public historical forecast result is generated before the presentation and checked against its source and engine hashes; never fit a model or fetch a provider when an audience member selects a section. Observed/estimated lines and uncertainty remain distinct. Show coverage limitations even when they weaken a sales claim.
 
 Separate capabilities demonstrated here from integrations and workflows proposed for a pilot. Retain independent/non-official attribution. The workbench is enabled only by server environment, with no audience-facing toggle. Its configuration is not authentication. Existing task-oriented guidance above continues to apply inside that workbench.
+
+## Minimal presentation
+
+Use short functional titles, compact metric cards and one main chart or queue. Remove slogans, introductory paragraphs, repeated capability explanations and per-page pilot summaries. Show brief source/date context beside the result; keep the uncertainty calibration limit visible. Put methodology, references, briefing and full records in native, closed expanders. Operations uses a static table without a command toolbar. Keep native accessible navigation, clear units and independent attribution. No CSS hiding of warnings, widgets or source classifications.

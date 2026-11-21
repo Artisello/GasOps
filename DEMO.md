@@ -13,7 +13,7 @@ Avvia `streamlit run app.py`. Si apre direttamente una demo in sola lettura, con
 | Previsioni | Backtest reale JRC, confronto con baseline e fascia bayesiana | Misurare errore e incertezza prima di valutare un uso operativo |
 | Sviluppi | Ciò che è dimostrato e ciò che richiede un pilot | Concordare dati, validazione e metriche di valore |
 
-Non esistono passi obbligatori, progressioni o pulsanti Avanti/Indietro. Il menu resta disponibile in ogni vista. I dettagli e le tabelle sono facoltativi, sotto i risultati principali.
+Il menu resta disponibile in ogni vista ed è l’unico punto di navigazione. La schermata principale mostra solo indicatori, grafico e contesto essenziale. Briefing, spiegazioni, metodo e fonti sono nei dettagli facoltativi. Date, natura simulata o storica e limiti della fascia previsionale restano visibili.
 
 ## Trasparenza
 

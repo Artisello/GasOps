@@ -24,7 +24,7 @@ def test_read_only_default_can_explore_every_view_offline_without_changing_impor
     app = AppTest.from_file(ROOT / "app.py", default_timeout=30)
     app.session_state["settlement_desk_csv_v1"] = deepcopy(imported)
     app.run()
-    assert not app.exception and app.title[0].value == "Il dato diventa una spiegazione."
+    assert not app.exception and app.title[0].value == "BSO, in sintesi"
     assert app.radio(key=NAV).options == list(VIEWS)
     # Direct, non-sequential exploration; results need no run/model/data controls.
     for view in ("Previsioni", "Settlement", "Sviluppi", "Balancing", "Operations", "In sintesi"):
@@ -39,12 +39,10 @@ def test_read_only_default_can_explore_every_view_offline_without_changing_impor
         if view == "Previsioni":
             assert len(app.get("plotly_chart")) == 1
             assert any("314" in h.proto.body for h in app.get("html"))
-            assert any("67,9%" in h.proto.body for h in app.get("html"))
+            assert any("67,9%" in c.value for c in app.caption)
         if view == "Settlement":
             assert any("-4.200" in h.proto.body for h in app.get("html"))
     assert not app.sidebar.button and not app.sidebar.radio
-    app.button(key="demo_open_settlement").click().run()
-    assert not app.exception and app.radio(key=NAV).value == "Settlement"
 
 
 @pytest.mark.parametrize("mode", ["", "demo", "unknown"])
