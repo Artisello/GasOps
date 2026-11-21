@@ -50,11 +50,6 @@ def _prepare_assistant():
     st.session_state.setdefault("assistant_view","Assistente operativo" if model else "Report locali")
 
 
-def home():
-    from .presentation import home as render
-    render()
-
-
 def risk():
     from .risk_page import risk_page
     risk_page(auto_demo=True)

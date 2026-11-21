@@ -12,6 +12,30 @@ ROOT=Path(__file__).resolve().parents[1]
 PATHS=("","market","security-of-supply","balancing","ledger","risk","regulatory","operations","kpi","connections","demo")
 
 
+def test_home_works_with_presentation_module_loaded_before_sidebar_release(monkeypatch):
+    from gasops_app import presentation
+    # Cloud can retain the presentation module from the preceding release,
+    # which has the overview renderer but not the newer `home` convenience alias.
+    monkeypatch.delattr(presentation,"home")
+    monkeypatch.delenv("GASOPS_APP_MODE",raising=False)
+    app=AppTest.from_file(ROOT/"app.py",default_timeout=30).run()
+    assert not app.exception
+    assert app.title[0].value=="BSO, in sintesi"
+    assert len(app.get("page_link"))==11
+    assert len(app.get("plotly_chart"))==1
+
+
+def test_home_does_not_call_a_cached_callback_from_the_previous_release(monkeypatch):
+    def stale_home():
+        raise ImportError("cannot import name 'home' from 'gasops_app.presentation'")
+    monkeypatch.setattr(demo_application,"home",stale_home,raising=False)
+    monkeypatch.delenv("GASOPS_APP_MODE",raising=False)
+    app=AppTest.from_file(ROOT/"app.py",default_timeout=30).run()
+    assert not app.exception
+    assert app.title[0].value=="BSO, in sintesi"
+    assert len(app.get("page_link"))==11
+
+
 def test_ready_assistant_respects_local_mode_and_does_not_regenerate_after_clear(monkeypatch):
     monkeypatch.setattr(session,"_configuration",lambda:LLMConfig("fixture-model","https://api.example.com/v1","fixture"))
     def forbidden(*args,**kwargs):raise AssertionError("Local mode must not activate a model")
