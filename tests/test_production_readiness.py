@@ -9,7 +9,8 @@ def test_release_gate_offline(monkeypatch,tmp_path):
     monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path/"real"))
     r=verify()
     assert r["passed"],r
-    assert len(r["checks"])==7
+    assert len(r["checks"])==8
+    assert {c["check"] for c in r["checks"]}>={"demo_historical_snapshot","throwaway_sqlite_backup_restore"}
     assert not (tmp_path/"real").exists()
     assert "live APIs and terms" in r["not_verified"]
 

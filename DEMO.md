@@ -1,30 +1,32 @@
-# I.G.O.R. — Demo BSO in 5 minuti
+# I.G.O.R. — Il potenziale BSO in cinque minuti
 
-Prototipo indipendente, non ufficiale Snam. Per una presentazione stabile, avvia `streamlit run app.py`, seleziona **Calcoli senza AI** e tieni pronto **Archivio JRC** (funziona offline). Non mostrare informazioni aziendali riservate.
+Avvia `streamlit run app.py`. Si apre direttamente una demo in sola lettura, con esempi già pronti. Il pubblico può navigare in qualsiasi ordine: nessun upload, configurazione, credenziale o esecuzione di modelli richiesta.
 
-## Primo percorso: settlement in due minuti
+## Che cosa si scopre
 
-1. Dalla **Scrivania operativa**, scegli **Prova il settlement**. Non occorrono file, chiavi API o AI.
-2. Leggi la classificazione **Esempio guidato · dati sintetici** e i quattro indicatori. Il filtro parte dalle rettifiche.
-3. Esamina il **5 settembre 2026**: nell’esempio il saldo cambia da −200 a −300 MWh e l’importo da −8.400 a −12.600 €, con rettifica di −4.200 €.
-4. Apri **Esamina una giornata e tutte le sue versioni** per vedere quantità, prezzi e scomposizione della rettifica.
-5. Scarica il controllo giornaliero e il registro completo. Passando a **Dati importati**, eventuali file già acquisiti restano disponibili.
+| Sezione | Caso già visibile | Potenzialità |
+| --- | --- | --- |
+| In sintesi | Tre risultati BSO e una vista intraday | Capire il perimetro a colpo d’occhio e scegliere che cosa esplorare |
+| Balancing | Otto pubblicazioni simulate del SAS, cambio di segno e ultima variazione | Condividere il contesto del sistema e ricostruire che cosa cambia |
+| Settlement | Una rettifica di −4.200 € spiegata da due versioni dello stesso giorno gas | Risalire dall’importo alla variazione di quantità e prezzo |
+| Operations | Due attività scadute, tre in arrivo e un briefing pronto | Riunire priorità ed evidenze delle tre aree |
+| Previsioni | Backtest reale JRC, confronto con baseline e fascia bayesiana | Misurare errore e incertezza prima di valutare un uso operativo |
+| Sviluppi | Ciò che è dimostrato e ciò che richiede un pilot | Concordare dati, validazione e metriche di valore |
 
-Per il lavoro sulle altre aree, torna alla scrivania: **Apri il sistema gas** porta alle pubblicazioni Jarvis; **Apri le attività** porta al registro di scadenze. In ciascuna vista, **Come usare questa vista** riassume i passaggi. Le importazioni conservano i dati nella sessione: esportali prima di chiuderla. Gli importi sono simulazioni per verifica, non fatture ufficiali.
+Il menu resta disponibile in ogni vista ed è l’unico punto di navigazione. La schermata principale mostra solo indicatori, grafico e contesto essenziale. Briefing, spiegazioni, metodo e fonti sono nei dettagli facoltativi. Date, natura simulata o storica e limiti della fascia previsionale restano visibili.
 
-## Approfondimenti
+## Trasparenza
 
-| Tempo | Vista | Messaggio |
-|---|---|---|
-| 0:00–0:45 | KPI operativi > Panoramica | Tre KPI operativi proposti. Senza registri autorizzati sono indisponibili, non zero. Benchmark annuali ACER, Terna e MASE con fonte e periodo. |
-| 0:45–1:30 | KPI operativi > Registro operativo > Demo | Scadenze, SAS e controllo definitivi su dati sintetici esplicitamente indicati. |
-| 1:30–2:30 | Mercato e previsioni > Laboratorio previsionale | Archivio JRC 2015–2021, confronto naive/Ridge autoregressivo/multivariato su date comuni; proiezione storica, non attuale. |
-| 2:30–3:15 | Mercato e previsioni > Mercato europeo ACER | Benchmark bilanciamento 2024/2025 e 2023/2024, neutralità e trend. |
-| 3:15–4:00 | Bilanciamento / Fatture e garanzie | Controlli del settlement ed eccezioni con input di esempio; nessuna fattura ufficiale. |
-| 4:00–5:00 | Norme e documenti / Monitoraggio fonti | Fonte e pagina PDF, diagnostica se disponibile, stato delle integrazioni. |
+- **Balancing:** valori intraday inventati per il giorno gas 18 novembre 2026; nessun collegamento Jarvis attivo. Il SAS di sistema resta distinto dal saldo del partecipante.
+- **Settlement:** registro sintetico DEMO-001 di settembre 2026. I calcoli riutilizzano il motore del prototipo: il 5 settembre il saldo passa da −200 a −300 MWh, l’importo da −8.400 a −12.600 €, a prezzo invariato. Non sono fatture ufficiali.
+- **Operations:** attività e scadenze inventate, situazione fissata al 18 novembre 2026 alle 14:00 CET. Non sono SLA Snam.
+- **Previsioni:** archivio pubblico JRC ENaGaD v1.1, 2015–2021. Il confronto D+1 copre 28 giorni gas di dicembre 2021. Il risultato è precalcolato eseguendo il backtest effettivo e verificato nei test; non è una previsione odierna. Copertura della fascia e limiti sono visibili.
+- **Briefing:** testo deterministico derivato dai casi mostrati, senza chiamate a un modello AI remoto. L’assistente con dati e documenti autorizzati è uno sviluppo proposto.
 
-Prima della demo: esegui i test e la verifica offline, apri i percorsi scelti e controlla date e unità. Se una fonte live non risponde, mostra l'archivio pubblico o il caso demo dichiarato. Non presentare una cache come dato odierno. Se il modello AI remoto è autorizzato, attivalo solo come extra. La disponibilità dei provider va verificata al momento.
+Il prototipo è indipendente e non ufficiale Snam. Non invia ordini, non modifica registri importati e non misura ancora risparmi o benefici operativi. La sezione Sviluppi rende esplicito il lavoro necessario per un pilot.
 
-## Percorso integrato
+## Preparazione tecnica
 
-Apri **KPI operativi → Executive demo** (raggiungibile anche dalla Panoramica del mercato). Quattro schermate con Avanti/Indietro: Contesto ACER, Controllo BSO sintetico, backtest storico JRC su richiesta, passaggio al pilot. Funziona senza API o AI. Le misure sintetiche sono calcolate dalle fixture già usate nel registro, non nuove costanti di presentazione. Non modifica importazioni, fonte attiva o modello principale. I collegamenti aprono le viste complete. Controllare il layout su desktop e mobile nella versione deployata; i test Streamlit verificano interazioni, non pixel.
+Installare le dipendenze, eseguire `python -m pytest -q` e `python -m gasops_app.readiness`, quindi aprire la demo e verificare le sei sezioni. Per aggiornare il confronto dopo una modifica al modello o al CSV JRC: `python -m gasops_app.demo_forecast`. Le impronte della fonte e del codice impediscono di mostrare inconsapevolmente un risultato obsoleto.
+
+I vecchi strumenti operativi sono conservati nel workbench di sviluppo: `GASOPS_APP_MODE=workbench streamlit run app.py`. Questa configurazione riguarda il server; non compare nell’esperienza del pubblico.
