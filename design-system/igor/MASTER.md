@@ -1,6 +1,6 @@
 # I.G.O.R. — Design system
 
-Scope: a public, read-only BSO presentation, desktop-first Streamlit and Plotly. Preserve calculations, models and public data sources; retain existing operational routes in the explicit developer workbench. Use native controls for free exploration.
+Scope: a freely explorable BSO demonstration, desktop-first Streamlit and Plotly. Preserve calculations, models, public data sources and all existing feature routes. The default application exposes the complete program through its sidebar, with ready examples and no required upload or credential entry. Use native controls for free exploration.
 
 ## Method and provenance
 Manual selection from UI UX Pro Max catalogs at [reviewed revision](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/tree/ed766d3bf62f32c8d27762ad49abdc3a4744c84f), not CLI-generated output. See [reasoning](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/blob/ed766d3bf62f32c8d27762ad49abdc3a4744c84f/src/ui-ux-pro-max/data/ui-reasoning.csv) (Financial Dashboard 6, Analytics Dashboard 7, Invoice & Billing Tool 105), styles (Minimalism & Swiss Style), typography (Minimal Swiss 5), chart guidance (Trend Over Time 1), UX (9, 28, 36, 37, 41, 67, 69, 71, 79). Adapt recommendations to an operational console, not a landing page. No upstream scripts/dependencies shipped or executed.
@@ -26,13 +26,13 @@ Verify keyboard-only navigation, link/button focus, contrast >=4.5:1 for ordinar
 
 Reviewed [UI/UX Pro Max skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/blob/main/.claude/skills/ui-ux-pro-max/SKILL.md) and its [web quick reference](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/blob/main/.claude/skills/ui-ux-pro-max/references/quick-reference.md), manually (CLI not executed). Preserve the existing dark direction and native Material icons. Distinguish control outlines from decorative borders, reserve teal-filled buttons for primary actions, and preserve native disabled states. Aim for 44 CSS px height on navigation, text inputs, main buttons, tabs and topic help; do not override dense chart/table internals. Tabs scroll locally rather than shrinking their labels; long values can wrap. KPI units and source context stay visible. In multi-series breakdowns line patterns distinguish categories, not forecast status (the time/forecast chart retains its separate semantics). System fonts only; no additional frontend library or external assets.
 
-Before merging, exercise all nine routes, keyboard focus, tabs with long labels, 375/768/1024/1440 viewport widths and 200% zoom, narrow chart legends, dark-only contrast, warning/not-available cases and disabled controls. Static tests check selected token ratios and shared styling; they are not a browser audit.
+Before merging, exercise all eleven routes, keyboard focus, tabs with long labels, 375/768/1024/1440 viewport widths and 200% zoom, narrow chart legends, dark-only contrast, warning/not-available cases and disabled controls. Static tests check selected token ratios and shared styling; they are not a browser audit.
 
 
 ## Interaction and workflow: internal prototype
 - A direct, accurately labeled action is enough to import session-only public/synthetic data or refresh configured public sources. No repeated acknowledgement checkbox. Keep the brief data scope note, provider terms, temporal assumptions, parser/schema validation, quotas, and preservation of previous valid data.
 - Keep public/shared archive access control and confirmation before irreversible shared publication/removal; retain explicit consent to transmit PDF extracts and restricted evidence to external AI. The source code is public and the deployment may still be publicly reachable, so an internal-prototype UX does not make it private.
-- Start with usable local assistant reports when AI is not configured; retain explicit provider activation. No automatic provider requests or demo substitution. Show upload panels open only when needed; show document search before the expanded file inventory. Prefer concise labels and contextual help.
+- Start with a usable public JRC assistant report. Use the configured, active model within existing quotas; respect an explicitly selected local mode. The prepared example must never include visitor PDFs or imported records. Public-source refresh stays explicit; no implicit demo substitution. Show upload panels open only when needed; show document search before the expanded file inventory. Prefer concise labels and contextual help.
 - Tests: one-click refresh (no calls on page render or selection), empty selection disabled, direct valid import, invalid import preserves previous state, local assistant default without configured AI.
 
 ## Primary CTA contrast
@@ -43,19 +43,19 @@ Use horizontal, wrapping native radio navigation for expensive mutually exclusiv
 
 ## Task-oriented BSO entry
 
-The default overview is the operational desk: Balancing, Settlement and Operations each state the required input, resulting evidence and one direct action. Market overview and briefing remain available in the second view. The desk itself makes no source requests. Imported-version counts describe the presence of session data, never completeness, freshness or validation.
+The default overview is a compact BSO snapshot with three metrics, a system-balance chart and the historical forecast comparison. The original operational desk remains in the optional workbench variant. Imported-version counts describe the presence of session data, never completeness, freshness or validation.
 
-The example action opens synthetic settlement explicitly and preserves imported registers. A one-use navigation intent selects the exact existing page and view before its widgets render. Visiting another page must not replay it. Balancing starts with published system data; calculations and market scenarios are explicit alternatives.
+The default balancing route opens a declared synthetic settlement case and preserves imported registers. Existing system-data and market-scenario views remain accessible from the same page. A one-use navigation intent must select its exact page and view before widgets render, without replaying when another page is visited.
 
 Use short contextual guides, full names at the first use of an acronym, human-readable months, side-by-side participant/month controls and a compact exception table. Source classification, signs, incomplete periods and accounting limits stay visible. The example points to an actual revision in the displayed records. Preserve full detail and export even when the first table shows fewer columns.
 
 ## Default: freely explorable presentation
 
-The audience views the potential in five minutes, without using operational tools. Default to a populated overview and six freely selectable sections: In sintesi, Balancing, Settlement, Operations, Previsioni, Sviluppi. No required sequence, progress tracker, upload, model-run button, credential prompt or editable domain input. Native navigation and expandable source details are enough.
+The audience should see the potential in five minutes. Default to a populated overview and eleven sidebar destinations: Panoramica, Bilanciamento, Fatture e garanzie, KPI operativi, Mercato e previsioni, Security of Supply, Simulazione rischi, Norme e documenti, Assistente AI, Fonti e API, Esempi BSO. Keep the sidebar available on every page, open on desktop and accessible by the native mobile toggle. No feature page may be orphaned or restricted to an environment flag. The six presentation scenes remain in Esempi BSO.
 
-Lead each view with its concrete result and explanation. All BSO examples are explicitly synthetic; the fixed scenario dates remain visible. Use the actual settlement/task engines for displayed numbers. The public historical forecast result is generated before the presentation and checked against its source and engine hashes; never fit a model or fetch a provider when an audience member selects a section. Observed/estimated lines and uncertainty remain distinct. Show coverage limitations even when they weaken a sales claim.
+Lead each view with its concrete result. No required sequence, upload or credential entry. Prepare settlement, KPI, risk, public PDF search and an assistant report while retaining complete optional controls. All BSO examples are explicitly synthetic; fixed scenario dates remain visible. Use the actual settlement/task engines for displayed numbers. The overview's public historical forecast comparison is precomputed and checked against source and engine hashes. Observed/estimated lines and uncertainty remain distinct. Show coverage limitations even when they weaken a sales claim.
 
-Separate capabilities demonstrated here from integrations and workflows proposed for a pilot. Retain independent/non-official attribution. The workbench is enabled only by server environment, with no audience-facing toggle. Its configuration is not authentication. Existing task-oriented guidance above continues to apply inside that workbench.
+Fonti e API exposes every existing integration and links to the relevant analysis. One explicit refresh coordinates all available providers; distinguish configured credentials, successful responses, dated archives and unavailable services. Preserve existing timeout, cache, quota and consent rules. Never print credentials or transmit personal evidence in prepared examples. Separate implemented capabilities from proposed pilot developments, and retain independent/non-official attribution. The optional workbench changes the initial desk and configuration controls, not feature access; it is not authentication.
 
 ## Minimal presentation
 

@@ -23,3 +23,7 @@ def sidebar_navigation(pages,current):
         st.html(f'<div class="gas-nav-group">{label}</div>')
         for index in indices:
             link(index)
+    if len(pages)>9:
+        st.html('<div class="gas-nav-group">Esplora</div>')
+        for index in range(9,len(pages)):
+            link(index)

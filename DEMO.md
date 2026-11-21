@@ -1,32 +1,33 @@
-# I.G.O.R. — Il potenziale BSO in cinque minuti
+# I.G.O.R. — Esplorare l’intero programma
 
-Avvia `streamlit run app.py`. Si apre direttamente una demo in sola lettura, con esempi già pronti. Il pubblico può navigare in qualsiasi ordine: nessun upload, configurazione, credenziale o esecuzione di modelli richiesta.
+Avvia `streamlit run app.py`. La sidebar è visibile su desktop e apribile dal controllo nativo su mobile. Ogni area è raggiungibile dal menu, senza cambiare configurazione del server.
 
-## Che cosa si scopre
+| Area | Cosa si vede |
+| --- | --- |
+| Panoramica | Tre casi BSO e il confronto storico JRC |
+| Bilanciamento | Rettifica già pronta; stime di sistema, simulazioni, riconciliazioni e regole nelle viste disponibili |
+| Fatture e garanzie | Riconciliazione, esposizioni, scadenze, prezzi e bilanci GNL su casi dichiarati |
+| KPI operativi | Registro demo già popolato; indicatori avanzati, monitoraggio e centro operativo |
+| Mercato e previsioni | Consumi, previsioni, Terna, ACER, prezzi e analisi Snam |
+| Security of Supply | AGSI+, ALSI, IIP, Jarvis, HS1, MASE e interconnessioni ENTSOG |
+| Simulazione rischi | Calcolo già eseguito; ipotesi e stress test esplorabili |
+| Norme e documenti | PDF pubblici predisposti e ricerca di esempio già eseguita; lettura, AI, confronti e dossier |
+| Assistente AI | Analisi JRC già pronta; domande, analista dati e report locali |
+| Fonti e API | Stato effettivo dei connettori e un’unica azione di aggiornamento |
+| Esempi BSO | Casi essenziali in sola lettura e sviluppi del pilot |
 
-| Sezione | Caso già visibile | Potenzialità |
-| --- | --- | --- |
-| In sintesi | Tre risultati BSO e una vista intraday | Capire il perimetro a colpo d’occhio e scegliere che cosa esplorare |
-| Balancing | Otto pubblicazioni simulate del SAS, cambio di segno e ultima variazione | Condividere il contesto del sistema e ricostruire che cosa cambia |
-| Settlement | Una rettifica di −4.200 € spiegata da due versioni dello stesso giorno gas | Risalire dall’importo alla variazione di quantità e prezzo |
-| Operations | Due attività scadute, tre in arrivo e un briefing pronto | Riunire priorità ed evidenze delle tre aree |
-| Previsioni | Backtest reale JRC, confronto con baseline e fascia bayesiana | Misurare errore e incertezza prima di valutare un uso operativo |
-| Sviluppi | Ciò che è dimostrato e ciò che richiede un pilot | Concordare dati, validazione e metriche di valore |
+Le viste complete restano disponibili per mostrare le funzionalità, ma non richiedono file del visitatore per esaminare i casi già predisposti. Non vengono inviate nomine, ordini o fatture.
 
-Il menu resta disponibile in ogni vista ed è l’unico punto di navigazione. La schermata principale mostra solo indicatori, grafico e contesto essenziale. Briefing, spiegazioni, metodo e fonti sono nei dettagli facoltativi. Date, natura simulata o storica e limiti della fascia previsionale restano visibili.
+## Fonti e connessioni
 
-## Trasparenza
+**Aggiorna fonti connesse** usa Eurostat/ARERA, ENTSOG, ACER e meteo, più GIE e Terna quando configurati. Con GIE include gli avvisi IIP; verifica inoltre modello AI e accesso in lettura all’archivio documentale quando presenti. Le credenziali sono esclusivamente del server e non vengono mostrate o richieste al pubblico. Il modello AI conserva i limiti di chiamata esistenti; la verifica invia solo un test sintetico.
 
-- **Balancing:** valori intraday inventati per il giorno gas 18 novembre 2026; nessun collegamento Jarvis attivo. Il SAS di sistema resta distinto dal saldo del partecipante.
-- **Settlement:** registro sintetico DEMO-001 di settembre 2026. I calcoli riutilizzano il motore del prototipo: il 5 settembre il saldo passa da −200 a −300 MWh, l’importo da −8.400 a −12.600 €, a prezzo invariato. Non sono fatture ufficiali.
-- **Operations:** attività e scadenze inventate, situazione fissata al 18 novembre 2026 alle 14:00 CET. Non sono SLA Snam.
-- **Previsioni:** archivio pubblico JRC ENaGaD v1.1, 2015–2021. Il confronto D+1 copre 28 giorni gas di dicembre 2021. Il risultato è precalcolato eseguendo il backtest effettivo e verificato nei test; non è una previsione odierna. Copertura della fascia e limiti sono visibili.
-- **Briefing:** testo deterministico derivato dai casi mostrati, senza chiamate a un modello AI remoto. L’assistente con dati e documenti autorizzati è uno sviluppo proposto.
+La configurazione non viene indicata come connessione riuscita. Esiti, acquisizioni, cache e limiti restano distinguibili; una fonte non raggiungibile non viene sostituita da un esempio. I risultati sono condivisi con le viste operative della stessa sessione. Jarvis conserva l’import di pubblicazioni originali e GME consultazione/import nei limiti autorizzati.
 
-Il prototipo è indipendente e non ufficiale Snam. Non invia ordini, non modifica registri importati e non misura ancora risparmi o benefici operativi. La sezione Sviluppi rende esplicito il lavoro necessario per un pilot.
+L’assistente prepara un’analisi dei soli dati pubblici JRC. Usa il modello se attivo, oppure un report locale esplicitamente indicato. Non include PDF personali o registri importati e non riattiva l’AI dopo una scelta esplicita dei calcoli locali. Svuotare lo storico non provoca un’altra richiesta automatica.
 
-## Preparazione tecnica
+## Perimetro
 
-Installare le dipendenze, eseguire `python -m pytest -q` e `python -m gasops_app.readiness`, quindi aprire la demo e verificare le sei sezioni. Per aggiornare il confronto dopo una modifica al modello o al CSV JRC: `python -m gasops_app.demo_forecast`. Le impronte della fonte e del codice impediscono di mostrare inconsapevolmente un risultato obsoleto.
+I casi BSO sintetici mantengono le date dichiarate: settembre e novembre 2026. Il backtest JRC riguarda il dicembre 2021, non il mercato attuale. Documenti Snam e formule si riferiscono alle edizioni fornite; vigenza e impiego operativo richiedono validazione. Benefici, risparmi e SLA non sono ancora misurati.
 
-I vecchi strumenti operativi sono conservati nel workbench di sviluppo: `GASOPS_APP_MODE=workbench streamlit run app.py`. Questa configurazione riguarda il server; non compare nell’esperienza del pubblico.
+Per la sola variante tecnica iniziale è disponibile `GASOPS_APP_MODE=workbench streamlit run app.py`; non occorre per accedere alle funzionalità. Controlli: `python -m pytest -q` e `python -m gasops_app.readiness`.

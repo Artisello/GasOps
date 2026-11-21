@@ -2,7 +2,7 @@
 
 **Intelligent Gas Operations & Risk**
 
-Demo indipendente in sola lettura delle potenzialità per Balancing, Settlement e Operations. Una panoramica e cinque sezioni liberamente esplorabili mostrano casi già pronti, risultati spiegati e dati pubblici storici. Gli strumenti completi restano nel workbench di sviluppo.
+Demo indipendente delle potenzialità per Balancing, Settlement e Operations. La sidebar dà accesso all’intero programma: mercato, Security of Supply, AI, rischi, documenti, KPI, controlli commerciali, fonti e casi dimostrativi.
 
 **Demo live:** https://snamigor.streamlit.app/
 
@@ -25,9 +25,11 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-L’avvio apre una **demo esplorabile in sola lettura**. La panoramica mostra subito tre casi BSO; Balancing, Settlement, Operations, Previsioni e Sviluppi sono accessibili liberamente dal menu. Non c’è un percorso obbligatorio: ciascuna sezione offre un risultato già pronto, una spiegazione e il suo perimetro.
+L’avvio apre una **panoramica essenziale con la sidebar visibile su desktop**. Le undici aree comprendono tutte le viste originali, Fonti e API ed Esempi BSO. La barra laterale resta disponibile in ogni pagina; su mobile si apre con il controllo nativo di Streamlit. Non ci sono pagine funzionali accessibili solo mediante una configurazione nascosta.
 
-**Non servono file, configurazione, chiavi API o chiamate AI.** I casi BSO sono sintetici e dichiarati; il confronto previsionale usa dati pubblici storici JRC. Non vengono presentati dati correnti Snam, integrazioni attive o risparmi già conseguiti. La demo funziona offline dopo l’installazione. [Presentazione delle potenzialità](DEMO.md).
+**Per esplorare gli esempi non servono file o chiavi personali.** Bilanciamento e KPI partono da casi dichiarati, i rischi mostrano già un calcolo, la ricerca PDF propone un risultato e l’assistente prepara un’analisi JRC. Se il modello AI è configurato e attivo, l’esempio usa il modello con le sole evidenze pubbliche JRC e i limiti di chiamata esistenti; altrimenti è un report locale esplicito. I registri importati restano distinti dai casi dimostrativi.
+
+**Fonti e API** mostra disponibilità, ultimo controllo e collegamenti alle analisi. Un’unica azione aggiorna tutti i connettori pubblici disponibili e verifica modello AI e archivio remoto, se configurati. Eurostat, ARERA, ENTSOG, ACER e meteo non richiedono credenziali del visitatore; GIE e Terna usano soltanto le credenziali del server. Configurazione e verifica riuscita sono distinte. Le fonti non raggiungibili restano segnalate; non vengono sostituite con dati simulati. Jarvis e GME mantengono import e consultazione autorizzati, senza dichiarare endpoint automatici inesistenti. [Guida alla demo](DEMO.md).
 
 Il confronto storico è precalcolato dal motore effettivo per una visualizzazione immediata. La demo controlla le impronte del file JRC e del codice del modello; il test di regressione ripete il backtest e confronta i risultati. Dopo modifiche ai motori o alla fonte, rigeneralo con `python -m gasops_app.demo_forecast`. Esegui i controlli con `python -m pytest -q` e `python -m gasops_app.readiness`.
 
@@ -39,7 +41,7 @@ Gli strumenti completi restano disponibili agli sviluppatori, con una configuraz
 GASOPS_APP_MODE=workbench streamlit run app.py
 ```
 
-Questa modalità conserva le nove viste, i registri, i controlli e le integrazioni del prototipo. Non è raggiungibile dal menu della demo né tramite un parametro URL. Non costituisce un controllo di accesso: un’eventuale installazione del workbench richiede un perimetro di accesso appropriato. Le istruzioni operative delle sezioni seguenti riguardano il **workbench**, non il pubblico della presentazione.
+Questa variante conserva la scrivania tecnica iniziale e i controlli di configurazione nella sidebar. Le funzioni applicative sono raggiungibili anche nella modalità predefinita; il flag non le nasconde e non è autenticazione. Le istruzioni seguenti descrivono fonti, calcoli e strumenti di approfondimento disponibili nel programma.
 
 Nel workbench, **Come usare questa vista** include un glossario contestuale con pagine e sezioni delle edizioni Snam fornite. La guida al modello CSV chiarisce unità, segni e significato delle componenti. [Riferimenti della guida BSO](docs/BSO_REFERENCE_GUIDE.md).
 

@@ -1,25 +1,20 @@
-# Verifica della demo esplorabile · 21 novembre 2026
+# Verifica della navigazione completa · 21 novembre 2026
 
-## Esperienza del pubblico
+## Copertura
 
-- Avvio predefinito in sola lettura, con sei sezioni selezionabili in qualsiasi ordine. Nessun percorso obbligatorio o pulsante Avanti/Indietro.
-- Risultati già popolati; nessuna richiesta di file, testo, credenziali, date, scelta del modello o avvio del backtest.
-- Revisione minimale: titoli funzionali, schede compatte, grafici centrali e un solo menu. Briefing, spiegazioni e fonti sono nei dettagli facoltativi; tipo di dato, periodo e copertura della fascia restano visibili. La coda Operations usa una tabella statica senza barra comandi.
-- Navigazione verificata nel browser locale su tutte le sei sezioni. Verificati i layout a 375, 768, 1024 e 1440 CSS px; nessuno scorrimento orizzontale dell’intera pagina nei campioni ispezionati. Le tabelle di dettaglio possono scorrere localmente.
-- Selezione delle aree verificata con freccia destra da tastiera; focus nativo con contorno blu di 2 px. Contrasto dei token verificato nei test. Nessun pulsante di navigazione duplicato nelle schede.
-- Viewport temporaneo ripristinato al termine. Verifiche locali, non certificazione di accessibilità né test di comprensione con utenti Snam. I cinque minuti sono l’obiettivo di presentazione, non una durata misurata con utenti.
+- Sidebar nativa con undici collegamenti e indicazione della pagina corrente. Tutte le nove aree originali sono disponibili anche nella configurazione predefinita; si aggiungono Fonti e API ed Esempi BSO.
+- La panoramica conserva il layout essenziale. Le funzioni complete restano raggiungibili: AI e analista dati, Security of Supply, mercato, previsioni, rischio, controlli commerciali, PDF, KPI e monitoraggio.
+- I test navigano tutte le undici pagine utilizzando gli hash dei collegamenti nativi effettivamente renderizzati. Verificano inoltre un percorso di dipendenze dal programma a ogni modulo di pagina.
+- Casi predisposti per bilanciamento, KPI, rischi e ricerca PDF; analisi pubblica JRC pronta nell’assistente. I registri già importati non vengono sostituiti.
 
-## Evidenze
+## Fonti e API
 
-- Fixture BSO isolate dai registri importati; data di scenario fissata e natura sintetica visibili.
-- Rettifica di esempio riconciliata con il motore esistente: quantità −4.200 €, prezzo 0 €, totale −4.200 €. Trenta giorni definitivi verificabili, una giornata modificata.
-- Scadenze e briefing derivati dallo stesso registro demo. Il testo è deterministico, senza chiamate AI remote.
-- Risultato JRC precalcolato dal backtest effettivo, con hash del file sorgente e dei moduli del motore. Test di riproduzione contro una nuova esecuzione su 28 date. Fonte, intervallo storico, baseline, copertura della fascia e limiti visibili.
-- Test Streamlit su tutte le sezioni con richieste HTTP bloccate; verifica che non compaiano controlli operativi e che un registro preesistente rimanga identico.
-- Workbench completo conservato dietro configurazione esplicita del server; le prove precedenti continuano a esercitarlo. Il flag non è un sistema di autenticazione.
+Il coordinatore usa i connettori esistenti per tutti i servizi disponibili. GIE comprende AGSI+, ALSI e IIP; Terna comprende consuntivi, previsioni e contesto; modello AI e archivio documentale hanno verifiche dedicate. Le richieste mantengono timeout, limiti, quote e ultimo risultato valido. La lettura dell’archivio non pubblica o modifica documenti.
 
-## Controlli di rilascio
+Verifica live locale dei connettori pubblici: Eurostat/ARERA acquisito; ACER acquisito; Open-Meteo acquisito. ENTSOG restituisce dati con avviso di copertura/metadati, conservato come “Da verificare”. GIE, Terna, modello AI e archivio remoto non hanno credenziali configurate nell’ambiente locale: il loro accesso effettivo va verificato sul deployment che le possiede. I test con fixture controllano che ogni adattatore configurato venga chiamato, che un errore non blocchi gli altri e che i risultati precedenti restino disponibili.
 
-`python -m pytest -q`, `python -m pip check` e `python -m gasops_app.readiness`.
+La configurazione è distinta dalla verifica riuscita. Nessuna sostituzione implicita di una fonte pubblica con dati sintetici. Le chiavi non compaiono nei risultati o nello stato UI. Gli invii del modello predisposto comprendono soltanto il quesito e le evidenze pubbliche JRC, mai PDF o registri personali.
 
-La verifica offline include il risultato storico della demo e ne rifiuta la provenienza obsoleta. API live, deployment pubblico, integrazioni aziendali, benefici e accettazione operativa non sono attestati da questi controlli.
+## Verifiche
+
+535 test pytest superati; otto controlli readiness offline superati e dipendenze coerenti (`pip check`). Verificate nel browser tutte le undici destinazioni, il caso di ricerca nei tre PDF pubblici, il calcolo dei rischi già pronto e il report locale dell’assistente. Layout a 375/768/1024/1440 px senza overflow della pagina nelle viste controllate; menu mobile apribile e navigabile, sidebar desktop e focus da tastiera visibile. Sono verifiche del prototipo; non attestano accettazione operativa Snam, accessibilità certificata o benefici economici.

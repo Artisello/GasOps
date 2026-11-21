@@ -14,14 +14,14 @@ from gasops_app.presentation import NAV, VIEWS
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_read_only_default_can_explore_every_view_offline_without_changing_imports(monkeypatch):
+def test_ready_examples_can_explore_every_view_offline_without_changing_imports(monkeypatch):
     monkeypatch.delenv("GASOPS_APP_MODE", raising=False)
     def forbidden(*args, **kwargs):
         raise AssertionError("La demo non deve contattare provider o aprire la configurazione.")
     monkeypatch.setattr(requests.Session, "request", forbidden)
     monkeypatch.setattr("gasops_app.session.sidebar", forbidden)
     imported = {"sha": "user-evidence", "rows": ["do not overwrite"]}
-    app = AppTest.from_file(ROOT / "app.py", default_timeout=30)
+    app = AppTest.from_string("from gasops_app.presentation import page\npage()", default_timeout=30)
     app.session_state["settlement_desk_csv_v1"] = deepcopy(imported)
     app.run()
     assert not app.exception and app.title[0].value == "BSO, in sintesi"
@@ -46,10 +46,12 @@ def test_read_only_default_can_explore_every_view_offline_without_changing_impor
 
 
 @pytest.mark.parametrize("mode", ["", "demo", "unknown"])
-def test_only_explicit_server_workbench_mode_exposes_operational_controls(monkeypatch, mode):
+def test_default_mode_exposes_all_features_in_the_sidebar(monkeypatch, mode):
     monkeypatch.setenv("GASOPS_APP_MODE", mode)
     app = AppTest.from_file(ROOT / "app.py", default_timeout=30).run()
-    assert not app.exception and app.radio(key=NAV).value == "In sintesi"
+    assert not app.exception and app.title[0].value == "BSO, in sintesi"
+    assert len(app.get("page_link")) == 11
+    assert not any(r.key == NAV for r in app.radio)
     assert not app.get("file_uploader") and not app.sidebar.selectbox
 
 

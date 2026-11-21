@@ -404,8 +404,13 @@ def _mode_label(mode):
     return "Parole chiave" if mode=="keywords" else "Frase esatta"
 
 
-def _search(cached):
+def _search(cached,*,ready_example=False):
     docs=cached["docs"]
+    if ready_example and not cached.get("demo_search_prepared_v1"):
+        cached["demo_search_prepared_v1"]=True
+        if "desk_search_result" not in cached:
+            query="corrispettivo di sbilanciamento"
+            cached["desk_search_result"]=(query,"Tutti i PDF","keywords",search(docs,query,"keywords"))
     with st.form("desk_search",border=False):
         query=st.text_input("Cosa vuoi cercare?",placeholder="Es. corrispettivo di sbilanciamento",max_chars=600)
         a,b=st.columns([2,1])
@@ -738,7 +743,7 @@ def _references(cached):
         st.rerun()
 
 
-def document_page():
+def document_page(*,ready_example=False):
     header("Norme e documenti","")
     pending=st.session_state.pop(NEXT_SCOPE,None)
     if pending in ("Archivio pubblico","I miei PDF"):
@@ -773,7 +778,7 @@ def document_page():
             st.info("Aggiungi almeno un PDF per iniziare a cercare. Usa Carica PDF nell’archivio qui sotto.")
             return
         if action=="Cerca":
-            _search(cached)
+            _search(cached,ready_example=ready_example)
         elif action=="Chiedi all’AI":
             _ask(cached)
         elif action=="Leggi PDF":
