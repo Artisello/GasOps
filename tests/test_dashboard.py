@@ -1,4 +1,5 @@
 from pathlib import Path
+import pytest
 
 from streamlit.testing.v1 import AppTest
 
@@ -6,6 +7,11 @@ from gasops_app.forecast import AUTOMATIC, MODELS
 from gasops_app.models import Agent
 from gasops_app.public_data import SourceUnavailable
 from gasops_app.session import ARCHIVE, DEMO
+
+
+@pytest.fixture(autouse=True)
+def workbench_mode(monkeypatch):
+    monkeypatch.setenv("GASOPS_APP_MODE", "workbench")
 
 
 def _market_app(*args, **kwargs):

@@ -1,6 +1,6 @@
 # I.G.O.R. — Design system
 
-Scope: operational analytics and credit/settlement support, desktop-first Streamlit and Plotly. Preserve existing routes, calculations, models and public data sources; use native controls for task-oriented navigation.
+Scope: a public, read-only BSO presentation, desktop-first Streamlit and Plotly. Preserve calculations, models and public data sources; retain existing operational routes in the explicit developer workbench. Use native controls for free exploration.
 
 ## Method and provenance
 Manual selection from UI UX Pro Max catalogs at [reviewed revision](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/tree/ed766d3bf62f32c8d27762ad49abdc3a4744c84f), not CLI-generated output. See [reasoning](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/blob/ed766d3bf62f32c8d27762ad49abdc3a4744c84f/src/ui-ux-pro-max/data/ui-reasoning.csv) (Financial Dashboard 6, Analytics Dashboard 7, Invoice & Billing Tool 105), styles (Minimalism & Swiss Style), typography (Minimal Swiss 5), chart guidance (Trend Over Time 1), UX (9, 28, 36, 37, 41, 67, 69, 71, 79). Adapt recommendations to an operational console, not a landing page. No upstream scripts/dependencies shipped or executed.
@@ -48,3 +48,11 @@ The default overview is the operational desk: Balancing, Settlement and Operatio
 The example action opens synthetic settlement explicitly and preserves imported registers. A one-use navigation intent selects the exact existing page and view before its widgets render. Visiting another page must not replay it. Balancing starts with published system data; calculations and market scenarios are explicit alternatives.
 
 Use short contextual guides, full names at the first use of an acronym, human-readable months, side-by-side participant/month controls and a compact exception table. Source classification, signs, incomplete periods and accounting limits stay visible. The example points to an actual revision in the displayed records. Preserve full detail and export even when the first table shows fewer columns.
+
+## Default: freely explorable presentation
+
+The audience views the potential in five minutes, without using operational tools. Default to a populated overview and six freely selectable sections: In sintesi, Balancing, Settlement, Operations, Previsioni, Sviluppi. No required sequence, progress tracker, upload, model-run button, credential prompt or editable domain input. Native navigation and expandable source details are enough.
+
+Lead each view with its concrete result and explanation. All BSO examples are explicitly synthetic; the fixed scenario dates remain visible. Use the actual settlement/task engines for displayed numbers. The public historical forecast result is generated before the presentation and checked against its source and engine hashes; never fit a model or fetch a provider when an audience member selects a section. Observed/estimated lines and uncertainty remain distinct. Show coverage limitations even when they weaken a sales claim.
+
+Separate capabilities demonstrated here from integrations and workflows proposed for a pilot. Retain independent/non-official attribution. The workbench is enabled only by server environment, with no audience-facing toggle. Its configuration is not authentication. Existing task-oriented guidance above continues to apply inside that workbench.

@@ -15,6 +15,7 @@ from .acer_market import bundled_lng
 from .acer_baf_2026 import all_baf_rows
 from .terna_power import annual_rows
 from .monitoring import Archive, run, write_report, parse_report
+from .demo_forecast import load as load_demo_forecast
 
 
 def verify():
@@ -31,6 +32,7 @@ def verify():
         f=inspect(b,now).usable
         return b.origin.archive and len(f)==2557 and f["demand_gwh"].notna().sum()>2500
     check("jrc_public_archive",archive_check)
+    check("demo_historical_snapshot",lambda:bool(load_demo_forecast()["result"]["records"]))
     check("mase_historical_extract",lambda:len(observations())==123)
     check("acer_lng_extract",lambda:len(bundled_lng().rows)==19)
     check("acer_baf_editions",lambda:len(all_baf_rows())==130)

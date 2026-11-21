@@ -1,5 +1,6 @@
 from dataclasses import replace
 from pathlib import Path
+import pytest
 
 from streamlit.testing.v1 import AppTest
 
@@ -8,6 +9,11 @@ from gasops_app.operations_ledger import sample_rows
 from gasops_app.settlement_desk import archive_csv, merge_csv
 
 ROOT=Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture(autouse=True)
+def workbench_mode(monkeypatch):
+    monkeypatch.setenv("GASOPS_APP_MODE", "workbench")
 
 
 def test_home_requires_no_market_or_remote_request(monkeypatch):
