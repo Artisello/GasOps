@@ -18,6 +18,16 @@ load_dotenv(ROOT / ".env", override=False)
 st.html(ROOT / "gasops_app" / "theme.css")
 
 
+def demo_home():
+    # Keep this callback in the rerun entry point. A running Cloud process may
+    # still hold the earlier presentation module without its newer home alias.
+    from gasops_app.presentation import _overview
+    from gasops_app.demo_cases import cases
+
+    with st.container(key="demo_content"):
+        _overview(cases())
+
+
 def application(demo=True):
     """One reachable application tree, with ready examples in the default view."""
     from gasops_app import dashboard, session, workbench, operations_page, risk_page, operational_sources_page, bso_kpi_page
@@ -25,7 +35,7 @@ def application(demo=True):
     from gasops_app import demo_application
 
     pages = [
-        st.Page(demo_application.home if demo else dashboard.overview, title="Panoramica", icon=":material/home:", default=True),
+        st.Page(demo_home if demo else dashboard.overview, title="Panoramica", icon=":material/home:", default=True),
         st.Page(dashboard.market, title="Mercato e previsioni", icon=":material/monitoring:", url_path="market"),
         st.Page(operational_sources_page.operational_context, title="Security of Supply", icon=":material/shield:", url_path="security-of-supply"),
         st.Page(workbench.balancing, title="Bilanciamento", icon=":material/balance:", url_path="balancing"),
