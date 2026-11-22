@@ -2,6 +2,12 @@
 
 Vista **Security of Supply → Mappa della rete**. Nella demo è la vista iniziale di questa sezione; tutte le altre viste restano accessibili. Titolo: **Rete gas italiana**. La mappa è informativa, con dati pubblici e provenienza verificabile; non controlla infrastrutture.
 
+La **Panoramica Demo e Workbench** apre ora con **I.G.O.R. - Sistema gas italiano** e una mappa a larghezza piena alta 500 px. `italian_network_page.panel(mode="overview")` riusa asset, modello e rendering della vista `mode="full"`, mostrando gasdotti, frontiere, GNL e stoccaggi. Segue una sintesi con al massimo quattro KPI pubblici: ingressi coperti, capacità confrontabile, scorte nazionali GIE se già disponibili e copertura ENTSOG, ciascuno con data e denominatore pertinente. I casi BSO simulati e la scrivania Workbench sono conservati sotto la mappa, con etichette separate.
+
+**Esplora la rete** apre l’infrastruttura selezionata nella vista completa, mantenendo identificativo e periodo e azzerando i filtri aggiuntivi di operatore, regione, stato e soli avvisi. I dati e gli import della sessione restano conservati. La selezione è salvata in uno stato indipendente dai widget; le chiavi dei grafici sono distinte per modalità. Il callback nativo legge gli oggetti selezionati prima del rerun, senza un secondo rerun a cascata. I gasdotti hanno un’area di clic di 12 px quasi trasparente, separata dal tratto visibile di 1,4 px, con evidenziazione verde del segmento scelto. Le geometrie restano quelle della fonte.
+
+Le etichette vengono disposte evitando sovrapposizioni all’inquadratura minima, dando priorità all’elemento selezionato. Il grafico storico riserva 52 px sotto l’asse, usa date `gg/mm`, massimo quattro tacche e tema scuro con margini automatici. In Panoramica non compaiono filtri avanzati permanenti né comandi di aggiornamento delle API; gli asset condivisi vengono acquisiti una sola volta dalla cache esistente.
+
 ## Copertura effettiva
 
 | Livello | Elementi | Significato |
@@ -136,12 +142,14 @@ Senza `--all-entry` si aggiorna soltanto Mazara, oppure il `--point` esplicito g
 - Streamlit AppTest: apertura offline, cambio livelli/regione/periodo, selezione e dettaglio, pick nativo validato dal backend, selezioni obsolete ignorate, zero risultati, reset senza perdita dei dati, GIE nazionale separato, tutte le undici pagine principali raggiungibili.
 - Scene PyDeck: dati incorporati, Italia soltanto, nessun URL di tile o token, layer selezionabili con ID stabili. La selezione viene verificata lato Python; **la resa WebGL e il clic fisico in un browser non sono stati verificati in questa sessione**.
 - Smoke live limitati del 22/11/2026: cataloghi ENTSOG, sette indicatori per undici ingressi, `/interruptions` su Mazara; cataloghi AGSI+/ALSI pubblici. I dati ricevuti e le loro acquisizioni sono inclusi negli asset. **Inventari GIE e IIP autenticati non verificati live localmente**: adapter e separazione delle fonti sono coperti da fixture, non dichiarati come accesso riuscito.
-- Suite completa: **599 test passati**; gate offline esteso al manifest e agli asset della mappa. AppTest della nuova vista eseguiti anche con l’API Streamlit 1.49. I warning osservati sono deprecazioni PyMuPDF/SWIG già presenti.
+- Test P2: apertura di entrambe le Panoramiche con HTTP vietato, navigazione alla stessa infrastruttura e ritorno, selezione dei gasdotti, chiavi indipendenti, unica lettura degli asset, limiti dei KPI, date e stato GIE, dati mancanti, etichette e spazio dell’asse temporale. **610 test passati** nella singola suite completa dopo i test mirati; **9 controlli readiness offline passati**. AppTest della versione precedente eseguiti anche con l’API Streamlit 1.49; nuovo flusso P2 verificato sull’ambiente installato.
 
 ## Esclusioni e priorità
 
 Overpass ha risposto HTTP 406 anche a richieste mirate; Wikidata HTTP 403; una ricerca pubblica puntuale Nominatim non ha prodotto risultati. Nessuna di queste fonti è incorporata o dichiarata funzionante. La cartografia Snam resta un riferimento esterno: nessuna licenza utilizzabile per estrarne tracciati è stata verificata.
 
 Non sono inclusi tracciati aggiornati certificati, rete regionale distinta, punti di riconsegna completi, impianti di miscelazione o localizzazioni produttive MASE. Non sono attribuiti stato corrente o capacità correnti ai 20 stoccaggi e alle 69 centrali storiche. Le sole capacità storiche dei gasdotti sono mostrate come metadati datati, senza aggregazioni operative.
+
+Valutazione P1: le pagine ufficiali [MASE/UNMIG Cartografia](https://unmig.mase.gov.it/cartografia/) e [Stoccaggio del gas naturale](https://unmig.mase.gov.it/stoccaggio-del-gas-naturale/) pubblicano informazioni mensili e collegamenti a CSV/KML, con CC BY 4.0 dichiarata per i dati di stoccaggio. La presenza di un titolo minerario non identifica automaticamente la posizione di un impianto né il suo stato operativo: in questo incremento non sono stati aggiunti nuovi elementi senza il controllo incrociato di geometria e identità. Gli asset e i mapping verificati restano quelli inclusi. Non sono state aggiunte chiamate GME o Jarvis autenticate.
 
 Priorità successive: 1) dataset geografico ufficiale aggiornato con licenza esplicita; 2) verifica degli inventari e UMM con accesso GIE del deployment; 3) collaudo visuale WebGL e usabilità nel browser del team; 4) estensione dei mapping di singoli impianti documentabili; 5) maggiore copertura e riconciliazione della paginazione ENTSOG, mantenendo limiti e provenienza.

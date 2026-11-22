@@ -135,9 +135,9 @@ div[data-testid="stVerticalBlockBorderWrapper"] {border-color:var(--gas-border);
 .gas-kpi .teal {color:var(--gas-teal);}
 .gas-kpi .blue {color:var(--gas-blue);}
 .gas-kpi-missing .value {color:var(--gas-muted);}
-.st-key-network_summary .gas-kpi {padding:.55rem .75rem;min-height:0;background:transparent;}
-.st-key-network_summary .gas-kpi .value {font-size:1.3rem;}
-.st-key-network_summary .gas-kpi .key,.st-key-network_summary .gas-kpi .detail {font-size:.76rem;}
+:is(.st-key-network_summary,.st-key-network_home_summary) .gas-kpi {padding:.55rem .75rem;min-height:0;background:transparent;}
+:is(.st-key-network_summary,.st-key-network_home_summary) .gas-kpi .value {font-size:1.3rem;}
+:is(.st-key-network_summary,.st-key-network_home_summary) .gas-kpi .key,:is(.st-key-network_summary,.st-key-network_home_summary) .gas-kpi .detail {font-size:.76rem;}
 .st-key-network_detail [data-testid="stMetricValue"] {font-size:1.45rem;}
 .st-key-network_detail h3 {font-size:1.08rem;line-height:1.35;overflow-wrap:anywhere;}
 .gas-forecast-readout {display:flex;flex-wrap:wrap;gap:.6rem 1.5rem;padding:.7rem .9rem;border:1px solid var(--gas-border);border-left:2px solid var(--gas-blue);border-radius:var(--gas-radius);}

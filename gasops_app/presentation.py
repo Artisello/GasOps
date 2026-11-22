@@ -49,8 +49,16 @@ def _sas_chart(b, key, height=290):
     _chart(fig, key, "GWh", height)
 
 
-def _overview(pack):
-    _heading("BSO, in sintesi", "Demo", "Casi simulati e dati pubblici storici")
+def _overview(pack, *, network=True):
+    if network:
+        from .italian_network_page import panel
+        st.title("I.G.O.R. - Sistema gas italiano")
+        panel(mode="overview")
+        st.divider()
+        st.subheader("Casi BSO · simulazioni")
+        st.caption("Casi simulati separati dai dati pubblici della mappa")
+    else:
+        _heading("BSO, in sintesi", "Demo", "Casi simulati e dati pubblici storici")
     b, r, o = pack["balancing"], pack["revision"], pack["operations"]
     with st.container(key="demo_cards"):
         columns = st.columns(3)
@@ -262,7 +270,7 @@ def page():
         view = st.radio("Esplora le potenzialità", VIEWS, key=NAV, horizontal=True, label_visibility="collapsed")
     pack = cases()
     with st.container(key="demo_content"):
-        {"In sintesi": lambda: _overview(pack), "Balancing": lambda: _balancing(pack),
+        {"In sintesi": lambda: _overview(pack,network=False), "Balancing": lambda: _balancing(pack),
          "Settlement": lambda: _settlement(pack), "Operations": lambda: _operations(pack),
          "Previsioni": _forecast, "Sviluppi": _developments}[view]()
     st.html('<footer class="demo-footer">Creata da Igor · demo indipendente, non ufficiale Snam</footer>')

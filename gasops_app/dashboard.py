@@ -497,12 +497,15 @@ def _overview_mix(context):
 
 def overview() -> None:
     from .workspace import render
+    from .italian_network_page import panel as network_panel
+    st.title("I.G.O.R. - Sistema gas italiano")
+    network_panel(mode="overview")
+    st.divider()
     top = st.container()
     view = st.radio("Vista iniziale", ["Scrivania BSO", "Mercato in sintesi"],
                     horizontal=True, label_visibility="collapsed", key="overview_workspace")
     with top:
-        header("Scrivania operativa" if view == "Scrivania BSO" else "Panoramica del mercato",
-               "Bilanciamento · Settlement · Operations" if view == "Scrivania BSO" else "")
+        st.subheader("Scrivania operativa" if view == "Scrivania BSO" else "Panoramica del mercato")
     if view == "Scrivania BSO":
         render()
         return

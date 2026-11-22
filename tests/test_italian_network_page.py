@@ -102,17 +102,21 @@ def test_map_filters_detail_period_empty_selection_and_reset_are_offline(monkeyp
 def test_native_pick_changes_detail_and_stale_foreign_pick_is_ignored(monkeypatch):
     offline(monkeypatch)
     original=page.st.pydeck_chart
-    events=[]
     def native(*a,**kw):
-        assert kw["on_select"] == "rerun" and kw["selection_mode"] == "single-object"
-        default=original(*a,**kw)
-        return events.pop(0) if events else default
+        assert callable(kw["on_select"]) and kw["selection_mode"] == "single-object"
+        return original(*a,**kw)
     monkeypatch.setattr(page.st,"pydeck_chart",native)
-    app=AppTest.from_string(SCRIPT,default_timeout=30).run()
-    events.append({"selection":{"objects":{"infrastructure-points":[{"infra_id":"it-lng-piombino"}]}}})
+    script="""import streamlit as st
+from gasops_app.italian_network_page import panel, _accept_pick, assets
+if 'synthetic_pick' in st.session_state:
+    _accept_pick('chart', [i.id for i in assets()[0].infrastructure], 'full', st.session_state.pop('synthetic_pick'))
+panel()
+"""
+    app=AppTest.from_string(script,default_timeout=30).run()
+    app.session_state["synthetic_pick"]={"selection":{"objects":{"infrastructure-points":[{"infra_id":"it-lng-piombino"}]}}}
     app.run()
     assert not app.exception and app.selectbox(key="net_infrastructure").value == "it-lng-piombino"
-    events.append({"selection":{"objects":{"infrastructure-points":[{"infra_id":"foreign-id"}]}}})
+    app.session_state["synthetic_pick"]={"selection":{"objects":{"infrastructure-points":[{"infra_id":"foreign-id"}]}}}
     app.run()
     assert not app.exception and app.selectbox(key="net_infrastructure").value == "it-lng-piombino"
 
