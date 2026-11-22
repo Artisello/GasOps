@@ -25,17 +25,23 @@ SYMBOLS = {
     "power":'<path d="M14 1 3 14H10L8 23 22 9H14Z"/>',
     "node":'<circle cx="12" cy="12" r="7"/>'}
 ICON_SIZES = {"entry":16,"lng":16,"storage":14,"compressor":12,"production":12,"power":11,"node":6}
-_ATLAS_SYMBOLS = {**SYMBOLS,"ring":'<circle cx="12" cy="12" r="10" fill="none" stroke="white" stroke-width="2"/>'}
+_ATLAS_SYMBOLS = {**SYMBOLS,**{c+"-outline":f'<g fill="none" stroke="white" stroke-width="1.8">{s}</g>' for c,s in SYMBOLS.items()},
+    "ring":'<circle cx="12" cy="12" r="10" fill="none" stroke="white" stroke-width="2"/>',
+    "finding":'<path d="M12 2 22 12 12 22 2 12Z" fill="none" stroke="white" stroke-width="1.7"/>',
+    "quality":'<circle cx="12" cy="12" r="10" fill="none" stroke="white" stroke-width="1.7" stroke-dasharray="3 2"/>'}
 ICON_MAPPING = {category:{"x":n*24,"y":0,"width":24,"height":24,"mask":True} for n,category in enumerate(_ATLAS_SYMBOLS)}
 ICON_ATLAS = "data:image/svg+xml,"+quote(f'<svg xmlns="http://www.w3.org/2000/svg" width="{24*len(_ATLAS_SYMBOLS)}" height="24" fill="white">'+
     ''.join(f'<g transform="translate({n*24} 0)">{symbol}</g>' for n,symbol in enumerate(_ATLAS_SYMBOLS.values()))+'</svg>')
 MAX_ZOOM = 9
+MARK_COLORS = {"ring":[246,146,157],"finding":[242,190,114],"quality":[180,194,211]}
 
 
-def legend_symbol(category):
+def legend_symbol(category, *, outlined=False):
     """The legend and atlas use exactly the same authored SVG geometry."""
-    color = ",".join(map(str,COLORS[category]))
-    shape = SYMBOLS.get(category,'<path d="M1 11h22v2H1Z"/>')
+    color = ",".join(map(str,COLORS.get(category,MARK_COLORS.get(category,[161,175,192]))))
+    shape = _ATLAS_SYMBOLS.get(category,'<path d="M1 11h22v2H1Z"/>').replace('stroke="white"',f'stroke="rgb({color})"')
+    if outlined:
+        shape = f'<g fill="none" stroke="rgb({color})" stroke-width="1.8">{shape}</g>'
     svg = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="rgb({color})">{shape}</svg>'
     return "data:image/svg+xml,"+quote(svg)
 
@@ -43,6 +49,14 @@ def legend_symbol(category):
 def point_features(rows):
     return {"type":"FeatureCollection","features":[{"type":"Feature",
         "geometry":{"type":"Point","coordinates":row["position"]},"properties":row} for row in rows]}
+
+
+def label_anchor(geometry):
+    if geometry["type"] == "Point":
+        return geometry["coordinates"]
+    line = geometry["coordinates"] if geometry["type"] == "LineString" else max(geometry["coordinates"],key=len)
+    middle = len(line)//2
+    return line[middle] if len(line)%2 else [(a+b)/2 for a,b in zip(line[middle-1],line[middle])]
 
 
 def display_name(name):
@@ -101,20 +115,37 @@ def label_layout(labels, *, zoom=4, width=None, height=None, longitude=12.5, lat
     return placed
 
 
-def deck(network, boundary, visible, selected=None, event_ids=(), *, observations=(), day=None, direction="entry", show_labels=True, mode="full", viewport_width=600):
+def deck(network, boundary, visible, selected=None, event_ids=(), *, observations=(), day=None, direction="entry", show_labels=True, mode="full", viewport_width=600,
+         reading_mode="INFRASTRUCTURE", intelligence=None, finding_ids=(), stable_picking=False):
     camera = fit_italy(boundary,viewport_width,498 if mode == "overview" else 648)
     lookup = {g.infrastructure_id:g for g in network.geography}
     point_categories = {i.category for i in visible if i.category != "pipeline"}
-    lines, points, highlight, labels, events = [], [], [], [], []
+    lines, points, highlight, labels, events, findings, quality = [], [], [], [], [], [], []
     for item in visible:
         geometry = lookup[item.id].geometry
         tooltip = {"infra_id":item.id, "safe_name":escape(display_name(item.name)),
                    "safe_type":escape(CATEGORIES[item.category]), "safe_status":escape(item.status), "safe_value":""}
+        info = intelligence.get(item.id,{}) if intelligence is not None else {}
+        if intelligence is not None:
+            tooltip["safe_status"] = escape(info.get("status",{}).get("status","Sola geografia")+
+                (" · cache da aggiornare" if info.get("stale") else ""))
+            binding = info.get("binding")
+            if binding:
+                tooltip["direction"] = binding.direction
+                values = info["values"]
+                names = {"Physical Flow":"Flusso", "Firm Technical":"Capacità tecnica firm", "Firm Available":"Disponibile pubblicata"}
+                text = [f"{'ingresso' if binding.direction == 'entry' else 'uscita'} · {data_it(day)}"]
+                text.extend(f"{label}: {numero(values[name],1)} GWh/d" for name,label in names.items() if name in values)
+                if info.get("utilization_pct") is not None:
+                    text.append(f"Utilizzo: {numero(info['utilization_pct'],1)}%")
+                if info.get("change_gwh_d") is not None:
+                    text.append(f"Δ D-1: {numero(info['change_gwh_d'],1)} GWh/d")
+                tooltip["safe_value"] = "<br/>".join(escape(t) for t in text)
         label_style = {"label_size":14 if item.id == selected else 12,
                        "label_color":[192,255,234] if item.id == selected else [226,237,247],
                        "label_background":[20,54,51,245] if item.id == selected else [13,24,36,235],
                        "label_priority":1000 if item.id == selected else {"entry":600,"lng":500,"storage":100,"compressor":80}.get(item.category,0)}
-        if day and item.category in ("entry", "lng"):
+        if intelligence is None and day and item.category in ("entry", "lng"):
             points_for_item = network.bindings_for(item.id,"ENTSOG")
             point = next((b for b in points_for_item if b.direction == (direction if item.id == selected else "entry")), None)
             value = applicable(observations,point.point_direction,day,"Physical Flow") if point else None
@@ -126,21 +157,25 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
             lines.append(feature)
             if item.id == selected:
                 highlight.append(feature)
-                line = geometry["coordinates"] if geometry["type"] == "LineString" else max(geometry["coordinates"],key=len)
-                middle = len(line)//2
-                position = line[middle] if len(line)%2 else [(a+b)/2 for a,b in zip(line[middle-1],line[middle])]
+                position = label_anchor(geometry)
                 labels.append({**tooltip,**label_style,"position":position,"label":display_name(item.name)})
             continue
         row = {**tooltip, "position":geometry["coordinates"], "color":COLORS[item.category],
-               "category":item.category,"icon_size":ICON_SIZES[item.category],
+               "category":item.category,"icon":item.category+("-outline" if intelligence is not None
+                   and reading_mode != "INFRASTRUCTURE" and not info.get("available") else ""),"icon_size":ICON_SIZES[item.category],
                "radius":RADII[item.category],
-               "border":[245,250,255] if item.id == selected else [26,42,58]}
+               "active":True,"border":[26,42,58]}
         points.append(row)
         if item.id == selected or show_labels and (item.category in ("entry", "lng") or len(point_categories) == 1):
             labels.append({**row, **label_style,"label":display_name(item.name.split(" · ")[0].replace("FSRU ", "")),
                            "offset":[10,-10] if item.id == selected else [10,9]})
         if item.id in event_ids:
             events.append(row)
+        if reading_mode == "ATTENTION":
+            if item.id in finding_ids or info.get("capacity_change_gwh_d") is not None:
+                findings.append(row)
+            if info.get("binding") and (info.get("stale") or not info.get("flow_available")):
+                quality.append(row)
     layers = [pdk.Layer("GeoJsonLayer", boundary, id="italy-outline", pickable=False,
         filled=True, stroked=True, get_fill_color=[34,56,70,255], get_line_color=[109,140,158,230],
         line_width_min_pixels=1.2,
@@ -169,40 +204,57 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
             id="selected-link", pickable=False, filled=False, get_line_color=[170,255,231],
             line_width_min_pixels=3, line_width_max_pixels=3,
             _sub_layer_props={"linestrings":{"getColor":[170,255,231,255]}}))
-    if points:
+    if points or stable_picking:
         selected_points = [r for r in points if r["infra_id"] == selected]
         if selected_points:
             layers.append(pdk.Layer("GeoJsonLayer", point_features(selected_points), id="selected-point", pickable=False,
                 point_type=pdk.types.String("icon"),icon_atlas=pdk.types.String(ICON_ATLAS),icon_mapping=ICON_MAPPING,
                 get_icon=pdk.types.String("ring"),get_icon_color=[245,250,255,255],get_icon_size=22,
                 icon_size_units=pdk.types.String("pixels"),icon_size_min_pixels=22,icon_size_max_pixels=22))
-        layers.append(pdk.Layer("ScatterplotLayer", points, id="infrastructure-points", pickable=True,
+        targets = points
+        if stable_picking:
+            # Native selection stores array indices. Keep their identity stable
+            # when a reading/filter hides rows; radius 0 draws/picks nothing.
+            by_id = {r["infra_id"]:r for r in points}
+            targets = [by_id.get(i.id,{"infra_id":i.id,"position":lookup[i.id].geometry["coordinates"],
+                "category":i.category,"radius":0,"active":False}) for i in network.infrastructure
+                if lookup[i.id].geometry["type"] == "Point"]
+        layers.append(pdk.Layer("ScatterplotLayer", targets, id="infrastructure-points", pickable=True,
             auto_highlight=True, get_position="position", get_fill_color=[20,34,49,1], get_radius="radius",
-            radius_units=pdk.types.String("pixels"), radius_min_pixels=2.5, radius_max_pixels=7,
+            radius_units=pdk.types.String("pixels"), radius_min_pixels=0 if stable_picking else 2.5, radius_max_pixels=7,
             stroked=False, get_line_color="border", get_line_width=1,
             line_width_units=pdk.types.String("pixels"), line_width_min_pixels=1, line_width_max_pixels=1.5))
         # Keep one picking identity per point; the symbols are presentation only.
-        symbols = [{k:r[k] for k in ("position","color","category","icon_size")} for r in points]
+        symbols = [{k:r[k] for k in ("position","color","category","icon","icon_size")} for r in points]
         layers.append(pdk.Layer("GeoJsonLayer", point_features(symbols), id="category-symbols", pickable=False,
             point_type=pdk.types.String("icon"),
             icon_atlas=pdk.types.String(ICON_ATLAS), icon_mapping=ICON_MAPPING,
-            get_icon="properties.category",get_icon_color="properties.color",get_icon_size="properties.icon_size",
+            get_icon="properties.icon",get_icon_color="properties.color",get_icon_size="properties.icon_size",
             icon_size_units=pdk.types.String("pixels"),icon_size_min_pixels=6,icon_size_max_pixels=18))
-    if events:
-        layers.append(pdk.Layer("GeoJsonLayer", point_features(events), id="event-rings", pickable=True,
+    for rows,identifier,icon,color,size in ((events,"event-rings","ring",[246,146,157,255],28),
+            (findings,"finding-marks","finding",[242,190,114,255],34),
+            (quality,"quality-marks","quality",[180,194,211,255],29)):
+        if not rows:
+            continue
+        layers.append(pdk.Layer("GeoJsonLayer", point_features(rows), id=identifier, pickable=False,
             point_type=pdk.types.String("icon"),icon_atlas=pdk.types.String(ICON_ATLAS),icon_mapping=ICON_MAPPING,
-            get_icon=pdk.types.String("ring"),get_icon_color=[246,146,157,255],get_icon_size=28,
-            icon_size_units=pdk.types.String("pixels"),icon_size_min_pixels=28,icon_size_max_pixels=28))
+            get_icon=pdk.types.String(icon),get_icon_color=color,get_icon_size=size,
+            icon_size_units=pdk.types.String("pixels"),icon_size_min_pixels=size,icon_size_max_pixels=size))
     if labels:
         labels.sort(key=lambda r:-r["label_priority"])
         arranged = label_layout(labels,zoom=camera["zoom"],width=viewport_width,
             height=498 if mode == "overview" else 648,longitude=camera["longitude"],latitude=camera["latitude"])
+        if stable_picking:
+            by_id = {r["infra_id"]:r for r in arranged}
+            arranged = [by_id.get(i.id,{"infra_id":i.id,"position":label_anchor(lookup[i.id].geometry),"label":"",
+                "label_size":0,"label_color":[0,0,0,0],"label_background":[0,0,0,0],
+                "offset":[0,0],"anchor":"start"}) for i in network.infrastructure]
         layers.append(pdk.Layer("GeoJsonLayer", point_features(arranged), id="point-labels", pickable=True,
             point_type=pdk.types.String("text"),get_text="properties.label",get_text_color="properties.label_color",
-            get_text_size="properties.label_size",text_size_units=pdk.types.String("pixels"),text_size_min_pixels=12,text_size_max_pixels=14,
+            get_text_size="properties.label_size",text_size_units=pdk.types.String("pixels"),text_size_min_pixels=0 if stable_picking else 12,text_size_max_pixels=14,
             get_text_pixel_offset="properties.offset",get_text_anchor="properties.anchor",text_font_family=pdk.types.String("Arial, sans-serif"),
             text_font_weight=pdk.types.String("500"),text_character_set=pdk.types.String("auto"),text_background=True,
-            get_text_background_color="properties.label_background",text_background_padding=[5,3]))
+            get_text_background_color="properties.label_background",text_background_padding=[0,0] if stable_picking else [5,3]))
     return pdk.Deck(layers=layers, initial_view_state=pdk.ViewState(**camera,min_zoom=camera["zoom"]-.25,max_zoom=MAX_ZOOM,
         pitch=0,min_pitch=0,max_pitch=0),
         views=[pdk.View(type="MapView",controller={"dragPan":True,"scrollZoom":True,"doubleClickZoom":True,

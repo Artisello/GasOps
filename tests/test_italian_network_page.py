@@ -14,7 +14,7 @@ from gasops_app.italian_network_events import iip_events
 from gasops_app.italian_network_map import deck, fit_italy
 from gasops_app.public_data import SourceUnavailable
 
-NOW=datetime(2026,11,22,2,tzinfo=timezone.utc)
+NOW=datetime(2026,11,22,12,tzinfo=timezone.utc)
 DAY=date(2026,11,20)
 SCRIPT="from gasops_app.italian_network_page import panel\npanel()"
 

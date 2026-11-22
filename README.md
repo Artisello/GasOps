@@ -6,6 +6,8 @@ Demo indipendente delle potenzialità per Balancing, Settlement e Operations. La
 
 **Panoramica → Mappa italiana**: mappa interattiva in apertura sia Demo sia Workbench, con KPI pubblici e accesso alla stessa infrastruttura in **Security of Supply → Mappa della rete**. La vista completa offre 456 elementi geografici italiani, estratto ENTSOG reale per 11 ingressi, filtri e dettagli consultabili anche offline. Aggiornamento mirato su richiesta; geografie storiche e copertura parziale esplicite. [Fonti, licenze e limiti](docs/ITALIAN_GAS_NETWORK_MAP.md).
 
+La stessa mappa offre quattro letture: **SYSTEM, FLOW, ATTENTION e INFRASTRUCTURE**. Le 69 centrali elettriche sono visibili dalla prima apertura. La scheda condivisa espone dati fisici/commerciali, storico a 30 giorni quando disponibile, eventi verificati e provenienza. Cambiare lettura mantiene la selezione e non interroga le API.
+
 **Demo live:** https://snamigor.streamlit.app/
 
 I.G.O.R. è un prototipo indipendente, non ufficiale Snam. Gli identificatori tecnici e le configurazioni di deployment restano invariati per compatibilità.

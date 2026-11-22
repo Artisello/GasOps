@@ -164,7 +164,7 @@ def test_overview_exposes_same_operational_history_and_keeps_missing_values_miss
     offline(monkeypatch,tmp_path)
     app=AppTest.from_string("from gasops_app.italian_network_page import panel\npanel(mode='overview')",default_timeout=30).run()
     assert not app.exception
-    assert [t.label for t in app.tabs] == ["Dati","Storico"]
+    assert [t.label for t in app.tabs] == ["Dati","Storico","Eventi","Fonti"]
     assert app.selectbox(key="net_overview_indicator").value == "Physical Flow"
     assert "Nomination" in app.selectbox(key="net_overview_indicator").options or "Nomina" in app.selectbox(key="net_overview_indicator").options
     app.selectbox(key="net_overview_indicator").set_value("Nomination").run()
@@ -172,7 +172,8 @@ def test_overview_exposes_same_operational_history_and_keeps_missing_values_miss
     assert any("Capacità tecnica" in h.proto.body and "Rinomina" in h.proto.body for h in app.get("html"))
     app.session_state[view.SELECTED]="INET_PL_5"
     app.run()
-    assert not app.exception and not app.tabs and not app.get("plotly_chart")
+    assert not app.exception and not app.get("plotly_chart")
+    assert [t.label for t in app.tabs] == ["Dati","Storico","Eventi","Fonti"]
     assert any("nessuna misura di flusso sul segmento" in c.value for c in app.caption)
 
 

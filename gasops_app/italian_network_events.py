@@ -8,6 +8,7 @@ from .entsog_network import _amount, query_params
 from .iip_view import project_messages, _timestamp
 from .italian_network_sources import integer, timestamp
 from .public_data import retrieve, SourceSchemaError
+from .italian_network import verified_bindings
 
 INTERRUPTIONS_URL = "https://transparency.entsog.eu/api/v1/interruptions"
 
@@ -80,11 +81,11 @@ def iip_events(network, result, first, last):
         return (), 0
     mapping = {}
     for b in network.bindings:
-        if b.provider in ("AGSI+", "ALSI"):
+        if b.provider in ("AGSI+", "ALSI") and b.mapping_confidence == "confirmed":
             mapping.setdefault(b.external_id, set()).add(b.infrastructure_id)
     for point in network.sources["points"]:
-        for b in network.bindings:
-            if b.provider == "ENTSOG" and b.external_id == point["pointKey"] and point.get("pointEicCode"):
+        for b in verified_bindings(network):
+            if b.external_id == point["pointKey"] and point.get("pointEicCode"):
                 mapping.setdefault(point["pointEicCode"], set()).add(b.infrastructure_id)
     projected = project_messages(result["messages"])
     # Multiple versions require an unambiguous publication order. Withhold ties.
@@ -129,3 +130,32 @@ def relevant_events(records, first, last):
     return tuple(r for r in records if r["period_from"] < _start(last+timedelta(days=1))
                  and r["period_to"] > _start(first)
                  and (r["source"] == "GIE IIP" or r["value"] is not None and r["value"] > 0))
+
+
+def verified_events(network, records, first, last, now):
+    """Deduplicate releases and withhold unknown locations or tied conflicts."""
+    ids = {i.id for i in network.infrastructure}
+    bindings = {b.point_direction:b.infrastructure_id for b in verified_bindings(network)}
+    iip_ids = set(bindings.values())|{b.infrastructure_id for b in network.bindings
+        if b.provider in ("AGSI+","ALSI") and b.mapping_confidence == "confirmed"}
+    grouped, unresolved = {}, 0
+    for event in relevant_events(records,first,last):
+        at, retrieved = _timestamp(event.get("observed_at")), _timestamp(event.get("retrieved_at"))
+        point = event.get("point_direction")
+        if (event.get("mapping_confidence") != "confirmed" or event.get("infrastructure_id") not in ids
+                or point is not None and bindings.get(point) != event["infrastructure_id"]
+                or point is None and (event.get("source") != "GIE IIP" or event["infrastructure_id"] not in iip_ids)
+                or not retrieved or retrieved > now or at and at > now):
+            unresolved += 1
+            continue
+        key = (event["source"],event["source_id"],event["infrastructure_id"],point)
+        grouped.setdefault(key,[]).append(event)
+    events = []
+    for rows in grouped.values():
+        latest = max((_timestamp(r.get("observed_at")) for r in rows if _timestamp(r.get("observed_at"))),default=None)
+        versions = [r for r in rows if _timestamp(r.get("observed_at")) == latest]
+        if len({(r.get("value"),r["period_from"],r["period_to"],r.get("status")) for r in versions}) == 1:
+            events.append(max(versions,key=lambda r:r["retrieved_at"]))
+        else:
+            unresolved += 1
+    return tuple(events), unresolved

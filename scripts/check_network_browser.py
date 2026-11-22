@@ -39,10 +39,12 @@ def rendered_map(page):
         if(layer.isComposite||!['italy-outline','historical-links','category-symbols','point-labels'].some(id=>layer.id.startsWith(id)))continue;
         const getter=layer.props.getColor??layer.props.getFillColor;
         const value=typeof getter==='function'?getter(layer.props.data[0],{index:0,target:[]}):getter;
-        if(value)colors[layer.id]=[value[0],value[1],value[2],value[3]??255];
+        if(value&&!layer.id.startsWith('point-labels'))colors[layer.id]=[value[0],value[1],value[2],value[3]??255];
       }
+      const points=(deck.layerManager.getLayers().find(l=>l.id==='infrastructure-points')?.props.data??[]).filter(r=>r.active!==false);
       return {zoom:deck.getViewports()[0].zoom,minZoom:deck.props.viewState.minZoom,
-        maxZoom:deck.props.viewState.maxZoom,colors};
+        maxZoom:deck.props.viewState.maxZoom,colors,pointIds:points.map(r=>r.infra_id),
+        powerCount:points.filter(r=>r.category==='power').length};
     }''')
 
 
@@ -108,6 +110,7 @@ def main():
         box = page.locator("#deckgl-overlay").bounding_box()
         camera = fit_italy(boundary,box["width"],box["height"])
         original_colors = rendered_map(page)["colors"]
+        assert rendered_map(page)["powerCount"] == 69,"Power plants only appear after selection"
         def click_at(position,label):
             page.bring_to_front()
             x,y = project(box,position,camera)
@@ -122,7 +125,30 @@ def main():
             expect(page.locator(".st-key-network_home_detail h3")).to_have_text(label,timeout=15000)
         click_at(geometry["INET_BP_89"]["coordinates"],"Tarvisio")
         assert rendered_map(page)["colors"] == original_colors,"Selecting a point dimmed the network"
-        # Both overview tabs reuse the complete operational data and series.
+        report["reading_modes"] = []
+        hints = {"SYSTEM":"Categorie e disponibilità dei dati.",
+            "FLOW":"Flussi dei punti verificati · gasdotti solo come contesto geografico.",
+            "ATTENTION":"Eventi pubblicati, indicatori calcolati e qualità dei dati.",
+            "INFRASTRUCTURE":"Tutti i livelli geografici selezionati · posizioni e stato storici."}
+        for reading in ("FLOW","ATTENTION","INFRASTRUCTURE","SYSTEM"):
+            page.locator(".st-key-net_reading_overview").get_by_text(reading,exact=True).click()
+            expect(page.get_by_role("radio",name=reading,exact=True)).to_be_checked()
+            expect(page.locator(".st-key-network_home_detail h3")).to_have_text("Tarvisio")
+            expect(page.get_by_text(hints[reading],exact=True)).to_be_visible(timeout=15000)
+            page.wait_for_function('document.querySelector("[data-testid=stApp]").dataset.testScriptState === "notRunning"')
+            page.wait_for_timeout(400)  # Commit the updated WebGL layers after the server response.
+            expect(page.locator(".st-key-network_home_detail h3")).to_have_text("Tarvisio",timeout=15000)
+            scene = rendered_map(page)
+            assert "INET_BP_89" in scene["pointIds"]
+            assert len(set(scene["pointIds"])) == len(scene["pointIds"]),"Duplicate point markers"
+            if reading in ("SYSTEM","INFRASTRUCTURE"):
+                assert scene["powerCount"] == 69
+            report["reading_modes"].append({"mode":reading,"points":len(scene["pointIds"]),"power":scene["powerCount"]})
+            page.screenshot(path=str(args.output/("reading-"+reading.lower()+".png")),full_page=True)
+        click_at(geometry["INET_CS_11"]["coordinates"],"Alessandro Volta")
+        assert rendered_map(page)["powerCount"] == 69
+        click_at(geometry["INET_BP_89"]["coordinates"],"Tarvisio")
+        # The shared point card retains all seven indicator types and D-30 gaps.
         page.get_by_role("tab",name="Storico",exact=True).click()
         history = page.locator(".st-key-network_home_detail .js-plotly-plot").first
         expect(history).to_be_visible()
@@ -173,9 +199,10 @@ def main():
         period = page.locator('[data-testid="stDateInput"] input').evaluate_all('(inputs)=>inputs.map(e=>e.value).join(" – ")')
         assert any(d in period for d in ("14/11/2026","2026-11-14")) and any(d in period for d in ("20/11/2026","2026-11-20")),"Period transfer failed: "+period
         combo = page.locator(".st-key-network_detail").get_by_role("combobox").first
-        combo.fill("Tarvisio")
+        combo.fill("Tarvisio · Ingressi e uscite")
         combo.press("Enter")
         expect(page.locator(".st-key-network_detail h3")).to_have_text("Tarvisio",timeout=15000)
+        page.get_by_role("tab",name="Storico",exact=True).click()
         chart = page.locator(".st-key-network_detail .js-plotly-plot").first
         expect(chart).to_be_visible(timeout=15000)
         ticks = chart.locator(".xtick text")
@@ -211,7 +238,7 @@ def main():
     assert not any(any(host in url for host in ("cartocdn","mapbox.com","entsog","gie.eu","openstreetmap"))
                    for url in report["blocked"]),"Map tried to reach an external data or tile service"
     (args.output/"checks.json").write_text(json.dumps(report,indent=2))
-    print("PASS: offline system status, four KPIs, nine balance components, attention drill-down, WebGL, map interactions, history and four viewports")
+    print("PASS: four reading modes, 69 unselected power plants, unique markers, offline system status, attention drill-down, WebGL, map interactions, D-30 history and four viewports")
 
 
 if __name__ == "__main__":
