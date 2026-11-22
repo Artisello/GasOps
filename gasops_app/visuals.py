@@ -223,6 +223,7 @@ def error_chart(forecast: Forecast, grain: str) -> go.Figure:
         index=pd.to_datetime([p.period for p in forecast.backtest]),
     )
     fig = go.Figure(go.Bar(x=values.index, y=values, marker_color=[TEAL if n >= 0 else ROSE for n in values],
+                          marker_pattern_shape=["" if n >= 0 else "/" for n in values],
                           hovertemplate="%{y:+,.1f} GWh<extra>Osservato − previsione</extra>"))
     fig.add_hline(y=0, line_color="#637891", line_width=1)
     return _frame(fig, grain, "GWh", 220)

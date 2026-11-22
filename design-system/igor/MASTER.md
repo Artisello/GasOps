@@ -60,3 +60,7 @@ Fonti e API exposes every existing integration and links to the relevant analysi
 ## Minimal presentation
 
 Use short functional titles, compact metric cards and one main chart or queue. Remove slogans, introductory paragraphs, repeated capability explanations and per-page pilot summaries. Show brief source/date context beside the result; keep the uncertainty calibration limit visible. Put methodology, references, briefing and full records in native, closed expanders. Operations uses a static table without a command toolbar. Keep native accessible navigation, clear units and independent attribution. No CSS hiding of warnings, widgets or source classifications.
+
+## Non-color chart cues
+
+Use diagonal hatching as well as color for negative forecast residuals (observed minus predicted) and deficit bins (supply minus demand below zero). Zero and positive values remain unhatched. Retain signs, labels, hover text, histogram frequencies, units and existing chart scales. A negative forecast residual denotes overprediction, not a regulatory finding. Keep the current palette, native controls and eleven-route navigation; the earlier PR #88 theme and layout proposals have been superseded by the current design.
