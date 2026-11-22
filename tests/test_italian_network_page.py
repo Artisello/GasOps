@@ -57,21 +57,23 @@ def test_each_point_layer_uses_literal_pixels_and_hard_size_limits(category):
     markers=layers["infrastructure-points"]
     assert markers["radiusUnits"] == "pixels" and markers["radiusMaxPixels"] == 7
     assert all(2.5 <= r["radius"] <= 6 for r in markers["data"])
-    assert layers["selected-point"]["radiusMaxPixels"] == 10
-    assert layers["event-rings"]["radiusMaxPixels"] == 13
+    assert layers["selected-point"]["iconSizeUnits"] == "pixels"
+    assert layers["selected-point"]["iconSizeMaxPixels"] == 22
+    assert layers["event-rings"]["iconSizeUnits"] == "pixels"
+    assert layers["event-rings"]["iconSizeMaxPixels"] == 28
     for layer in layers.values():
         if layer["@@type"] == "ScatterplotLayer":
             assert layer["radiusUnits"] == "pixels" and layer["lineWidthUnits"] == "pixels"
             assert layer["lineWidthMaxPixels"] <= 2
-    assert layers["point-labels"]["sizeUnits"] == "pixels"
-    assert layers["point-labels"]["sizeMaxPixels"] == 14
+    assert layers["point-labels"]["textSizeUnits"] == "pixels"
+    assert layers["point-labels"]["textSizeMaxPixels"] == 14
 
 
 def test_labels_can_be_hidden_without_losing_selected_infrastructure():
     network,boundary,_=page.assets()
     spec=json.loads(deck(network,boundary,network.infrastructure,"INET_BP_65",show_labels=False).to_json())
     labels=next(r for r in spec["layers"] if r["id"] == "point-labels")
-    assert [r["infra_id"] for r in labels["data"]] == ["INET_BP_65"]
+    assert [r["properties"]["infra_id"] for r in labels["data"]["features"]] == ["INET_BP_65"]
     assert len(next(r for r in spec["layers"] if r["id"] == "infrastructure-points")["data"]) == 293
 
 
@@ -81,13 +83,13 @@ def test_category_symbols_are_local_small_and_share_one_point_picking_layer():
     layers={r["id"]:r for r in spec["layers"]}
     symbols=layers["category-symbols"]
     assert symbols["iconAtlas"].startswith("data:image/svg+xml,")
-    assert symbols["sizeUnits"] == "pixels" and symbols["sizeMaxPixels"] == 18
+    assert symbols["iconSizeUnits"] == "pixels" and symbols["iconSizeMaxPixels"] == 18
     assert not symbols["pickable"] and layers["infrastructure-points"]["pickable"]
-    assert {r["category"] for r in symbols["data"]} == {"entry","lng","storage","compressor","power","node"}
-    assert all(6 <= r["icon_size"] <= 16 for r in symbols["data"])
+    assert {r["properties"]["category"] for r in symbols["data"]["features"]} == {"entry","lng","storage","compressor","power","node"}
+    assert all(6 <= r["properties"]["icon_size"] <= 16 for r in symbols["data"]["features"])
     # Geographic city annotations were explicitly removed; only network labels remain.
     ids={i.id for i in network.infrastructure}
-    assert {r["infra_id"] for r in layers["point-labels"]["data"]} <= ids
+    assert {r["properties"]["infra_id"] for r in layers["point-labels"]["data"]["features"]} <= ids
     assert not {"city-labels","places","populated-places"} & set(layers)
 
 
@@ -111,6 +113,30 @@ def test_camera_fills_the_measured_frame_without_cropping_italy_or_islands(width
     assert all(9.9<=x<=width-9.9 and 9.9<=y<=height-9.9 for x,y in projected)
     # One dimension must use all available space, rather than a fixed small zoom.
     assert min(abs(min(x for x,y in projected)-10),abs(min(y for x,y in projected)-10))<.01
+
+
+def test_zoom_is_bounded_around_italy_and_selection_owns_only_the_highlight():
+    network,boundary,_=page.assets()
+    spec=json.loads(deck(network,boundary,network.infrastructure,"INET_PL_5").to_json())
+    camera=spec["initialViewState"]
+    assert camera["minZoom"] == pytest.approx(camera["zoom"]-.25) and camera["maxZoom"] == 9
+    assert camera["maxPitch"] == camera["minPitch"] == 0
+    assert not spec["views"][0]["controller"]["dragRotate"]
+    layers={r["id"]:r for r in spec["layers"]}
+    assert layers["italy-outline"]["_subLayerProps"]["polygons-fill"]["getFillColor"][3] == 255
+    assert layers["historical-links"]["_subLayerProps"]["linestrings"]["getColor"][3] == 255
+    assert layers["pipeline-hit-targets"]["_subLayerProps"]["linestrings"]["getColor"][3] == 1
+    assert "getIconColor" in layers["category-symbols"] and "getTextColor" in layers["point-labels"]
+
+
+def test_legend_geometry_matches_each_marker_in_the_embedded_atlas():
+    from urllib.parse import unquote
+    from gasops_app.italian_network_map import SYMBOLS,ICON_ATLAS,legend_symbol
+    atlas=unquote(ICON_ATLAS.split(",",1)[1])
+    for category,shape in SYMBOLS.items():
+        legend=unquote(legend_symbol(category).split(",",1)[1])
+        assert shape in atlas and shape in legend
+        assert "http://www.w3.org/2000/svg" in legend and "<script" not in legend
 
 
 def test_map_filters_detail_period_empty_selection_and_reset_are_offline(monkeypatch):

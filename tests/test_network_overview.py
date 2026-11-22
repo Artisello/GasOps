@@ -44,7 +44,7 @@ def test_both_home_modes_open_map_and_side_panel_without_api_calls(monkeypatch,t
     assert any("SciGRID 2021" in c.value for c in app.caption)
     if mode == "demo":
         assert any("simulazioni" in s.value for s in app.subheader)
-        assert len(app.get("plotly_chart")) == 1  # original BSO case preserved
+        assert len(app.get("plotly_chart")) == 2  # point history plus the preserved BSO case
     else:
         assert app.button(key="workspace_open_balancing")
 
@@ -158,3 +158,49 @@ def test_crowded_labels_are_decluttered_without_moving_the_markers():
     assert 1 <= len(result) <= 4
     assert result[0]["infra_id"] == "0"  # selected label has priority
     assert all(r["position"] == [10,44] for r in result)
+
+
+def test_overview_exposes_same_operational_history_and_keeps_missing_values_missing(monkeypatch,tmp_path):
+    offline(monkeypatch,tmp_path)
+    app=AppTest.from_string("from gasops_app.italian_network_page import panel\npanel(mode='overview')",default_timeout=30).run()
+    assert not app.exception
+    assert [t.label for t in app.tabs] == ["Dati","Storico"]
+    assert app.selectbox(key="net_overview_indicator").value == "Physical Flow"
+    assert "Nomination" in app.selectbox(key="net_overview_indicator").options or "Nomina" in app.selectbox(key="net_overview_indicator").options
+    app.selectbox(key="net_overview_indicator").set_value("Nomination").run()
+    assert not app.exception and len(app.get("plotly_chart")) == 1
+    assert any("Capacità tecnica" in h.proto.body and "Rinomina" in h.proto.body for h in app.get("html"))
+    app.session_state[view.SELECTED]="INET_PL_5"
+    app.run()
+    assert not app.exception and not app.tabs and not app.get("plotly_chart")
+    assert any("nessuna misura di flusso sul segmento" in c.value for c in app.caption)
+
+
+def test_view_reset_preserves_selection_and_separates_overview_from_full(monkeypatch):
+    state={view.SELECTED:"INET_BP_89","net_view_epoch_full":2,"unrelated_evidence":{"keep":True}}
+    monkeypatch.setattr(view.st,"session_state",state)
+    view._reset_view("overview")
+    assert state[view.SELECTED] == "INET_BP_89" and state["net_view_epoch_overview"] == 1
+    assert state["net_view_epoch_full"] == 2 and state["unrelated_evidence"] == {"keep":True}
+
+
+def test_overview_direction_is_consistent_in_tooltip_detail_and_navigation(monkeypatch,tmp_path):
+    offline(monkeypatch,tmp_path)
+    monkeypatch.delenv("GASOPS_APP_MODE",raising=False)
+    tooltips=[]
+    original=view.deck
+    def capture(*a,**kw):
+        scene=original(*a,**kw)
+        spec=json.loads(scene.to_json())
+        layer=next(r for r in spec["layers"] if r["id"] == "infrastructure-points")
+        tooltips.append(next(r["safe_value"] for r in layer["data"] if r["infra_id"] == "INET_BP_89"))
+        return scene
+    monkeypatch.setattr(view,"deck",capture)
+    app=AppTest.from_file(ROOT/"app.py",default_timeout=30)
+    app.session_state[view.SELECTED]="INET_BP_89"
+    app.run()
+    assert not app.exception and "ingresso" in tooltips[-1]
+    app.radio(key="net_overview_direction").set_value("exit").run()
+    assert not app.exception and "ingresso" not in tooltips[-1]
+    app.button(key="net_overview_open").click().run()
+    assert not app.exception and app.selectbox(key="net_direction").value == "exit"

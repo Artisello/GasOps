@@ -17,11 +17,11 @@ from .data import ROME
 from .entsog import _last_completed, _start
 from .entsog_network import INDICATORS
 from .italiano import numero, data_it
-from .italian_network import (ASSETS, CATEGORIES, COLORS, applicable, filter_infrastructure,
+from .italian_network import (ASSETS, CATEGORIES, applicable, filter_infrastructure,
                               load_network_assets, map_kpis, merge_observations, selected_id,
                               kpi_status, point_metrics)
 from .italian_network_events import iip_events, relevant_events, parse_interruptions
-from .italian_network_map import deck, display_name
+from .italian_network_map import deck, display_name, legend_symbol
 from .italian_network_refresh import STATE, refresh_network
 from .italian_network_sources import decode_snapshot
 from .models import utc_now
@@ -75,9 +75,14 @@ def _widget_selection(key):
         st.session_state[SELECTED] = st.session_state[key]
 
 
+def _reset_view(mode):
+    key = "net_view_epoch_"+mode
+    st.session_state[key] = st.session_state.get(key,0)+1
+
+
 def render_map(network, boundary, visible, identifier, *, mode, observations, day, direction="entry", events=(), show_labels=True):
     """Native selection callback runs before the single Streamlit rerun."""
-    key = f"italian_network_{mode}_deck_{st.session_state.get('net_map_epoch',0)}"
+    key = f"italian_network_{mode}_deck_{st.session_state.get('net_map_epoch',0)}_{st.session_state.get('net_view_epoch_'+mode,0)}"
     description = "Mappa del sistema gas italiano. Gasdotti storici schematici e impianti; seleziona con il mouse o usa la ricerca infrastruttura per leggere gli stessi dettagli."
     # Native alt was added after our minimum supported Streamlit version.
     accessible = {"alt":description} if "alt" in signature(st.pydeck_chart).parameters else {}
@@ -90,11 +95,12 @@ def render_map(network, boundary, visible, identifier, *, mode, observations, da
             day=day,direction=direction,show_labels=show_labels,mode=mode,viewport_width=width-2),key=key,
             height=500 if mode == "overview" else 650,selection_mode="single-object",
             on_select=partial(_accept_pick,key,tuple(i.id for i in visible),mode),**accessible)
+        st.button("Vista Italia",key="net_view_reset_"+mode,on_click=_reset_view,args=(mode,),
+                  help="Ripristina l’inquadratura italiana, mantenendo l’infrastruttura selezionata.")
 
 
 def render_legend(categories):
-    symbols = {"pipeline":"━","entry":"◆","lng":"■","storage":"▰","compressor":"▲","production":"⬟","power":"ϟ","node":"●"}
-    labels = "".join(f'<span><b aria-hidden="true" style="color:rgb({",".join(map(str,COLORS[c]))})">{symbols[c]}</b>{escape(CATEGORIES[c])}</span>' for c in categories)
+    labels = "".join(f'<span><img src="{legend_symbol(c)}" width="14" height="14" alt="" aria-hidden="true">{escape(CATEGORIES[c])}</span>' for c in categories)
     st.html('<div class="gas-map-legend" aria-label="Legenda della mappa">'+labels+'</div>')
 
 
@@ -123,7 +129,7 @@ def _source_status(status, day, *, expanded=False):
                    "Copertura parziale o non certificata. N/A e conflitti esclusi; capacità confrontate sullo stesso giorno gas.")
 
 
-def _operational_summary(network, item, observations, snapshots, direction, first, last, saved, *, compact=False):
+def _operational_summary(network, item, observations, snapshots, direction, first, last, saved, *, compact=False, show_source=True):
     binding = next((b for b in network.bindings_for(item.id,"ENTSOG") if b.direction == direction),None)
     if not binding:
         if item.category == "pipeline":
@@ -151,11 +157,12 @@ def _operational_summary(network, item, observations, snapshots, direction, firs
             kpi_grid(measures)
         m = {"observations":metrics["observations"],"valid_points":int(flow is not None),"mapped_points":1}
         status = kpi_status(m,snapshots,day,utc_now(),current_day=_last_completed(utc_now()),failures=saved.get("failures",()))
-        _source_status(status,day)
+        if show_source:
+            _source_status(status,day)
 
 
-def _open_full(identifier, first, last):
-    st.session_state[FOCUS] = {"id":identifier,"period":(first,last)}
+def _open_full(identifier, first, last, direction=None):
+    st.session_state[FOCUS] = {"id":identifier,"period":(first,last),"direction":direction}
     st.session_state["operational_platform"] = "MAP"
     from .operational_sources_page import operational_context
     st.switch_page(st.Page(operational_context,title="Security of Supply",icon=":material/shield:",url_path="security-of-supply"))
@@ -192,10 +199,15 @@ def overview_panel():
             failed = national["failed"] or st.session_state.get("AGSI+_IT",{}).get("error")
             items.insert(2,("Scorte nazionali GIE",row.stock_twh,"TWh",data_it(row.gas_day)+(" · ultima copia valida" if failed else ""),2))
     item = all_items[identifier]
+    bindings = network.bindings_for(identifier,"ENTSOG")
+    directions = sorted({b.direction for b in bindings})
+    if st.session_state.get("net_overview_direction") not in directions:
+        st.session_state["net_overview_direction"] = "entry" if "entry" in directions else directions[0] if directions else None
+    direction = st.session_state.get("net_overview_direction")
     with st.container(key="network_overview"):
         map_col, detail = st.columns([1,1.3],gap="small")
         with map_col:
-            render_map(network,boundary,visible,identifier,mode="overview",observations=observations,day=day)
+            render_map(network,boundary,visible,identifier,mode="overview",observations=observations,day=day,direction=direction)
             render_legend(c for c in CATEGORIES if any(i.category == c for i in visible))
             st.caption("SciGRID 2021 · collegamenti storici schematici · CC BY 4.0 · Natural Earth, pubblico dominio")
         with detail.container(key="network_home_detail"):
@@ -207,9 +219,25 @@ def overview_panel():
                 st.caption("GIE AGSI+ · acquisito "+local_time(national["acquired"])+" · aggregato nazionale distinto dai punti di rete")
             st.subheader(display_name(item.name))
             st.caption(" · ".join(filter(None,[CATEGORIES[item.category],item.operator,*item.regions])))
-            _operational_summary(network,item,observations,snapshots,"entry",first,day,saved,compact=True)
+            if len(directions)>1:
+                direction = st.radio("Direzione",directions,key="net_overview_direction",horizontal=True,
+                    format_func=lambda d:"Ingresso" if d == "entry" else "Uscita",label_visibility="collapsed")
+            if bindings or any(saved.get("facilities",{}).get((b.provider,b.external_id)) for b in network.bindings_for(identifier)):
+                data_tab, history_tab = st.tabs(["Dati","Storico"])
+                with data_tab:
+                    with st.container(key="network_home_point_data"):
+                        _operational_summary(network,item,observations,snapshots,direction,first,day,saved,show_source=False)
+                        _gie_detail(saved,identifier,network,first,day,mode="overview")
+                with history_tab:
+                    binding = next((b for b in bindings if b.direction == direction),None)
+                    if binding:
+                        _history(observations,binding.point_direction,first,day,mode="overview")
+                    else:
+                        st.caption("Storico GIE disponibile nella scheda Dati del singolo impianto.")
+            else:
+                _operational_summary(network,item,observations,snapshots,direction,first,day,saved,compact=True)
             st.button("Esplora la rete",icon=":material/arrow_forward:",key="net_overview_open",
-                width="stretch",on_click=_open_full,args=(identifier,first,day))
+                width="stretch",on_click=_open_full,args=(identifier,first,day,direction))
             with st.popover("Cerca infrastruttura",width="stretch"):
                 st.session_state["net_overview_infrastructure"] = identifier
                 st.selectbox("Infrastruttura",[i.id for i in sorted(network.infrastructure,key=lambda i:i.name)],
@@ -243,13 +271,15 @@ def _daily(observations, point, first, last, indicator):
     return days, [applicable(observations, point, d, indicator) for d in days]
 
 
-def _history(observations, point, first, last):
+def _history(observations, point, first, last, *, mode="full"):
     available = [name for name in INDICATORS if any(o.point_direction == point and o.indicator == name for o in observations)]
     if not available:
+        st.caption("Nessuna serie storica disponibile per questa direzione nel periodo.")
         return
-    if st.session_state.get("net_indicator") not in available:
-        st.session_state["net_indicator"] = available[0]
-    indicator = st.selectbox("Storico", available, format_func=LABELS.__getitem__, key="net_indicator")
+    key = "net_indicator" if mode == "full" else "net_overview_indicator"
+    if st.session_state.get(key) not in available:
+        st.session_state[key] = available[0]
+    indicator = st.selectbox("Storico", available, format_func=LABELS.__getitem__, key=key)
     days, values = _daily(observations, point, first, last, indicator)
     usable = [v for v in values if v is not None]
     if not usable:
@@ -263,7 +293,7 @@ def _history(observations, point, first, last):
                          font={"color":"#b0bed0","family":"Arial, sans-serif","size":11},
                          yaxis={"title":"GWh/d","automargin":True},
                          xaxis={"tickformat":"%d/%m","nticks":4,"tickangle":0,"automargin":True},showlegend=False)
-    plot(figure, key="net_entsog_history")
+    plot(figure, key="net_entsog_history" if mode == "full" else "net_overview_entsog_history")
     st.caption(f"{len(usable)}/{len(days)} giorni gas · 06:00–06:00 Europe/Rome")
     if len(usable) >= 2:
         st.caption(f"Min {numero(min(usable),1)} · Max {numero(max(usable),1)} · Media {numero(sum(usable)/len(usable),1)} GWh/d")
@@ -274,7 +304,7 @@ def _history(observations, point, first, last):
             st.caption(f"Media vs {length} giorni precedenti: {numero(delta,1)} GWh/d · periodi completi")
 
 
-def _gie_detail(saved, identifier, network, first, last):
+def _gie_detail(saved, identifier, network, first, last, *, mode="full"):
     for binding in network.bindings_for(identifier):
         result = saved.get("facilities", {}).get((binding.provider, binding.external_id))
         if not result:
@@ -302,10 +332,11 @@ def _gie_detail(saved, identifier, network, first, last):
             st.dataframe(measures, hide_index=True, width="stretch")
         numeric = [c for c in labels if c in frame and frame[c].notna().any()]
         if len(frame) > 1 and numeric:
-            series = st.selectbox("Storico GIE", numeric, format_func=lambda c:labels[c][0], key="net_gie_series_"+binding.provider)
+            prefix = "net_gie_" if mode == "full" else "net_overview_gie_"
+            series = st.selectbox("Storico GIE", numeric, format_func=lambda c:labels[c][0], key=prefix+"series_"+binding.provider)
             fig=go.Figure(go.Scatter(x=frame.gas_day, y=frame[series], mode="lines+markers", connectgaps=False))
             fig.update_layout(height=190,margin={"l":0,"r":0,"t":5,"b":5},yaxis_title=labels[series][1])
-            plot(fig, key="net_gie_history_"+binding.provider)
+            plot(fig, key=prefix+"history_"+binding.provider)
         st.caption(f"Fonte: {result['source']} · stato {latest.status}")
         st.link_button("Apri fonte GIE", result["source_url"])
 
@@ -389,6 +420,8 @@ def panel(mode="full"):
         st.session_state["net_pending_selection"] = focus["id"]
         st.session_state["net_period"] = focus["period"]
         item = next(i for i in network.infrastructure if i.id == focus["id"])
+        if focus.get("direction") in {b.direction for b in network.bindings_for(item.id,"ENTSOG")}:
+            st.session_state["net_direction"] = focus["direction"]
         st.session_state["net_layers"] = sorted(set(st.session_state.get("net_layers",["pipeline","entry","lng","storage","compressor"]))|{item.category})
         for key in ("net_operators","net_regions","net_statuses","net_only_events"):
             st.session_state.pop(key,None)
