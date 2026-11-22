@@ -28,11 +28,16 @@ def configured_key():
 
 def operational_context():
     """Standalone view; only the selected platform is loaded."""
-    st.title("Stoccaggi e forniture")
+    title=st.empty()
     key=configured_key()
-    selected=st.radio("Sezione",["AGSI+","ALSI","IIP","Jarvis","MASE","ENTSOG"],horizontal=True,key="operational_platform",
+    selected=st.radio("Sezione",["AGSI+","ALSI","IIP","Jarvis","MASE","ENTSOG","MAP"],horizontal=True,key="operational_platform",
                       label_visibility="collapsed",
-                      format_func={"AGSI+":"Scorte","ALSI":"Gas liquefatto","IIP":"Avvisi di mercato","Jarvis":"Rete Snam","MASE":"Produzione","ENTSOG":"Interconnessioni"}.__getitem__)
+                      format_func={"AGSI+":"Scorte","ALSI":"Gas liquefatto","IIP":"Avvisi di mercato","Jarvis":"Rete Snam","MASE":"Produzione","ENTSOG":"Interconnessioni","MAP":"Mappa della rete"}.__getitem__)
+    title.title("Rete gas italiana" if selected=="MAP" else "Stoccaggi e forniture")
+    if selected=="MAP":
+        from .italian_network_page import panel
+        panel()
+        return
     if not key and selected in ("AGSI+","ALSI","IIP"):
         st.info("Accesso GIE non configurato. I controlli HS1 e la sezione Rete Snam restano disponibili.")
     with st.popover("Fonti",icon=":material/info:"):

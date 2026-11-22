@@ -38,6 +38,19 @@ def verify():
     check("acer_baf_editions",lambda:len(all_baf_rows())==130)
     check("terna_annual_extract",lambda:len(annual_rows())==17)
 
+    def italian_map_check():
+        from hashlib import sha256
+        from .italian_network import ASSETS, load_network_assets
+        from .italian_network_sources import decode_snapshot
+        network=load_network_assets()
+        manifest=json.loads((ASSETS/"manifest.json").read_text())
+        snapshots=json.loads((ASSETS/"operational.json").read_text())["snapshots"]
+        return (len(network.infrastructure)==456 and len(network.bindings)==22 and len(snapshots)==11
+                and all(decode_snapshot(s).records for s in snapshots)
+                and all(sha256((ASSETS/name).read_bytes()).hexdigest()==digest
+                        for name,digest in manifest["files"].items()))
+    check("italian_network_public_assets",italian_map_check)
+
     def sqlite_check():
         # Test a real SQLite online backup and restore into a fresh temp DB.
         with tempfile.TemporaryDirectory() as folder:
