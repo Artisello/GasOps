@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta, timezone
 import json
 
 import pandas as pd
+import pytest
 import requests
 from streamlit.testing.v1 import AppTest
 
@@ -40,6 +41,36 @@ def test_deck_is_self_contained_italy_only_and_pickable_layers_have_stable_ids()
     assert "GWh/d" in next(r["safe_value"] for r in points if r["infra_id"] == "INET_BP_65")
 
 
+@pytest.mark.parametrize("category", ["entry","lng","storage","compressor","power","node"])
+def test_each_point_layer_uses_literal_pixels_and_hard_size_limits(category):
+    # Regression: radius_units="pixels" becomes "@@=pixels" in PyDeck JSON.
+    # The frontend requires the literal enum. Check the transmitted payload.
+    network,boundary,_=page.assets()
+    visible=tuple(i for i in network.infrastructure if i.category == category)
+    selected=visible[0].id
+    spec=json.loads(deck(network,boundary,visible,selected,{selected}).to_json())
+    layers={r["id"]:r for r in spec["layers"]}
+    markers=layers["infrastructure-points"]
+    assert markers["radiusUnits"] == "pixels" and markers["radiusMaxPixels"] == 7
+    assert all(2.5 <= r["radius"] <= 6 for r in markers["data"])
+    assert layers["selected-point"]["radiusMaxPixels"] == 10
+    assert layers["event-rings"]["radiusMaxPixels"] == 13
+    for layer in layers.values():
+        if layer["@@type"] == "ScatterplotLayer":
+            assert layer["radiusUnits"] == "pixels" and layer["lineWidthUnits"] == "pixels"
+            assert layer["lineWidthMaxPixels"] <= 2
+    assert layers["point-labels"]["sizeUnits"] == "pixels"
+    assert layers["point-labels"]["sizeMaxPixels"] == 11
+
+
+def test_labels_can_be_hidden_without_losing_selected_infrastructure():
+    network,boundary,_=page.assets()
+    spec=json.loads(deck(network,boundary,network.infrastructure,"INET_BP_65",show_labels=False).to_json())
+    labels=next(r for r in spec["layers"] if r["id"] == "point-labels")
+    assert [r["infra_id"] for r in labels["data"]] == ["INET_BP_65"]
+    assert len(next(r for r in spec["layers"] if r["id"] == "infrastructure-points")["data"]) == 293
+
+
 def test_map_filters_detail_period_empty_selection_and_reset_are_offline(monkeypatch):
     offline(monkeypatch)
     app=AppTest.from_string(SCRIPT,default_timeout=30).run()
@@ -59,6 +90,7 @@ def test_map_filters_detail_period_empty_selection_and_reset_are_offline(monkeyp
     app.multiselect(key="net_layers").set_value(["production"]).run()
     assert not app.exception and app.selectbox(key="net_infrastructure").value is None
     assert any("Nessuna infrastruttura" in i.value for i in app.info)
+    assert not any("0/0 ingressi" in h.proto.body for h in app.get("html"))
     app.button(key="net_reset").click().run()
     assert not app.exception and app.selectbox(key="net_infrastructure").value == "INET_BP_65"
     assert "preserved" in app.session_state[refresh.STATE]["snapshots"]
