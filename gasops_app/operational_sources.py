@@ -136,13 +136,13 @@ def parse_agsi(text, acquired, *, scope, cached=False, failed=False):
 
 
 def load_agsi(store,api_key,scope="IT",*,now=None,refresh=False):
-    if scope not in ("IT","EU") or not api_key or not api_key.strip():
+    if scope not in ("IT","DE","EU") or not api_key or not api_key.strip():
         raise ValueError("Chiave AGSI o perimetro non valido.")
     now=now or utc_now()
     today=now.astimezone(ROME).date()
     last=today-timedelta(days=1)
     params={"from":(last-timedelta(days=89)).isoformat(),"to":last.isoformat(),"size":100,"page":1}
-    params.update({"country":"IT"} if scope=="IT" else {"type":"eu"})
+    params.update({"country":scope} if scope!="EU" else {"type":"eu"})
     def parse(text,acquired,**kwargs):
         return parse_agsi(text,acquired,scope=scope,**kwargs)
     return retrieve(store,key="agsi-public-v2-"+scope,name="GIE AGSI+",url=AGSI_URL,

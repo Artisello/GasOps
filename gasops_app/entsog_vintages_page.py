@@ -16,9 +16,8 @@ def panel():
     with st.expander("Nomine e rinomine · G / G+1 / G+2"):
         with st.form("entsog_programmes_query"):
             point=st.text_input("Punto e direzione",value=state.get(SELECT,""))
-            consent=st.checkbox("Confermo punto e condizioni ENTSOG.")
             click=st.form_submit_button("Aggiorna programmi")
-        if click and consent:
+        if click:
             last=state.get("entsog_programmes_attempt")
             if last and now-last<timedelta(minutes=1):st.caption("Aggiornamento recente.")
             else:
@@ -30,7 +29,6 @@ def panel():
                         state[STATE]=merge(state.get(STATE,[]),[capture(r,utc_now())],utc_now())
                     state[SELECT]=point
                 except (ValueError,SourceUnavailable,TypeError,KeyError):st.caption("Programmi non disponibili; dati precedenti conservati.")
-        elif click:st.caption("Conferma le condizioni.")
         known=points(state.get(STATE,[]))
         if known:
             preferred=state.get(SELECT)
@@ -44,8 +42,8 @@ def panel():
         st.caption("Programmi, non consuntivi. ENTSOG TP Transport Data · https://transparency.entsog.eu/")
     with st.expander("Archivio versionato"):
         f=st.file_uploader("Ripristina JSON I.G.O.R.",type=["json"],key="entsog_vintage_file")
-        ok=st.checkbox("Confermo uso autorizzato e timestamp dichiarati.",key="entsog_vintage_consent")
-        if st.button("Unisci archivio",disabled=f is None or not ok,key="entsog_vintage_import"):
+        st.caption("JSON pubblico · timestamp dichiarati, non autenticati.")
+        if st.button("Unisci archivio",disabled=f is None,key="entsog_vintage_import"):
             try:
                 if f.size>MAX_BYTES:raise ValueError("Limite")
                 obj=json.loads(f.getvalue())

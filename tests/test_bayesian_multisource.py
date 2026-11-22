@@ -30,7 +30,7 @@ def test_snam_power_posterior_same_dates_and_cutoff():
     r=evaluate(v,2,asof,opts,["power"])
     assert r["n"]==90
     assert r["scores"]["bayesian_multi"]["mae"]<r["scores"]["bayesian_base"]["mae"]
-    assert all(pd.Timestamp(x["power_power_acquired"])<=pd.Timestamp(x["origin"])+pd.Timedelta(hours=15) for x in r["records"])
+    assert all(pd.Timestamp(x["power_power_acquired"])<=pd.Timestamp(x["origin"])+pd.Timedelta(15, unit="h") for x in r["records"])
     assert 0<=r["scores"]["bayesian_multi"]["coverage_80"]<=100
     opts=groups({"terna_history_v1":bs[:14]})
     with pytest.raises(ValueError,match="giorni comuni"):evaluate(v,2,asof,opts,["power"])

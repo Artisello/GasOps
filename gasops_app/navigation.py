@@ -2,9 +2,9 @@
 import streamlit as st
 
 GROUPS=(
+    ("Operatività",(3,4,8)),
     ("Mercato",(1,2)),
-    ("Operazioni",(8,3,4)),
-    ("Analisi e strumenti",(5,6,7)),
+    ("Strumenti",(5,6,7)),
 )
 
 
@@ -22,4 +22,8 @@ def sidebar_navigation(pages,current):
     for label,indices in GROUPS:
         st.html(f'<div class="gas-nav-group">{label}</div>')
         for index in indices:
+            link(index)
+    if len(pages)>9:
+        st.html('<div class="gas-nav-group">Esplora</div>')
+        for index in range(9,len(pages)):
             link(index)

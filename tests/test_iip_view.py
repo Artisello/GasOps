@@ -42,3 +42,22 @@ def test_iip_coverage_distinguishes_actual_metadata_verification():
     assert coverage({"pages":2,"pagination_verified":True,"partial":True})=="Parziale"
     assert coverage({"pages":None,"partial":True})=="Non verificata"
     assert coverage({"pages":1,"partial":False})=="Non verificata"
+
+
+def test_nested_message_fields_and_sparse_table():
+    from gasops_app.iip_view import visible_columns
+    rows=project_messages([{"messageId":"a","status":"Active",
+        "details":{"event":{"affectedAssetOrUnit":{"name":"Example"},
+         "eventStartDateTimeUTC":"2026-11-18T20:00:00Z",
+         "eventEndDateTime":"2026-11-20T20:00:00Z",
+         "intervals":[{"unavailableCapacity":10},{"unavailableCapacity":20}]},
+         "reportingEntity":{"name":"Operator"}}}])
+    row=rows[0]
+    assert row["asset"]=="Example" and row["operator"]=="Operator"
+    assert row["start_label"]=="18/11/2026 21:00 CET"
+    assert row["stop_label"]=="20/11/2026 21:00 CET"
+    assert row["impact"]=="Consulta dettaglio" and row["country"] is None
+    columns=visible_columns(rows)
+    assert "Inizio evento" in columns and "Fine evento" in columns
+    assert "Paese" not in columns and "Capacità indisponibile" not in columns
+    assert "ID messaggio" in columns

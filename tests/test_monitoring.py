@@ -72,7 +72,35 @@ def test_monitor_ui_empty(monkeypatch,tmp_path):
     write_report(run(["entsog"],NOW,collector=lambda *_:sample()),tmp_path/"monitor-report.json")
     app.run()
     assert not app.exception
-    assert app.metric[0].value=="1"
+    assert any("1 fonti nel report" in x.value for x in app.caption)
+    _assert_monitor_cards(app,{"Acquisite":1,"Da verificare":0,"Non riuscite":0,"Non configurate":0})
+
+
+def _assert_monitor_cards(app,expected):
+    """Read rendered KPI values, not the removed native st.metric elements."""
+    import re
+    grids=[e.proto.body for e in app.get("html") if 'class="gas-kpi-grid"' in e.proto.body
+           and '<span class="key">Acquisite</span>' in e.proto.body]
+    assert len(grids)==1
+    actual=dict(re.findall(r'<span class="key">([^<]+)</span><div class="readout">'
+                           r'<span class="value [^"]*">([^<]+)</span>',grids[0]))
+    assert actual=={label:str(value) for label,value in expected.items()}
+
+
+def test_monitor_ui_distinguishes_source_statuses(monkeypatch,tmp_path):
+    from streamlit.testing.v1 import AppTest
+    monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
+    def collect(source,now):
+        if source=="acer":raise ValueError("fixture")
+        if source=="mase":return result(b"raw","original_csv_pending",[],None,3,None,"raw_pending")
+        if source=="gie":return None
+        if source=="terna":return result(b"partial","original_json",[],0,1,None,"partial",["coverage"])
+        return sample()
+    write_report(run(["entsog","acer","mase","gie","terna"],NOW,collector=collect),tmp_path/"monitor-report.json")
+    app=AppTest.from_string("from gasops_app.monitoring_page import panel\npanel()",default_timeout=30).run()
+    assert not app.exception
+    _assert_monitor_cards(app,{"Acquisite":1,"Da verificare":2,"Non riuscite":1,"Non configurate":1})
+    assert any("5 fonti nel report" in x.value for x in app.caption)
 
 
 def test_report_rejects_impossible_counts_and_failed_observations():

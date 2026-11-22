@@ -21,11 +21,11 @@ def panel(prefix="supply"):
         st.caption("Il modello I.G.O.R. non è un formato nativo Snam. Mapping manuale, stessa unità e perimetro tra revisioni; valori mancanti: omettere la riga, non inserire zero. Solo aggregati SRG, zone climatiche o cluster pubblici. Nessun cliente, operatore o PDR individuale.")
         with st.form(prefix+"_ja_import"):
             uploaded=st.file_uploader("Estratto CSV normalizzato",type=["csv"],key=prefix+"_ja_file")
-            confirmed=st.checkbox("Confermo che i dati sono pubblici, autorizzati e non riservati.",key=prefix+"_ja_consent")
+            st.caption("Dati pubblici · solo sessione.")
             submit=st.form_submit_button("Aggiungi pubblicazione")
         if submit:
-            if not confirmed or uploaded is None:
-                st.warning("Seleziona il file e conferma l'autorizzazione.")
+            if uploaded is None:
+                st.warning("Seleziona un CSV.")
             elif uploaded.size>MAX_BYTES:
                 st.error("CSV superiore a 2 MiB.")
             else:

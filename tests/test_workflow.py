@@ -134,7 +134,10 @@ def test_llm_tool_protocol_routes_and_retrieves_in_bounded_rounds(context):
     assert len(requests_seen) == 3
     assert requests_seen[0][0] == "/v1/chat/completions"
     assert any(msg.get("tool_call_id") == "scenario_call" for msg in requests_seen[1][1]["messages"])
-    assert any(msg.get("tool_call_id") == "reg_call" for msg in requests_seen[2][1]["messages"])
+    final=requests_seen[2][1]["messages"]
+    assert len(final)==2 and not any(msg.get("tool_call_id") for msg in final)
+    assert "regulatory_intelligence" in final[-1]["content"] and "scenario" in final[-1]["content"]
+    assert run.ai_usage["calls"]==3 and run.ai_usage["reported_calls"]==0
     assert run.results[Agent.SCENARIO].values["changes"]["demand_pct"] == "12"
     assert run.interpretation_sources == [Agent.SCENARIO, Agent.REGULATORY]
     assert Agent.MARKET not in run.results
@@ -166,3 +169,22 @@ def test_planned_assistant_shortcut_keeps_local_tools_and_single_model_call(cont
     assert run.mode=="LLM-assisted"
     assert run.interpretation=="Sintesi dello scenario."
     assert run.results[Agent.SCENARIO].values["changes"]["demand_pct"]=="10"
+
+
+def test_briefing_normative_register_does_not_depend_on_pdf_search(monkeypatch):
+    from gasops_app.agents import Assumptions, MarketContext
+    from gasops_app.data import synthetic
+    from gasops_app.models import Agent
+    from gasops_app.regulatory import Library
+    from gasops_app.workflow import run_workflow
+    from datetime import datetime,timezone
+    library=Library()
+    def broken_index(*args,**kwargs):
+        raise RuntimeError("PDF index unavailable")
+    monkeypatch.setattr(library,"search",broken_index)
+    context=MarketContext(synthetic(),"Seasonal regression",datetime(2026,11,18,tzinfo=timezone.utc))
+    report=run_workflow(context,library,Assumptions(),full=True)
+    result=report.results[Agent.REGULATORY]
+    assert result.status=="review"
+    assert any(f.id=="notice-7" for f in result.findings)
+    assert result.evidence and "rilievo storico" in result.summary

@@ -16,6 +16,8 @@ PIOMBINO = "CdRig_FSRU Piombino_Rev2023-I.pdf"
 EDITIONS = {
     "6f2b88ed6de5f85a5603cbf5f3c1e32f18341bd26338177dc918921458d5d965": NETWORK,
     "5d9545eb7928be4b1dcc41dde38bb7adb1377db9443e88cc359b8c6b929edd7e": PIOMBINO,
+    "66a1bbd9b206ce1c6f6d54e67fb55a54bc98a45afab2da4f4f676905ee3964c1": "CdStocc_HS1_Rev2026-I.pdf",
+    "c75f99d120fdcbf610196426ca9cfb792fc7053ed2bb4a627e14983fbcaa4471": "Glossario_RevXCII.pdf",
 }
 MAX_PDF_BYTES = 24 * 1024 * 1024
 MAX_PAGES = 800
@@ -47,9 +49,11 @@ class Case:
 
 REGISTER = (
     Case(Finding(
-        id="notice-7", title="Preavviso di esattamente sette giorni", severity="high",
-        detail="Le due tabelle passano da 8 giorni a meno di 7. Il coefficiente per sette giorni esatti "
-               "resta da verificare prima di calcolare il corrispettivo.",
+        id="notice-7", title="Piombino · Mancata discarica con preavviso di 7 giorni", severity="high",
+        detail="Nel Codice di Rigassificazione FSRU Piombino, rev. 2023-I, le tabelle dei corrispettivi "
+               "per mancata discarica (lato utente e lato operatore) elencano 8 giorni e meno di 7, "
+               "ma non 7 giorni esatti. Il coefficiente T applicabile in questo caso richiede una verifica "
+               "prima di calcolare il corrispettivo.",
         category="Omissione testuale confermata",
         citations=[
             cite(PIOMBINO, 103, "Cap. 10 §1.1.1", "La tabella lato utente elenca 12, 11, 10, 9, 8 e <7 giorni."),
@@ -126,6 +130,17 @@ REGISTER = (
         ],
     ), "Formula verificata · gestione del totale nullo da chiarire", "pro quota proportional zero denominator denominatore qt ot"),
 )
+
+
+def registered_case(finding_id):
+    return next((case for case in REGISTER if case.finding.id==finding_id),None)
+
+
+def matching_edition(docs,citation):
+    """Resolve by known revision digest, never filename alone."""
+    return next((pdf for pdf in docs.documents.values()
+                 if EDITIONS.get(pdf.digest)==citation.document and
+                 citation.page is not None and citation.page<=pdf.pages),None)
 
 
 @dataclass(frozen=True)

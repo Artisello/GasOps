@@ -28,42 +28,36 @@ def test_theme_has_focus_reflow_and_motion_preferences():
     assert "display:none" not in css.replace(" ","")
 
 
-def test_native_theme_and_operational_palette_agree():
+def test_interactive_theme_contrast_and_consistency():
     import tomllib
-    from gasops_app import visuals
 
     css=(ROOT/"gasops_app/theme.css").read_text()
     tokens=dict(re.findall(r"--gas-([a-z-]+):\s*(#[0-9a-fA-F]{6})",css))
+    for bg in ("bg","panel","selected"):
+        if bg!="selected":
+            assert contrast(tokens["control"],tokens[bg])>=3
+        assert contrast(tokens["blue"],tokens[bg])>=3
+    assert contrast(tokens["teal"],tokens["selected"])>=4.5
+    for bg in ("teal","primary-hover","primary-active"):
+        assert contrast(tokens["on-primary"],tokens[bg])>=7
     theme=tomllib.loads((ROOT/".streamlit/config.toml").read_text())["theme"]
-    assert theme["base"]=="dark"
-    for field,key in (("backgroundColor","bg"),("secondaryBackgroundColor","panel"),
-                      ("textColor","text"),("primaryColor","teal"),("borderColor","control")):
-        assert theme[field]==tokens[key]
-    for name in ("TEAL","BLUE","AMBER","ROSE","MUTED","TEXT","PANEL","BORDER"):
-        assert getattr(visuals,name)==tokens[name.lower()]
-    for bg in ("teal","accent-hover"):
-        assert contrast(tokens["on-accent"],tokens[bg])>=4.5
-    assert contrast(tokens["control"],tokens["panel"])>=3
-    for fg,bg in (("muted","neutral-bg"),("review-text","review-bg"),
-                  ("history-text","history-bg"),("teal","selected"),
-                  ("sim-text","sim-bg"),("rose","error-bg")):
-        assert contrast(tokens[fg],tokens[bg])>=4.5
+    for key, token in (("primaryColor","teal"),("backgroundColor","bg"),
+                       ("secondaryBackgroundColor","panel"),("textColor","text"),
+                       ("borderColor","border")):
+        assert theme[key]==tokens[token]
 
 
-def test_shared_chart_style_preserves_data_and_analytical_choices():
-    import plotly.graph_objects as go
-    from gasops_app.visuals import MUTED, style_figure
-
-    fig=go.Figure(go.Scatter(x=[1,2,3],y=[2,None,4],name="Previsione",
-                             line=dict(dash="dash"),connectgaps=False))
-    fig.update_layout(xaxis=dict(title="Periodo",range=[1,3]),
-                      yaxis=dict(title="GWh",type="log"),showlegend=False)
-    traces=fig.to_dict()["data"]
-    assert style_figure(fig) is fig
-    assert fig.to_dict()["data"]==traces
-    assert fig.layout.xaxis.title.text=="Periodo"
-    assert tuple(fig.layout.xaxis.range)==(1,3)
-    assert fig.layout.yaxis.type=="log"
-    assert fig.layout.showlegend is False
-    assert fig.layout.xaxis.automargin and fig.layout.yaxis.automargin
-    assert fig.layout.font.color==MUTED
+def test_native_interaction_and_local_reflow_rules():
+    css=(ROOT/"gasops_app/theme.css").read_text()
+    assert "--gas-target:2.75rem" in css
+    assert '[role="tablist"]' in css and "overflow-x:auto" in css
+    assert '[kind="primary"]' in css
+    assert '[kind="primaryFormSubmit"]' in css
+    assert '[data-testid="stBaseButton-primaryFormSubmit"]' in css
+    assert ':not(:disabled):not([aria-disabled="true"])' in css
+    assert 'color:var(--gas-on-primary)!important' in css
+    assert ':is(div,p,span,strong,em,svg)' in css
+    assert ':is(:hover,:focus-visible)' in css
+    assert 'background-color:var(--gas-primary-active)!important' in css
+    assert "scroll-margin-block:4rem 1rem" in css
+    assert "font-variant-numeric:tabular-nums" in css

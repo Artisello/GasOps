@@ -71,14 +71,14 @@ def evaluate(vintages,horizon,asof,options,keys=()):
     if not set(BASE)<=set(d):raise ValueError("Ricarica le annualità Jarvis per le variabili estese.")
     d,external,lineage=align(d,options,keys,asof)
     cols=BASE+external
-    cutoff=d.origin+pd.Timedelta(hours=15)
+    cutoff=d.origin+pd.Timedelta(15, unit="h")
     published=d.published<=cutoff
     base=d.loc[published].dropna(subset=[*BASE,"weekly","actual","actual_published","weekly_published"])
     base=base[(base.label_cutoff<=asof)&(base.actual_published<=asof)&
-              (base.weekly_published<=base.origin+pd.Timedelta(hours=15))]
+              (base.weekly_published<=base.origin+pd.Timedelta(15, unit="h"))]
     base=base[np.isfinite(base[BASE+["actual","weekly"]]).all(axis=1)&(base[BASE+["actual","weekly"]]>=0).all(axis=1)]
     if base.empty:raise ValueError("Nessun consuntivo maturo.")
-    end=base.index.max();start=end-pd.Timedelta(days=HOLDOUT-1)
+    end=base.index.max();start=end-pd.Timedelta(HOLDOUT-1, unit="D")
     complete=base.dropna(subset=external)
     complete=complete[np.isfinite(complete[cols]).all(axis=1)]
     def train_at(c):
@@ -92,7 +92,7 @@ def evaluate(vintages,horizon,asof,options,keys=()):
         return out
     records=[]
     for target,row in complete.loc[start:end].iterrows():
-        c=row.origin+pd.Timedelta(hours=15)
+        c=row.origin+pd.Timedelta(15, unit="h")
         train=train_at(c)
         if len(train)<MIN_TRAIN:continue
         records.append({"target":str(target.date()),"origin":str(row.origin.date()),
@@ -111,7 +111,7 @@ def evaluate(vintages,horizon,asof,options,keys=()):
             scores[k]["mean_width"]=float((f[k+"_high"]-f[k+"_low"]).mean())
     candidate=None
     if not d.empty:
-        row=d.iloc[-1];target=d.index[-1];c=row.origin+pd.Timedelta(hours=15)
+        row=d.iloc[-1];target=d.index[-1];c=row.origin+pd.Timedelta(15, unit="h")
         # Never use a later acquisition or train on a label after asof.
         if row.published<=min(c,asof) and row[cols].notna().all() and np.isfinite(row[cols].astype(float)).all() and (row[BASE]>=0).all():
             train=train_at(min(c,asof))

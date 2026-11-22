@@ -16,7 +16,7 @@ def test_native_extended_headers_and_missing():
 def test_interval_uses_available_errors_only():
     t=pd.Timestamp("2026-01-01")
     rows=[{"actual":100,"extended":90,"_label_available":t} for _ in range(30)]
-    rows.append({"actual":10000,"extended":0,"_label_available":t+pd.Timedelta(days=1)})
+    rows.append({"actual":10000,"extended":0,"_label_available":t+pd.Timedelta(1, unit="D")})
     assert band(rows,t,50)=={"low":40,"high":60,"cal_n":30}
     assert band(rows[:29],t,50) is None
 
@@ -38,6 +38,6 @@ def test_common_sample_and_sequential_band():
     assert r["n"]==90 and r["scores"]["official"]["mae"]==30
     assert r["scores"]["extended"]["mae"]<.001
     assert r["empirical"]["n"]>0
-    assert all(pd.Timestamp(x["train_target_end"])+pd.Timedelta(days=1)<=pd.Timestamp(x["origin"]) for x in r["records"])
+    assert all(pd.Timestamp(x["train_target_end"])+pd.Timedelta(1, unit="D")<=pd.Timestamp(x["origin"]) for x in r["records"])
     with pytest.raises(ValueError):
         evaluate_extended(v.drop(columns=["exports"]),2,asof)

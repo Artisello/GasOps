@@ -2,7 +2,7 @@
 
 **Intelligent Gas Operations & Risk**
 
-Strumento indipendente in sola lettura per analizzare il mercato italiano del gas. La dashboard Streamlit include panoramica, previsioni, simulazioni di bilanciamento e regolazione, ricerca normativa e un centro operativo per sei agenti.
+Demo indipendente delle potenzialità per Balancing, Settlement e Operations. La sidebar dà accesso all’intero programma: mercato, Security of Supply, AI, rischi, documenti, KPI, controlli commerciali, fonti e casi dimostrativi.
 
 **Demo live:** https://snamigor.streamlit.app/
 
@@ -10,7 +10,7 @@ I.G.O.R. è un prototipo indipendente, non ufficiale Snam. Gli identificatori te
 
 ## Stato di rilascio
 
-Prototipo dimostrativo indipendente, non sistema Snam certificato. [Checklist di rilascio e limiti](docs/PRODUCTION_READINESS.md) · [Demo guidata](DEMO.md).
+Prototipo dimostrativo indipendente, non sistema Snam certificato. [Checklist di rilascio e limiti](docs/PRODUCTION_READINESS.md) · [Demo esplorabile](DEMO.md).
 
 `python -m gasops_app.readiness` verifica gli archivi inclusi e la persistenza in una cartella temporanea senza chiamare API, leggere Secrets o modificare dati di esercizio.
 
@@ -25,7 +25,25 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-La panoramica parte dal bilancio mensile italiano. **Avvia analisi di mercato AI** esegue i controlli qualità, le previsioni, la ricerca documentale e le simulazioni con verifica dei risultati. L’analisi funziona anche senza un modello linguistico. La [guida di tre minuti](DEMO.md) mostra anche le opzioni offline. Esegui i test con `python -m pytest -q`.
+L’avvio apre una **panoramica essenziale con la sidebar visibile su desktop**. Le undici aree comprendono tutte le viste originali, Fonti e API ed Esempi BSO. La barra laterale resta disponibile in ogni pagina; su mobile si apre con il controllo nativo di Streamlit. Non ci sono pagine funzionali accessibili solo mediante una configurazione nascosta.
+
+**Per esplorare gli esempi non servono file o chiavi personali.** Bilanciamento e KPI partono da casi dichiarati, i rischi mostrano già un calcolo, la ricerca PDF propone un risultato e l’assistente prepara un’analisi JRC. Se il modello AI è configurato e attivo, l’esempio usa il modello con le sole evidenze pubbliche JRC e i limiti di chiamata esistenti; altrimenti è un report locale esplicito. I registri importati restano distinti dai casi dimostrativi.
+
+**Fonti e API** mostra disponibilità, ultimo controllo e collegamenti alle analisi. Un’unica azione aggiorna tutti i connettori pubblici disponibili e verifica modello AI e archivio remoto, se configurati. Eurostat, ARERA, ENTSOG, ACER e meteo non richiedono credenziali del visitatore; GIE e Terna usano soltanto le credenziali del server. Configurazione e verifica riuscita sono distinte. Le fonti non raggiungibili restano segnalate; non vengono sostituite con dati simulati. Jarvis e GME mantengono import e consultazione autorizzati, senza dichiarare endpoint automatici inesistenti. [Guida alla demo](DEMO.md).
+
+Il confronto storico è precalcolato dal motore effettivo per una visualizzazione immediata. La demo controlla le impronte del file JRC e del codice del modello; il test di regressione ripete il backtest e confronta i risultati. Dopo modifiche ai motori o alla fonte, rigeneralo con `python -m gasops_app.demo_forecast`. Esegui i controlli con `python -m pytest -q` e `python -m gasops_app.readiness`.
+
+### Workbench di sviluppo
+
+Gli strumenti completi restano disponibili agli sviluppatori, con una configurazione del server esplicita:
+
+```bash
+GASOPS_APP_MODE=workbench streamlit run app.py
+```
+
+Questa variante conserva la scrivania tecnica iniziale e i controlli di configurazione nella sidebar. Le funzioni applicative sono raggiungibili anche nella modalità predefinita; il flag non le nasconde e non è autenticazione. Le istruzioni seguenti descrivono fonti, calcoli e strumenti di approfondimento disponibili nel programma.
+
+Nel workbench, **Come usare questa vista** include un glossario contestuale con pagine e sezioni delle edizioni Snam fornite. La guida al modello CSV chiarisce unità, segni e significato delle componenti. [Riferimenti della guida BSO](docs/BSO_REFERENCE_GUIDE.md).
 
 Il prototipo CLI originale è disponibile con `python gasops.py example.json` e `python -m unittest -v`.
 

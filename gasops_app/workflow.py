@@ -4,14 +4,13 @@ from collections.abc import Callable
 from decimal import Decimal
 import re
 
-from .agents import Assumptions, MarketArguments, MarketContext, RegulationArguments, ScenarioArguments, catalog
+from .agents import Assumptions, MarketArguments, MarketContext, RegulationArguments, ScenarioArguments, catalog, OFFLINE_REGULATION_QUERY
 from .finance import CENT, MWH_PER_UNIT
 from .models import Agent, Finding, Run
 from .regulatory import Library
 from .supervisor import Arguments, Call, Reasoner, execute
 
 DAILY_BRIEFING = "Bollettino sul mercato del gas"
-OFFLINE_REGULATION_QUERY = "Preavviso di esattamente sette giorni per mancata discarica · coefficiente T Piombino"
 
 INTENTS = {
     Agent.QUALITY: r"anomal|quality|qualità|missing|mancant|duplicat|outlier|stale|freshness|timestamp",
@@ -123,16 +122,24 @@ def run_workflow(
     reasoner: Reasoner | None = None,
     public_context: dict | None = None,
     planned_only: bool = False,
+    market_only: bool = False,
+    source_requirements=(),
 ) -> Run:
     question = question.strip()[:600] or DAILY_BRIEFING
     defaults = plan(question, full)
+    if market_only:
+        # Never dispatch Italian normative/settlement tools for a foreign market.
+        defaults=[Call(Agent.MARKET,MarketArguments()),*[call for call in defaults if call.agent in (Agent.QUALITY,Agent.FORECAST)]]
+        full=False
+        planned_only=True
     editions = {title: pdf.digest for title, pdf in library.documents.items()}
     run = Run(
         question=question, source=context.bundle.origin, input_sha256=context.bundle.fingerprint,
         assumptions={**assumptions.model_dump(mode="json"), "pdf_sha256": editions,
-                     "public_operational_context":public_context or {}},
+                     "public_operational_context":public_context or {}, "full_briefing":full,
+                     "source_period":context.facts.get("period"),"assistant_source_requirements":list(source_requirements)},
     )
-    required = set(Agent) if full else {call.agent for call in defaults} if len(defaults) == len(Agent) else set()
+    required = {call.agent for call in defaults} if market_only else set(Agent) if full else {call.agent for call in defaults} if len(defaults) == len(Agent) else set()
     report = execute(
         run, catalog(context, library, assumptions), defaults, required,
         lambda report: validate(report, context, assumptions), notify or (lambda _: None), reasoner, planned_only=planned_only,

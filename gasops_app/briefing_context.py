@@ -8,6 +8,7 @@ from .operational_sources import load_agsi, load_alsi, load_iip, attribution
 from .weather_gas import analyse_gas_day
 from .models import Kind
 from .iip_view import coverage
+from .public_data import SourceUnavailable
 
 
 def inventory_context(result, now, platform):
@@ -20,27 +21,46 @@ def inventory_context(result, now, platform):
         raise ValueError("Invalid inventory snapshot")
     row=valid.iloc[-1]
     day=row["gas_day"]
-    age=(now.astimezone(ROME).date()-day).days
+    # Published gas-day labels are not civil-day observations. The local
+    # 06:00 boundary, not midnight, advances the briefing freshness window.
+    reference_day=(now.astimezone(ROME)-timedelta(hours=6)).date()
+    age=(reference_day-day).days
     out={**attribution(platform),"scope":result["scope"],"gas_day":day.isoformat(),
          "acquired":result["acquired"].isoformat(),"source_status":row["status"],
-         "status":"stale" if result["failed"] or age>2 or age<0 else "available"}
+         "status":"stale" if result["failed"] or age>2 or age<0 or result["acquired"]>now else "available"}
+    out["limitation"]=("Giacenza fisica, riempimento e flussi giornalieri di stoccaggio; non capacità libera o deficit."
+                       if platform=="AGSI+" else "Inventario GNL e send-out giornaliero; non prezzo o capacità disponibile.")
     if out["status"]=="available":
         out["values"]={key:round(float(row[key]),3) for key in fields
                        if row[key] is not None and math.isfinite(float(row[key]))}
         if platform=="AGSI+":
             out["quality_review"]=bool(row.get("review",False))
+    else:
+        out["reason"]=("Aggiornamento non riuscito" if result["failed"] else
+                       "Data non coerente con l’acquisizione" if age<0 or result["acquired"]>now else
+                       "Ultimo giorno gas oltre la finestra di 2 giorni")
+        if age>=0 and result["acquired"]<=now:
+            out["last_observed_values"]={key:round(float(row[key]),3) for key in fields
+                       if row[key] is not None and math.isfinite(float(row[key]))}
     return out
 
 
 def iip_context(result,now):
-    stale=result["failed"] or now-result["acquired"]>timedelta(hours=2)
+    age=now-result["acquired"]
+    reason=("Aggiornamento IIP non riuscito; ultimo dato valido conservato." if result["failed"] else
+            "Data di acquisizione futura: verifica orologio e cache." if age<timedelta(0) else
+            "Ultima acquisizione oltre 2 ore." if age>timedelta(hours=2) else None)
+    if result["failed"] and result.get("refresh_error"):
+        reason="Aggiornamento IIP non riuscito ("+result["refresh_error"]+"); ultimo dato valido conservato."
+    stale=reason is not None
     return {**attribution("IIP"),"request_from":result.get("request_from"),
             "request_to":result.get("request_to"),"acquired":result["acquired"].isoformat(),
             "status":"stale" if stale else "available",
+            **({"reason":reason} if reason else {}),
             "received_records":None if stale else len(result["messages"]),
             "declared_total":None if stale else result.get("reported_total"),
             "coverage":coverage(result),
-            "limitation":"Record UMM, non eventi distinti né capacità persa."}
+            "limitation":"Conteggio dei record UMM attivi nella finestra richiesta, non eventi distinti, capacità persa o conteggio specifico dell’Italia. Finestre diverse non sono direttamente confrontabili."}
 
 
 def weather_context(result,now):
@@ -56,16 +76,20 @@ def weather_context(result,now):
             "limitation":"Scenario condizionale settoriale, non previsione principale; tre città a pesi uguali."}
 
 
-def collect(store, context, now, *, key="", include_gie=False, include_weather=False, weather_snapshots=None):
+def collect(store, context, now, *, key="", include_gie=False, include_weather=False, weather_snapshots=None, clock=None):
     """Only called on explicit report launch, never during widget reruns."""
     tasks={}
     out={}
+    # Request windows use the start time; freshness uses the time after retrieval.
+    # Explicit clock injection keeps historical/offline tests deterministic.
+    checked_at=clock or (lambda:now)
     if include_gie and key:
-        tasks["AGSI+"]=lambda: inventory_context(load_agsi(store,key,"IT",now=now),now,"AGSI+")
-        tasks["ALSI"]=lambda: inventory_context(load_alsi(store,key,"IT",now=now),now,"ALSI")
-        tasks["IIP"]=lambda: iip_context(load_iip(store,key,now=now),now)
+        tasks["AGSI+"]=lambda: inventory_context(load_agsi(store,key,"IT",now=now),checked_at(),"AGSI+")
+        tasks["ALSI"]=lambda: inventory_context(load_alsi(store,key,"IT",now=now),checked_at(),"ALSI")
+        tasks["IIP"]=lambda: iip_context(load_iip(store,key,now=now),checked_at())
     elif include_gie:
-        out["GIE"]={"status":"unavailable","reason":"Chiave GIE non configurata."}
+        out.update({name:{**attribution(name),"status":"unavailable","reason":"Chiave GIE non configurata."}
+                    for name in ("AGSI+","ALSI","IIP")})
     if include_weather:
         origin=context.bundle.origin
         if origin.kind in (Kind.HISTORICAL,Kind.LIVE) and not origin.archive:
@@ -73,12 +97,12 @@ def collect(store, context, now, *, key="", include_gie=False, include_weather=F
                 from .weather_source import refresh,outlook,STATE
                 state={STATE:weather_snapshots} if weather_snapshots is not None else {}
                 if weather_snapshots is None:refresh(state,store,now)
-                estimate=outlook(state,now)
+                estimate=outlook(state,checked_at())
                 result={**estimate,"source_url":estimate["url"],"status":"available"} if estimate else None
                 if origin.grain=="daily" and origin.name.startswith("ENTSOG"):
                     try:
                         scenario=weather_context(analyse_gas_day(store,context.inspection.usable,now,
-                            snapshots=state.get(STATE,{})),now)
+                            snapshots=state.get(STATE,{})),checked_at())
                         if scenario["status"]=="available":return scenario
                     except Exception:
                         pass
@@ -93,7 +117,10 @@ def collect(store, context, now, *, key="", include_gie=False, include_weather=F
             for name,future in futures.items():
                 try:
                     out[name]=future.result()
+                except SourceUnavailable as error:
+                    out[name]={**(attribution(name) if name in ("AGSI+","ALSI","IIP") else {"source":name,"source_url":"https://open-meteo.com/"}),
+                               "status":"unavailable","reason":str(error)}
                 except Exception:
-                    out[name]={"status":"unavailable","source":name,
-                               "reason":"Fonte non disponibile o dati non validi; nessun valore sostitutivo."}
+                    out[name]={**(attribution(name) if name in ("AGSI+","ALSI","IIP") else {"source":name,"source_url":"https://open-meteo.com/"}),
+                               "status":"unavailable","reason":"Fonte non disponibile o dati non validi; nessun valore sostitutivo."}
     return out

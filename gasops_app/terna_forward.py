@@ -135,9 +135,13 @@ def acquire(client,secret,first,last,now=None,clock=utc_now):
             part=parse(payload,kind,first,last,clock())
             if not part:notes.append(kind+": copertura zonale/oraria incompleta")
             rows.extend(part)
-        except (SourceUnavailable,ValueError,TypeError,KeyError):
-            notes.append(kind+": fonte non disponibile")
-    if not rows:raise SourceUnavailable("Nessuna previsione giornaliera completa disponibile")
+        except (SourceUnavailable,SourceSchemaError) as error:
+            notes.append(kind+": "+str(error))
+        except (ValueError,TypeError,KeyError):
+            notes.append(kind+": fonte non validabile")
+    if not rows:
+        detail=" · ".join(notes)
+        raise SourceUnavailable("Nessuna previsione giornaliera completa disponibile."+(" "+detail if detail else ""))
     return validate({"acquired":clock().isoformat(),"first":str(first),"last":str(last),"session":SESSION,"rows":rows}),notes
 
 
@@ -174,7 +178,7 @@ def join_forward(samples,batches,asof):
         for r in paired(b):
             grouped.setdefault(r["day"],[]).append((at,digest(b),r))
     for target,r in samples.iterrows():
-        cutoff=r.origin+pd.Timedelta(hours=15)
+        cutoff=r.origin+pd.Timedelta(15, unit="h")
         eligible=[x for x in grouped.get(target.date().isoformat(),[]) if x[0]<=cutoff]
         if not eligible:continue
         newest=max(x[0] for x in eligible)

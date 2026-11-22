@@ -14,8 +14,32 @@ from .italiano import GRAVITA, MODALITA, MODELLI, data_it, numero
 from .models import AGENT_LABELS, Agent, Kind, Provider
 from .session import analysis_label, briefing_run, launch, preview_market, source_filters, market_scope, PUBLIC, DAILY
 from .reports import markdown
-from .visuals import AMBER, BLUE, ROSE, TEAL, breakdown_chart, chip, demand_chart, error_chart
+from .regulatory import registered_case
+from .executive_briefing import management_readout, outlook_delta
+from .visuals import AMBER, BLUE, ROSE, TEAL, breakdown_chart, chip, demand_chart, error_chart, ai_readout
 from .visuals import forecast_readout, heading, header, info, kind_tag, kpi_grid, local_time, mini_chart, plot, rows, steps
+
+
+def _open_registered_finding(finding_id):
+    from .workbench import regulatory
+    st.session_state["desk_finding_target"]=finding_id
+    st.switch_page(st.Page(regulatory,title="Norme e documenti",icon=":material/menu_book:",url_path="regulatory"))
+
+
+def _registered_finding(finding):
+    case=registered_case(finding.id)
+    if case is None:
+        return False
+    item=case.finding
+    st.markdown("**"+item.title+"**")
+    st.caption("Rilievo documentale storico · vigenza e applicabilità da verificare")
+    st.text(item.detail)
+    for cite in item.citations:
+        st.caption(f"{cite.document} · {cite.section} · PDF p. {cite.page}")
+    if st.button("Apri rilievo",key="overview_finding_"+item.id,icon=":material/arrow_forward:",width="stretch",
+                 help="Apri Norme e documenti → Rilievi, con il caso già selezionato"):
+        _open_registered_finding(item.id)
+    return True
 
 
 def _change(facts: dict, field: str) -> str:
@@ -125,19 +149,23 @@ def _quality_panel(context: MarketContext) -> None:
                     st.caption(finding.detail)
 
 
-def _charts(context: MarketContext, horizon: int, page: str, height: int = 330, *, readout=True) -> pd.DataFrame:
+def _charts(context: MarketContext, horizon: int, page: str, height: int = 330, *, readout=True, compact=False) -> pd.DataFrame:
     origin = context.bundle.origin
     data = context.inspection.usable.tail(horizon)
     title = ("Consumo interno e disponibilità" if origin.grain == "monthly" else
              "Consumi nazionali" if origin.archive else "Prelievi sulla rete SRG" if "distribution_gwh" in origin.fields else "Domanda e offerta")
     projection = context.projection
+    if compact and origin.grain=="monthly":title="Consumi e previsioni"
     heading(title, kind_tag(Kind.FORECAST) if projection.points else "")
     if not data["demand_gwh"].notna().any():
         st.info("Nessun consumo utilizzabile nel periodo selezionato.")
     else:
         if projection.points and readout:
             forecast_readout(projection.points[0], origin.grain, historical=origin.archive or any(f.id=="stale" for f in context.inspection.findings))
-        plot(demand_chart(data, projection, origin.grain, height=height), key=f"{page}_demand")
+        chart=demand_chart(data, projection, origin.grain, height=height,compact=compact)
+        plot(chart,key=f"{page}_demand")
+        if compact and chart.layout.meta=="coincident_accounting":
+            st.caption("Disponibilità contabile coincidente con i consumi nel periodo mostrato; dettaglio nel bilancio.")
         horizon_text = "14 giorni gas" if origin.grain == "daily" else "6 mesi"
         if projection.points:
             model = MODELLI[projection.model]
@@ -190,23 +218,155 @@ def _supporting_charts(context: MarketContext, data: pd.DataFrame, page: str) ->
                 st.caption("Prezzo ufficiale assente per il periodo selezionato.")
 
 
+def _briefing_period(run):
+    # The usable observation may precede the publisher's last record.
+    market=run.results.get(Agent.MARKET)
+    observed=(market.values.get("period") if market else None) or run.assumptions.get("source_period")
+    period=observed or run.source.latest_period
+    if isinstance(period,str):
+        try:
+            return data_it(date.fromisoformat(period),day=run.source.grain=="daily")
+        except ValueError:
+            return period
+    return "Periodo non disponibile"
+
+
+def _briefing_highlights(run):
+    market=run.results.get(Agent.MARKET)
+    forecast=run.results.get(Agent.FORECAST)
+    facts=market.values if market and market.status in ("completed","review") else {}
+    series=forecast.values.get("forecast",{}) if forecast and forecast.status in ("completed","review") else {}
+    points=series.get("points",[])
+    point=points[0] if points else {}
+    scope=_briefing_period(run)
+    estimate_period=point.get("period")
+    if estimate_period:
+        try:
+            estimate_period=data_it(date.fromisoformat(estimate_period),day=run.source.grain=="daily")
+        except ValueError:
+            pass
+    historical=run.source.archive or any(f.id=="stale" for f in run.findings)
+    estimate_label="Stima da dati storici" if historical else "Prossima previsione"
+    if run.source.kind==Kind.SYNTHETIC:
+        estimate_label="Previsione di esempio"
+    comparison=facts.get("comparison") or ""
+    def change(field):
+        value=facts.get(field)
+        return (numero(value,signed=True)+"% "+comparison).strip() if value is not None else scope
+    interval=(numero(point["lower_80"],0)+"–"+numero(point["upper_80"],0)+" GWh · fascia 80%"
+              if point.get("lower_80") is not None and point.get("upper_80") is not None else "")
+    price_label="Prezzo di esempio" if run.source.kind==Kind.SYNTHETIC else "CMEM,m (ARERA)"
+    kpi_grid([("Consumi",facts.get("demand_gwh"),"GWh",change("demand_gwh_change_pct"),1,""),
+              (price_label,facts.get("price_eur_mwh"),"€/MWh",change("price_eur_mwh_change_pct"),2,""),
+              (estimate_label,point.get("estimate"),"GWh"," · ".join(x for x in [estimate_period,interval] if x),1,"blue")])
+    delta=outlook_delta(run)
+    if delta is not None:
+        st.caption("Prossima stima rispetto all’ultimo consumo osservato: "+numero(delta,1,signed=True)+"%.")
+    if not facts and market:
+        st.caption(market.summary)
+    if not point and forecast:
+        st.caption(forecast.summary)
+
+
+def _briefing_market_context(public):
+    """Expose validated observations separately from generative interpretation."""
+    daily=public.get("ENTSOG · SRG",{})
+    acer=public.get("ACER · GNL",{})
+    if daily.get("status")=="available":
+        value=daily.get("values",{}).get("demand_gwh")
+        if value is not None:
+            text=f"ENTSOG · {daily.get('period','data non indicata')} · Prelievi dei tre aggregati SRG: {numero(value)} GWh"
+            change=daily.get("changes_pct",{}).get("demand_gwh")
+            if change is not None:
+                text+=" · "+numero(change,1,signed=True)+"% (medie delle due finestre da 7 giorni)"
+            st.caption(text+".")
+    if acer.get("status")=="available":
+        values=acer.get("values",{})
+        eu=values.get("eu",{})
+        spread=values.get("benchmark",{})
+        parts=[]
+        if eu.get("status")=="available" and eu.get("value") is not None:
+            parts.append("Prezzo GNL UE "+numero(eu["value"],2)+" €/MWh ("+eu["period"]+")")
+        if spread.get("status")=="available" and spread.get("value") is not None:
+            parts.append("Differenziale GNL–TTF "+numero(spread["value"],2,signed=True)+" €/MWh ("+spread["period"]+")")
+        if parts:st.caption("ACER · "+" · ".join(parts)+".")
+
+
+def _briefing_operational_context(public):
+    """Keep source scope, availability and units beside each indicator."""
+    if not public:
+        return
+    st.markdown("**Sicurezza delle forniture · contesto operativo**")
+    cards=[]
+    for name,label,field,unit in (("AGSI+","Stoccaggi Italia","fill_pct","%"),
+                                  ("ALSI","Rigassificazione Italia","sendout_gwh_d","GWh/g"),
+                                  ("IIP","Record UMM ricevuti","received_records","")):
+        source=public.get(name)
+        if not source:
+            continue
+        available=source.get("status")=="available"
+        # A count on a partial page is not a management indicator. Keep the
+        # source status in the audit trail, not an empty or misleading KPI.
+        if name=="IIP" and (not available or source.get("coverage")!="Completa"
+                            or not isinstance(source.get(field),int) or isinstance(source.get(field),bool)
+                            or source[field]<0):
+            continue
+        values=source.get("values",{}) if available else {}
+        historical=source.get("last_observed_values",{}) if name!="IIP" and source.get("status")=="stale" else {}
+        value=(source.get(field) if name=="IIP" else values.get(field)) if available else None
+        raw_day=source.get("gas_day")
+        detail=raw_day or ("Finestra IIP" if name=="IIP" else "")
+        if not available:
+            if historical.get(field) is not None:
+                value=historical[field]
+                detail=f"{raw_day} · ultimo dato non recente"
+                if name=="AGSI+" and historical.get("stock_twh") is not None:
+                    detail+=" · "+numero(historical["stock_twh"])+" TWh"
+            else:
+                detail=" · ".join(x for x in (raw_day,source.get("reason") or "Dato non recente") if x)
+        elif name=="AGSI+":
+            if values.get("stock_twh") is not None:
+                detail+=" · "+numero(values["stock_twh"])+" TWh"
+            if source.get("quality_review"):
+                detail+=" · dato da verificare"
+        elif name=="IIP":
+            start,end=source.get("request_from"),source.get("request_to")
+            window=f"{start}–{end} · " if start and end else ""
+            detail=window+f"{source.get('coverage','Copertura non indicata')} · record, non eventi"
+        cards.append((label,value,unit,detail,0 if name=="IIP" else 1,""))
+    if cards:
+        kpi_grid(cards)
+    weather=public.get("Open-Meteo")
+    if weather:
+        points=weather.get("points",[]) if weather.get("status")=="available" else []
+        if points:
+            peak=max(points,key=lambda p:p.get("hdd",float("-inf")))
+            day=peak.get("period") or peak.get("day") or "data non indicata"
+            st.caption("Meteo · picco HDD "+numero(peak.get("hdd"))+" il "+day+
+                       " · "+numero(peak.get("temperature_c"))+" °C · previsione territoriale")
+        else:
+            st.caption("Meteo · previsione non disponibile o non recente.")
+    missing=[name for name,item in public.items() if item.get("status")!="available"
+             or (name=="IIP" and item.get("coverage")!="Completa")]
+    if missing:
+        st.caption("Copertura incompleta · "+", ".join(missing)+". Dettagli nelle fonti consultate.")
+
+
 def _briefing_panel(selection) -> None:
     with st.container(border=True,key="panel_overview_brief"):
         lead,action=st.columns([2.2,1],vertical_alignment="center")
         with lead:
             st.subheader("Bollettino di mercato")
-            info("Bollettino","Esegue sei strumenti di analisi e controlli locali. Il modello AI, se selezionato, interpreta i risultati condivisibili. Scenari e settlement possono essere dimostrativi; nessuna modifica operativa.")
         with action:
             clicked=st.button(analysis_label(),type="primary",icon=":material/auto_awesome:",width="stretch",key="analysis_launch",disabled=selection.bundle is None)
-        extras=[]
-        if st.session_state.get("briefing_gie"):
-            extras.append("GIE (AGSI+, ALSI e IIP)")
-        if st.session_state.get("briefing_weather"):
-            extras.append("Open-Meteo")
-        if extras:
-            st.caption("Fonti aggiuntive: "+", ".join(extras))
+        with st.popover("Fonti e metodo",icon=":material/info:"):
+            st.write("Sei strumenti locali; il modello interpreta soltanto le evidenze condivisibili. Scenari e settlement restano separati.")
+            extras=["Eurostat, ARERA, ENTSOG, ACER, Terna (perimetro disponibile)"]
+            if st.session_state.get("briefing_gie",True):extras.append("GIE AGSI+, ALSI e IIP")
+            if st.session_state.get("briefing_weather"):extras.append("Open-Meteo")
+            st.caption(" · ".join(extras))
         if clicked:
-            generated=launch(selection,full=True)
+            generated=launch(selection,full=True,compact=True)
             if generated is None:
                 st.error("Il nuovo bollettino non è stato generato. L’eventuale risultato precedente resta qui sotto.")
         run=briefing_run()
@@ -216,44 +376,83 @@ def _briefing_panel(selection) -> None:
             matches=bool(selection.bundle and run.input_sha256==selection.bundle.fingerprint
                          and run.assumptions.get("model")==selection.model)
             if not matches:
-                st.warning("Bollettino precedente: fonte o modello previsionale attuale diverso. Genera un nuovo report per aggiornare i risultati.")
+                st.warning("Bollettino precedente: fonte o modello cambiato. Genera un nuovo bollettino.")
             actual_ai=run.mode=="LLM-assisted" and bool(run.interpretation)
             st.markdown("**Ultimo bollettino generato**")
-            st.caption(local_time(run.finished_at)+" · "+run.source.name+" · "+
-                       (run.source.latest_period or "periodo non indicato"))
-            if actual_ai:
-                st.caption("Interpretazione AI · "+(run.model or "modello non indicato"))
-                st.text(run.interpretation)
-                st.caption("Interpretazione da verificare · "+", ".join(AGENT_LABELS[a] for a in run.interpretation_sources))
-            else:
-                st.caption("Report deterministico · nessuna interpretazione AI generata.")
-            for warning in run.warnings:
+            mode="AI · "+(run.model or "modello selezionato") if actual_ai else "Calcoli locali"
+            st.caption(" · ".join((local_time(run.finished_at),run.source.name,_briefing_period(run),mode)))
+            if run.source.kind==Kind.SYNTHETIC:
+                st.caption("Simulazione · dati fittizi.")
+            if run.source.archive or run.source.refresh_failed or any(f.id=="stale" for f in run.findings):
+                st.warning("Dati storici o aggiornamento da verificare. Non rappresentano il mercato attuale.")
+            for warning in dict.fromkeys(run.warnings):
                 st.warning(warning)
-            completed=sum(r.status=="completed" for r in run.results.values())
-            issues=sum(f.severity in ("high","medium") for f in run.findings)
-            c1,c2,c3=st.columns(3)
-            c1.metric("Controlli completati",f"{completed}/{len(run.steps)}")
-            c2.metric("Rilievi da verificare",issues)
-            c3.metric("Modalità effettiva","AI" if actual_ai else "Deterministica")
-            if run.summary and not actual_ai:
-                st.text(run.summary)
+            if run.mode=="Deterministic" and run.assumptions.get("ai_mode_reason"):
+                st.caption(str(run.assumptions["ai_mode_reason"])+".")
             public=run.assumptions.get("public_operational_context") or {}
+            if actual_ai:
+                st.markdown("**Sintesi AI**")
+                if run.ai_sections:
+                    ids={section["id"] for section in run.ai_sections}
+                    first=run.ai_sections[0]["id"]
+                    primary=({"summary","priorities"} & ids) or {first}
+                    if "summary" not in ids:primary.add(first)
+                    ai_readout(run,section_ids=primary,usage=False)
+                    if ids-primary:
+                        with st.expander("Analisi AI di dettaglio"):
+                            ai_readout(run,section_ids=ids-primary,usage=False)
+                else:ai_readout(run,usage=False)
+            else:
+                overview,forecast,priorities=management_readout(run)
+                st.markdown("**Lettura operativa · regole locali**")
+                st.text(overview)
+                st.markdown("**Priorità di verifica**")
+                for i,priority in enumerate(priorities,1):
+                    st.text(f"{i}. {priority}")
+            with st.expander("Indicatori e dati del bollettino",expanded=not actual_ai):
+                st.caption("Snapshot alla generazione · i valori possono differire dalla panoramica aggiornata.")
+                _briefing_highlights(run)
+                _briefing_market_context(public)
+                _briefing_operational_context(public)
+            if actual_ai and run.ai_usage:
+                ai_readout(run,section_ids=set(),usage=True)
+            issues=[f for f in run.findings if f.severity in ("high","medium")]
+            completed=sum(r.status in ("completed","review") for r in run.results.values())
+            st.caption(f"Analisi eseguite: {completed}/{len(run.steps)} · Da verificare: {len(issues)}")
+            for finding in issues:
+                if finding.severity=="high" and registered_case(finding.id) is None:
+                    st.warning(finding.title+" — "+finding.detail)
+            other_issues=[finding for finding in issues if finding.severity!="high" or registered_case(finding.id) is not None]
+            if other_issues:
+                with st.expander(f"Rilievi da verificare · {len(other_issues)}",expanded=any(registered_case(f.id) is None for f in other_issues)):
+                    for finding in other_issues:
+                        if not _registered_finding(finding):
+                            st.markdown("**"+finding.title+"**")
+                            st.text(finding.detail)
+            elif not issues:
+                st.caption("Nessun rilievo nei controlli eseguiti.")
+            with st.expander("Esposizione e stress test · simulazioni"):
+                st.caption("Scenario condizionale sulle ipotesi selezionate, non previsione del deficit di mercato. Monte Carlo e CVaR sono grandezze teoriche dello scenario, non costi di emergenza o settlement effettivo.")
+                for agent in (Agent.SETTLEMENT,Agent.SCENARIO):
+                    item=run.results.get(agent)
+                    if item:
+                        st.markdown("**"+AGENT_LABELS[agent]+"**")
+                        st.text(item.summary)
+                st.caption("Per EPSu, MEPSu e settlement effettivi servono i dati verificati del dossier operativo.")
             if public:
                 with st.expander("Fonti operative consultate"):
                     for name,source in public.items():
                         status={"available":"Disponibile","stale":"Non recente","unavailable":"Non disponibile"}.get(source.get("status"),"Stato non indicato")
-                        st.text(f"{source.get('source',name)} · {status} · {source.get('gas_day') or source.get('acquired') or 'data non indicata'}")
+                        st.text(f"{source.get('source',name)} · {status} · {source.get('gas_day') or source.get('period') or source.get('acquired') or 'data non indicata'}")
                         if source.get("reason"):
                             st.text(source["reason"])
-                    st.json(public,expanded=False)
+                    st.caption("Dati completi e metadati nel file JSON del bollettino.")
             with st.expander("Dettaglio degli agenti"):
-                st.caption("Scenari e settlement: calcoli dimostrativi.")
-                if actual_ai and run.summary:
-                    st.text(run.summary)
-                for agent,item in run.results.items():
+                for agent,item in sorted(run.results.items(),key=lambda pair:list(Agent).index(pair[0])):
+                    if agent in (Agent.SETTLEMENT,Agent.SCENARIO):
+                        continue
                     st.markdown("**"+AGENT_LABELS[agent]+"**")
                     st.text(item.summary)
-                st.html(steps(run))
             d1,d2=st.columns(2)
             d1.download_button("Scarica bollettino",markdown(run,{}),f"igor-{run.id[:10]}.md",
                                mime="text/markdown",key="overview_brief_md",width="stretch")
@@ -297,19 +496,27 @@ def _overview_mix(context):
 
 
 def overview() -> None:
+    from .workspace import render
+    top = st.container()
+    view = st.radio("Vista iniziale", ["Scrivania BSO", "Mercato in sintesi"],
+                    horizontal=True, label_visibility="collapsed", key="overview_workspace")
+    with top:
+        header("Scrivania operativa" if view == "Scrivania BSO" else "Panoramica del mercato",
+               "Bilanciamento · Settlement · Operations" if view == "Scrivania BSO" else "")
+    if view == "Scrivania BSO":
+        render()
+        return
     top,controls=st.container(),st.container()
     with controls:
         selection=source_filters("overview")
     area,perimeter=market_scope(selection.name)
     with top:
-        header("Panoramica del mercato","")
         st.markdown("**"+area+"** · "+perimeter)
-        st.markdown("[KPI operativi · fonti pubbliche](/kpi)")
     context=None
     if selection.bundle:
         context=preview_market(selection)
-        st.caption("Fonte: "+context.bundle.origin.name)
-        _market_headlines(context)
+        st.caption(context.bundle.origin.name+" · "+context.facts.get("label","Periodo non disponibile"))
+        _market_headlines(context,compact=True)
         findings=[f for f in context.inspection.findings if f.severity!="info"]
         stale=[f for f in findings if f.id=="stale" or f.id.startswith("public-cache")]
         if stale:
@@ -321,23 +528,28 @@ def overview() -> None:
         with st.container(key="overview_split"):
             left,right=st.columns([2.15,1],gap="medium")
             with left,st.container(border=True,key="panel_main"):
-                _charts(context,selection.periods,"overview",height=355,readout=False)
+                _charts(context,selection.periods,"overview",height=290,readout=False,compact=True)
                 point=next(iter(context.projection.points),None)
                 if point and point.lower_80 is not None and point.upper_80 is not None:
                     st.caption("Intervallo stimato (80%) della prima stima: "+numero(point.lower_80,0)+"–"+numero(point.upper_80,0)+" GWh.")
-                info("Come leggere il grafico","Linea continua: consumi osservati. Linea tratteggiata: stime del modello. La fascia indica l’incertezza. GWh misura energia.")
+                st.caption("Linea continua: osservazioni · tratteggio: previsione · fascia: incertezza.")
             with right:
                 with st.container(border=True,key="panel_overview_mix"):
                     _overview_mix(context)
                 with st.container(border=True,key="panel_overview_quality"):
                     from .sentinel import panel as sentinel_panel
-                    sentinel_panel(context)
+                    sentinel_panel(context,compact=True)
         with st.expander("Fonti e aggiornamento"):
             _source_panel(context)
-    if selection.name in (PUBLIC,DAILY):
-        from .overview_indicators import panel
-        panel(context)
+    # Reserve the market indicators above the briefing while running the
+    # briefing first, so its freshly acquired public snapshot is reusable
+    # in the same rerun. No second request or change to the report timestamp.
+    indicators=st.container() if selection.name in (PUBLIC,DAILY) else None
     _briefing_panel(selection)
+    if indicators is not None:
+        from .overview_indicators import panel
+        with indicators:
+            panel(context,briefing=briefing_run())
 
 
 
@@ -380,7 +592,7 @@ def _model_comparison(context: MarketContext) -> None:
                 plot(error_chart(projection, context.bundle.origin.grain), "market_error")
 
 
-def _market_headlines(context: MarketContext):
+def _market_headlines(context: MarketContext, *, compact=False):
     """A single comparable reading: observed period, change, and next model period."""
     origin=context.bundle.origin
     facts=context.facts
@@ -398,7 +610,10 @@ def _market_headlines(context: MarketContext):
          period_text(pd.Timestamp(point.period),origin.grain) if point else "Previsione non disponibile",1,"blue")
     ]
     kpi_grid(cards)
-    info("Lettura dei dati",_plain_market(context))
+    if compact:
+        st.markdown(_plain_market(context))
+    else:
+        info("Lettura dei dati",_plain_market(context))
     if point and facts.get("period"):
         lead=(pd.Timestamp(point.period)-pd.Timestamp(facts["period"])).days
         if origin.grain=="daily":
@@ -453,7 +668,11 @@ def _market_data(context, visible):
 
 def market() -> None:
     header("Mercato e previsioni", "")
-    view=st.radio("Vista mercato",["Domanda e previsioni","Mercato europeo ACER","Sistema elettrico Terna","Laboratorio previsionale","Forecasting Snam"],horizontal=True,label_visibility="collapsed",key="market_view")
+    view=st.radio("Vista mercato",["Domanda e previsioni","Mercato europeo ACER","Sistema elettrico Terna","Mercato gas GME","Laboratorio previsionale","Forecasting Snam"],horizontal=True,label_visibility="collapsed",key="market_view")
+    if view=="Mercato gas GME":
+        from .gme_market_page import panel
+        panel()
+        return
     if view=="Forecasting Snam":
         from .snam_forecast_page import panel
         panel()
@@ -484,9 +703,9 @@ def market() -> None:
     st.caption("Fonte: "+origin.name+" · "+("mensile" if origin.grain=="monthly" else "giornaliera"))
     _market_headlines(context)
     _market_quality_notice(context)
-    main,details,weather,methods=st.tabs(["Consumi e previsioni","Composizione e prezzi","Meteo","Modelli e dati"])
-    visible=context.inspection.usable.tail(selection.periods)
-    with main:
+    section=st.radio("Analisi",["Consumi e previsioni","Composizione e prezzi","Meteo","Modelli e dati"],
+                     horizontal=True,label_visibility="collapsed",key="market_section")
+    if section=="Consumi e previsioni":
         with st.container(border=True,key="panel_market_chart"):
             _charts(context,selection.periods,"market",height=390,readout=False)
             if context.projection.points:
@@ -496,7 +715,8 @@ def market() -> None:
                                ": "+numero(p.lower_80)+" – "+numero(p.upper_80)+" GWh.")
             info("Come leggere il grafico","Linea continua: consumi osservati. Tratteggio: stima del modello; la fascia rappresenta l’incertezza.",
                  "La previsione parte dall’ultimo periodo utilizzabile, non necessariamente da oggi. GWh misura energia.")
-    with details:
+    elif section=="Composizione e prezzi":
+        visible=context.inspection.usable.tail(selection.periods)
         st.caption(area+" · "+perimeter)
         _metrics(context)
         _supporting_charts(context,visible,"market")
@@ -509,14 +729,15 @@ def market() -> None:
                 st.write("Media stagionale massima: "+facts["peak_month"]+". Minima: "+facts["low_month"]+".")
             if facts.get("weekend_vs_weekday_pct") is None and not facts.get("peak_month"):
                 st.caption("Dati insufficienti per descrivere le abitudini di consumo.")
-    with weather:
+    elif section=="Meteo":
         from .weather_page import weather_panel,outlook_panel
         if origin.kind in (Kind.HISTORICAL,Kind.LIVE) and not origin.archive:
             if origin.grain=="daily" and origin.name.startswith("ENTSOG"):weather_panel(context)
             else:outlook_panel()
         else:
             st.caption("Meteo disponibile per le fonti reali correnti.")
-    with methods:
+    else:
+        visible=context.inspection.usable.tail(selection.periods)
         if st.checkbox("Confronta i modelli previsionali",key="market_show_models"):
             _model_comparison(context)
         _quality_panel(context)

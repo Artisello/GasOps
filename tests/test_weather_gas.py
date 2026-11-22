@@ -30,7 +30,7 @@ def fixture():
     data["demand_gwh"]=data.sum(axis=1)
     hist=pd.DataFrame({"hdd":hdd},index=idx)
     future=pd.DataFrame({"hdd":[8.]*7,"temperature_c":[10.]*7,"hours":[24]*7},
-                        index=pd.date_range(idx[-1]+pd.Timedelta(days=8),periods=7))
+                        index=pd.date_range(idx[-1]+pd.Timedelta(8, unit="D"),periods=7))
     return data,hist,future
 
 

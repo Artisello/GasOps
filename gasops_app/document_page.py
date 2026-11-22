@@ -1,6 +1,7 @@
 """Shared persistent archive and independent visitor-only PDF workspaces."""
 import json
 import os
+import re
 from threading import Lock
 from pathlib import Path
 
@@ -8,8 +9,8 @@ import streamlit as st
 
 from .data import ROOT
 from .document_desk import build, identity, search, searchable_pages, bookmark, page_text, extend_uploads, MAX_RESULTS, MAX_TOTAL_BYTES
-from .regulatory import read_local_pdfs, MAX_DOCUMENTS, MAX_PDF_BYTES
-from .visuals import info
+from .regulatory import read_local_pdfs, MAX_DOCUMENTS, MAX_PDF_BYTES, REGISTER, registered_case, matching_edition
+from .visuals import info, header
 from .session import reasoner
 from .document_rag import answer, MAX_PASSAGES
 from .review_register import KEY as REVIEW_KEY, LIMIT as REVIEW_LIMIT, STATUSES, valid_cases, register, decide, export_json, export_markdown
@@ -21,6 +22,7 @@ VISITOR_STATE="document_visitor_index_v1"
 VISITOR_UPLOADS="document_visitor_uploads_v1"
 VISITOR_NOTICE="document_visitor_notice_v1"
 SCOPE="document_archive_scope"
+NEXT_SCOPE="document_archive_next_scope"
 ADMIN="gasops_document_admin"
 NOTICE="gasops_document_notice"
 WRITE_LOCK=Lock()
@@ -39,10 +41,75 @@ def _archive_config():
     return ArchiveConfig(url.rstrip("/"),key,admin,contributors)
 
 
-@st.cache_data(ttl=30,max_entries=3,show_spinner=False)
+@st.cache_resource(ttl=300,max_entries=8,show_spinner=False)
+def _read_remote_pdf(config,key):
+    # Immutable, content-addressed public object. Never cache admin tokens or visitor PDFs.
+    return Archive(config).read_document(key)
+
+
+@st.cache_resource(ttl=30,max_entries=1,show_spinner=False)
 def _read_remote(config):
-    # Only public archives are cached across visitors; never credentials or chat.
-    return Archive(config).read()
+    # Refresh the manifest, not every unchanged PDF. Legacy names cannot be
+    # assumed immutable and are fetched again. Removed keys are never returned.
+    archive=Archive(config)
+    return archive.read(reader=lambda key:_read_remote_pdf(config,key)
+                        if re.fullmatch(r"[a-f0-9]{64}--.+\.pdf",key,re.I) and key[:64]==key[:64].lower()
+                        else archive.read_document(key))
+
+
+def _manifest(directory):
+    """Cheap file identity; detect changes without reopening large PDFs."""
+    entries=[]
+    for path in sorted(directory.glob("*.pdf"))[:MAX_DOCUMENTS]:
+        if not path.is_file():continue
+        info=path.stat()
+        if info.st_size<=MAX_PDF_BYTES:
+            entries.append((path.name,info.st_size,info.st_mtime_ns,info.st_ctime_ns,info.st_ino,info.st_dev))
+    return tuple(entries)
+
+
+def _load_local(directory,manifest):
+    result=read_local_pdfs(directory)
+    if _manifest(directory)!=manifest:
+        raise OSError("Archivio locale cambiato durante la lettura.")
+    return result
+
+
+@st.cache_resource(max_entries=1,show_spinner=False)
+def _public_local(directory,manifest):
+    return _load_local(directory,manifest)
+
+
+def _local_inputs(directory,*,shared):
+    manifest=_manifest(directory)
+    if shared:
+        return _public_local(directory,manifest)
+    # Explicit server override paths stay session-local.
+    key=(directory,manifest)
+    prior=st.session_state.get("document_local_snapshot_v2")
+    if prior and prior[0]==key:return prior[1]
+    inputs=_load_local(directory,manifest)
+    st.session_state["document_local_snapshot_v2"]=(key,inputs)
+    return inputs
+
+
+@st.cache_resource(max_entries=1,show_spinner=False)
+def _public_index(key,_inputs):
+    # Library is read-only after construction: transform/search and rendering
+    # open separate PDF handles; all mutable UI state stays in session_state.
+    docs=build(_inputs)
+    return docs,searchable_pages(docs)
+
+
+def _public_snapshot(local,remote,*,shared):
+    prior=st.session_state.get("document_public_snapshot_v2")
+    if prior and prior[0] is local and prior[1] is remote:
+        inputs,key=prior[2:]
+    else:
+        inputs=tuple((display_name(k),v) for k,v in remote)+local
+        key=identity(inputs)
+        st.session_state["document_public_snapshot_v2"]=(local,remote,inputs,key)
+    return _update_index(inputs,key=key,shared=shared)
 
 
 def _admin_panel(config,archive,local,remote):
@@ -89,6 +156,7 @@ def _admin_panel(config,archive,local,remote):
                     st.session_state[NOTICE]=("",["Pubblicazione non completata; verifica i PDF già salvati prima di riprovare."])
                 finally:
                     _read_remote.clear()
+                    _read_remote_pdf.clear()
                 st.rerun()
         if remote and session.is_admin(config):
             labels={k:display_name(k) for k,_ in remote}
@@ -108,29 +176,36 @@ def _admin_panel(config,archive,local,remote):
                         st.session_state[NOTICE]=("",[str(exc)])
                     finally:
                         _read_remote.clear()
+                        _read_remote_pdf.clear()
                     st.rerun()
 
 
-def _update_index(inputs,docs=None,*,state_key=STATE):
-    key=identity(inputs)
+def _update_index(inputs,docs=None,*,state_key=STATE,key=None,shared=False):
+    key=identity(inputs) if key is None else key
     cached=st.session_state.get(state_key)
     if cached and cached["identity"]==key:
+        if "coverage" not in cached:cached["coverage"]=searchable_pages(cached["docs"])
         return cached
+    coverage=None
     if docs is None:
         with st.spinner("Lettura e indicizzazione dei PDF…"):
-            docs=build(inputs)
+            if shared and state_key==STATE:
+                docs,coverage=_public_index(key,inputs)
+            else:
+                docs=build(inputs)
+    if coverage is None:coverage=searchable_pages(docs)
     # Preserve bookmarks for unchanged document editions only. Search/RAG
     # results and previews must be regenerated against the updated index.
     editions={(name,pdf.digest) for name,pdf in docs.documents.items()}
     refs=[item for item in (cached or {}).get("reference_list",[])
           if (item["document"],item["sha256"]) in editions]
     cases=valid_cases((cached or {}).get(REVIEW_KEY,[]),docs)
-    cached={"identity":key,"docs":docs,"reference_list":refs,REVIEW_KEY:cases}
+    cached={"identity":key,"docs":docs,"coverage":coverage,"reference_list":refs,REVIEW_KEY:cases}
     st.session_state[state_key]=cached
     return cached
 
 
-def _visitor_upload_panel():
+def _visitor_upload_panel(*, has_public=False):
     """Never write visitor bytes to disk, shared cache, or the public bucket."""
     personal=st.session_state.get(VISITOR_UPLOADS,())
     message,notices=st.session_state.pop(VISITOR_NOTICE,("",[]))
@@ -138,9 +213,8 @@ def _visitor_upload_panel():
         st.success(message)
     for notice in notices:
         st.warning(notice)
-    with st.expander("Carica PDF",expanded=not personal):
-        st.caption("PDF personali · solo sessione corrente · non condivisi.")
-        st.caption("Solo PDF pubblici o autorizzati. Nessun dato riservato.")
+    with st.expander("Carica PDF",expanded=not personal and not has_public):
+        st.caption("Solo sessione · PDF pubblici o autorizzati, nessun dato riservato.")
         with st.form("document_visitor_add",clear_on_submit=True):
             files=st.file_uploader("Seleziona PDF",type=["pdf"],accept_multiple_files=True,
                 help="8 PDF, massimo 24 MB per file, 64 MB e 2.000 pagine in totale; PDF con testo ricercabile.")
@@ -158,7 +232,7 @@ def _visitor_upload_panel():
                     st.session_state[VISITOR_UPLOADS]=retained
                     _update_index(retained,docs,state_key=VISITOR_STATE)
                     if retained:
-                        st.session_state[SCOPE]="I miei PDF"
+                        st.session_state[NEXT_SCOPE]="I miei PDF"
                     st.session_state[VISITOR_NOTICE]=(f"{added} PDF aggiunti." if added else "",notes+docs.errors)
                     st.rerun()
                 except (ValueError,RuntimeError):
@@ -175,31 +249,38 @@ def _visitor_upload_panel():
                 st.rerun()
 
 
-def _archive():
+def _archive(selected,scope_slot):
     # Keep the explicit public repository folder separate from ignored local PDFs.
     override=os.environ.get("GASOPS_PDF_DIR")
     directory=Path(override) if override else ROOT/"data"/"public-regulatory"
-    try:
-        local=read_local_pdfs(directory)
-    except OSError:
-        local=()
-        st.warning("Archivio predisposto sul server non leggibile.")
-    _visitor_upload_panel()
+    upload_slot=st.container()
     config=None
     try:
         config=_archive_config()
     except ValueError:
         st.warning("Configurazione archivio persistente non valida.")
-    remote=()
+    public_selected=selected=="Archivio pubblico"
+    admin_saved=st.session_state.get(ADMIN)
+    managing=bool(config and admin_saved and admin_saved[0]==config and admin_saved[1].valid(config))
+    local=remote=()
+    if public_selected or managing:
+        try:
+            local=_local_inputs(directory,shared=not bool(override))
+        except OSError:
+            st.warning("Archivio predisposto sul server non leggibile.")
     if config:
         archive=Archive(config)
-        try:
-            with st.spinner("Aggiornamento archivio…"):
+        if public_selected or managing:
+            try:
                 remote=_read_remote(config)
-        except ArchiveError as exc:
-            st.warning(str(exc)+" Sono mostrati soltanto eventuali PDF predisposti sul server.")
+            except ArchiveError as exc:
+                st.warning(str(exc)+" Sono mostrati soltanto eventuali PDF predisposti sul server.")
+            else:
+                _admin_panel(config,archive,local,remote)
         else:
-            _admin_panel(config,archive,local,remote)
+            # Login does not need any PDF. After authorization the management
+            # path fetches the current archive before allowing mutation.
+            _admin_panel(config,archive,(),())
     else:
         st.caption("Archivio remoto non configurato · caricamento personale disponibile.")
         with st.expander("Pubblicazione permanente · configurazione",expanded=False):
@@ -207,34 +288,41 @@ def _archive():
             st.markdown("[Configurazione archivio remoto](https://github.com/Artisello/GasOps#archivio-pubblico-persistente-supabase-storage)")
             st.caption("Solo per gestori del progetto: è ancora possibile predisporre PDF pubblici nel repository.")
             st.link_button("Apri cartella pubblica","https://github.com/Artisello/GasOps/tree/main/data/public-regulatory")
+    with upload_slot:
+        _visitor_upload_panel(has_public=bool(local or remote or (not public_selected and (config or directory.is_dir()))))
     message,notices=st.session_state.pop(NOTICE,("",[]))
     if message:
         st.success(message)
     for notice in notices:
         st.warning(notice)
-    public_inputs=tuple((display_name(k),v) for k,v in remote)+local
-    cached_public=_update_index(public_inputs)
     personal=st.session_state.get(VISITOR_UPLOADS,())
-    selected=st.radio("Archivio",["Archivio pubblico","I miei PDF"],horizontal=True,key=SCOPE,
-                      label_visibility="collapsed")
-    if selected=="I miei PDF":
-        cached=_update_index(personal,state_key=VISITOR_STATE)
-        st.caption("PDF di lavoro · solo in questa sessione, non pubblicati.")
-    else:
-        cached=cached_public
-        st.caption("Archivio pubblico · documenti consultabili da tutti.")
-    _render_documents(cached)
+    with scope_slot:
+        if selected=="I miei PDF":
+            cached=_update_index(personal,state_key=VISITOR_STATE)
+            description="Solo sessione · non pubblicati"
+        else:
+            cached=_public_snapshot(local,remote,shared=not bool(override))
+            description="Consultabili da tutti"
+        docs=cached["docs"]
+        count=len(docs.documents)
+        pages=sum(p.pages for p in docs.documents.values())
+        searchable=sum(cached["coverage"].values())
+        st.caption(f"{count} PDF · {searchable}/{pages} pagine con testo · {description}")
+        for warning in docs.errors:
+            st.warning(warning)
+    _render_documents(cached,show_errors=False)
     return cached
 
 
-def _render_documents(cached):
+def _render_documents(cached, *, show_errors=True):
     docs=cached["docs"]
-    for warning in docs.errors:
-        st.warning(warning)
+    if show_errors:
+        for warning in docs.errors:
+            st.warning(warning)
     if docs.documents:
-        coverage=searchable_pages(docs)
-        st.caption(f"{len(docs.documents)} PDF · {sum(coverage.values())} / {sum(p.pages for p in docs.documents.values())} pagine con testo")
-        with st.container(border=True,key="panel_document_archive"):
+        coverage=cached["coverage"]
+        with st.expander(f"Documenti disponibili · {len(docs.documents)} PDF"):
+            st.caption(f"{sum(coverage.values())} / {sum(p.pages for p in docs.documents.values())} pagine con testo")
             for name,pdf in docs.documents.items():
                 label,actions=st.columns([3,1.45],vertical_alignment="center")
                 with label:
@@ -280,34 +368,52 @@ def _results(cached,hits,prefix,*,allow_preview=True):
         st.info("Nessun passaggio trovato. Prova parole diverse o la ricerca esatta.")
         return
     st.caption(f"{len(hits)} pagine pertinenti mostrate (massimo {MAX_RESULTS}).")
-    for hit in hits:
-        with st.container(border=True):
-            st.text(hit.document+f" · PDF p. {hit.page}")
-            st.text(hit.evidence)
-    if allow_preview:
-        index=st.selectbox("Seleziona un riferimento",range(len(hits)),
-                           format_func=lambda i:f"{hits[i].document} · p. {hits[i].page}",key=prefix+"_hit")
-        hit=hits[index]
+    if not allow_preview:
+        for hit in hits:
+            with st.container(border=True):
+                st.text(hit.document+f" · PDF p. {hit.page}")
+                st.text(hit.evidence)
+        return
+    previous=st.session_state.get(prefix+"_hit")
+    if previous is not None and previous not in range(len(hits)):
+        st.session_state.pop(prefix+"_hit",None)
+    index=st.selectbox("Passaggio da consultare",range(len(hits)),
+                       format_func=lambda i:f"{hits[i].document} · p. {hits[i].page}",key=prefix+"_hit")
+    hit=hits[index]
+    with st.container(border=True,key=prefix+"_selected"):
+        st.text(hit.document+f" · PDF p. {hit.page}")
+        st.text(hit.evidence)
         a,b=st.columns(2)
         with a:
-            if st.button("Apri pagina originale",key=prefix+"_open",icon=":material/description:"):
+            if st.button("Apri pagina originale",key=prefix+"_open",icon=":material/description:",width="stretch"):
                 cached[prefix+"_preview"]=(hit.document,hit.page)
         with b:
-            if st.button("Salva riferimento",key=prefix+"_save",icon=":material/bookmark_add:"):
+            if st.button("Salva riferimento",key=prefix+"_save",icon=":material/bookmark_add:",width="stretch"):
                 _save(cached,hit)
         if cached.get(prefix+"_preview")== (hit.document,hit.page):
             _preview(cached["docs"].documents[hit.document],hit.page,prefix)
+    if len(hits)>1:
+        with st.expander(f"Altri passaggi · {len(hits)-1}"):
+            for i,other in enumerate(hits):
+                if i==index:continue
+                st.text(other.document+f" · PDF p. {other.page}")
+                st.text(other.evidence)
 
 
 def _mode_label(mode):
     return "Parole chiave" if mode=="keywords" else "Frase esatta"
 
 
-def _search(cached):
+def _search(cached,*,ready_example=False):
     docs=cached["docs"]
+    if ready_example and not cached.get("demo_search_prepared_v1"):
+        cached["demo_search_prepared_v1"]=True
+        if "desk_search_result" not in cached:
+            query="corrispettivo di sbilanciamento"
+            cached["desk_search_result"]=(query,"Tutti i PDF","keywords",search(docs,query,"keywords"))
     with st.form("desk_search",border=False):
         query=st.text_input("Cosa vuoi cercare?",placeholder="Es. corrispettivo di sbilanciamento",max_chars=600)
-        a,b=st.columns(2)
+        a,b=st.columns([2,1])
         document=a.selectbox("Documento",["Tutti i PDF",*docs.documents])
         mode=b.selectbox("Tipo di ricerca",["keywords","exact"],format_func=_mode_label)
         submitted=st.form_submit_button("Cerca nei PDF",type="primary",width="stretch",icon=":material/search:")
@@ -324,8 +430,8 @@ def _search(cached):
     saved=cached.get("desk_search_result")
     if saved:
         query,document,mode,hits=saved
-        st.caption("Ultima ricerca · "+_mode_label(mode))
-        st.text(query+" · "+document)
+        st.markdown("**Risultati della ricerca**")
+        st.text(query+" · "+document+" · "+_mode_label(mode))
         _results(cached,hits,"desk_search")
 
 
@@ -522,6 +628,35 @@ def _review_documents(cached):
 
 
 
+def _historical_register(cached):
+    """Read-only prepared cases, distinct from AI-generated session hypotheses."""
+    st.subheader("Rilievi documentali")
+    st.caption("Edizioni esaminate · non rappresentano incidenti operativi del giorno.")
+    cases={case.finding.id:case for case in REGISTER}
+    selected=st.selectbox("Rilievo",list(cases),format_func=lambda key:cases[key].finding.title,
+                          key="desk_historical_case")
+    case=cases[selected]
+    item=case.finding
+    with st.container(border=True):
+        st.markdown("**"+item.title+"**")
+        st.caption(item.category+" · "+case.review)
+        st.text(item.detail)
+        st.caption("Vigenza e applicabilità alla singola operazione non certificate.")
+        st.markdown("**Documenti e passaggi di riferimento**")
+        for index,cite in enumerate(item.citations):
+            st.text(f"{cite.document} · {cite.section} · PDF p. {cite.page}")
+            st.text(cite.evidence)
+            pdf=matching_edition(cached["docs"],cite)
+            if pdf is None:
+                st.caption("Copia esatta dell’edizione non disponibile nell’archivio selezionato. Riferimento storico, non estratto verificato in questa sessione.")
+                continue
+            key=f"desk_historical_preview_{item.id}_{index}"
+            if st.checkbox("Mostra pagina originale",key=key):
+                _preview(pdf,cite.page,"historical")
+    if st.session_state.get(SCOPE)!="Archivio pubblico":
+        st.caption("Puoi consultare le copie pubbliche scegliendo Archivio pubblico.")
+
+
 def _review_register(cached):
     docs=cached["docs"]
     cases=valid_cases(cached.get(REVIEW_KEY,[]),docs)
@@ -608,30 +743,59 @@ def _references(cached):
         st.rerun()
 
 
-def document_page():
-    st.title("Norme e documenti")
-    info("Info archivio","La ricerca mostra testo estratto dalle pagine dei PDF presenti, non note precompilate. Le corrispondenze per parole chiave non sono un parere legale.",
-         "Usa solo copie pubbliche o autorizzate. I PDF autorizzati pubblicati nel repository o in Storage sono condivisi tra tutti i visitatori e conservati indipendentemente dalla sessione Streamlit. Chiunque può caricare PDF nel proprio spazio di sessione senza account. Solo gli account I.G.O.R. autorizzati possono pubblicare nell’archivio condiviso; la rimozione dei documenti condivisi è riservata all’amministratore. Non caricare dati riservati. I PDF non entrano nel bollettino; la ricerca è sul server. Con Chiedi all’AI, soltanto la domanda e gli estratti sono inviati al modello selezionato, previo consenso per provider remoti. Non caricare documenti riservati su un deployment pubblico. Nessun OCR. La vigenza delle edizioni non è verificata.")
-    cached=_archive()
-    if not cached["docs"].documents:
-        st.info("Aggiungi almeno un PDF per iniziare. Usa Carica PDF oppure consulta l’archivio pubblico. Non vengono mostrati rilievi o citazioni in assenza di documenti.")
-        return
-    action=st.radio("Strumento",["Cerca","Chiedi all’AI","Leggi PDF","Confronta","Revisore","Registro rilievi","Riferimenti salvati","Compliance"],
-                    horizontal=True,label_visibility="collapsed",key="desk_mode")
-    if action=="Cerca":
-        _search(cached)
-    elif action=="Chiedi all’AI":
-        _ask(cached)
-    elif action=="Leggi PDF":
-        _read(cached)
-    elif action=="Confronta":
-        _compare(cached)
-    elif action=="Revisore":
-        _review_documents(cached)
-    elif action=="Registro rilievi":
-        _review_register(cached)
-    elif action=="Compliance":
-        from .compliance_page import panel as compliance_panel
-        compliance_panel(cached,public=st.session_state.get(SCOPE)=="Archivio pubblico")
-    else:
-        _references(cached)
+def document_page(*,ready_example=False):
+    header("Norme e documenti","")
+    pending=st.session_state.pop(NEXT_SCOPE,None)
+    if pending in ("Archivio pubblico","I miei PDF"):
+        st.session_state[SCOPE]=pending
+    target=st.session_state.pop("desk_finding_target",None)
+    if isinstance(target,str) and registered_case(target):
+        st.session_state[SCOPE]="Archivio pubblico"
+        st.session_state["desk_mode"]="Registro rilievi"
+        st.session_state["desk_register_origin"]="Edizioni esaminate"
+        st.session_state["desk_historical_case"]=target
+    # Emit navigation before disk/network/index work. Upload requests switch
+    # scope on the next rerun via NEXT_SCOPE, not an instantiated widget.
+    scope_slot=st.container(key="document_scope")
+    with scope_slot:
+        selected=st.radio("Archivio",["Archivio pubblico","I miei PDF"],horizontal=True,key=SCOPE,
+                          label_visibility="collapsed")
+    tool_slot=st.container(key="document_tools")
+    with tool_slot:
+        action=st.radio("Strumento",["Cerca","Chiedi all’AI","Leggi PDF","Confronta","Revisore","Registro rilievi","Riferimenti salvati","Compliance"],
+                        horizontal=True,label_visibility="collapsed",key="desk_mode",
+                        format_func={"Cerca":"Cerca","Chiedi all’AI":"Chiedi AI","Leggi PDF":"Leggi","Confronta":"Confronta",
+                                     "Revisore":"Verifica","Registro rilievi":"Rilievi","Riferimenti salvati":"Salvati","Compliance":"Compliance"}.__getitem__)
+    body=st.container(key="document_workspace")
+    with st.container(key="document_management"):
+        st.subheader("Archivio PDF")
+        cached=_archive(selected,scope_slot)
+        info("Archivio e privacy","Ricerca sul testo estratto, senza OCR; la vigenza non è certificata. Non caricare documenti riservati sul deployment pubblico.",
+             "I PDF personali sono disponibili solo in sessione; i PDF pubblicati da account autorizzati sono condivisi. Solo l’amministratore può rimuovere documenti condivisi.",
+             "Il bollettino non riceve i PDF. Chiedi AI invia solo domanda ed estratti al modello; per provider remoti occorre consenso.")
+    with body:
+        if not cached["docs"].documents and action!="Registro rilievi":
+            st.info("Aggiungi almeno un PDF per iniziare a cercare. Usa Carica PDF nell’archivio qui sotto.")
+            return
+        if action=="Cerca":
+            _search(cached,ready_example=ready_example)
+        elif action=="Chiedi all’AI":
+            _ask(cached)
+        elif action=="Leggi PDF":
+            _read(cached)
+        elif action=="Confronta":
+            _compare(cached)
+        elif action=="Revisore":
+            _review_documents(cached)
+        elif action=="Registro rilievi":
+            origin=st.radio("Origine dei rilievi",["Edizioni esaminate","Rilievi di sessione"],horizontal=True,
+                            key="desk_register_origin",label_visibility="collapsed")
+            if origin=="Edizioni esaminate":
+                _historical_register(cached)
+            else:
+                _review_register(cached)
+        elif action=="Compliance":
+            from .compliance_page import panel as compliance_panel
+            compliance_panel(cached,public=st.session_state.get(SCOPE)=="Archivio pubblico")
+        else:
+            _references(cached)

@@ -1,5 +1,5 @@
 """Independent, dated public indicators; no acquisition until requested."""
-from datetime import timedelta
+from datetime import date,datetime,timedelta
 from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
@@ -8,7 +8,7 @@ import streamlit as st
 from .data import ROME,period_text
 from .italiano import data_it,numero
 from .mensile import ARERA_URL,Prices,load_arera
-from .models import utc_now
+from .models import Kind,utc_now
 from .operational_sources import GIE_TERMS,attribution,load_agsi,load_alsi
 from .operational_sources_page import configured_key
 from .session import database
@@ -38,12 +38,12 @@ def supply_snapshot(result,now,platform):
         raise ValueError("Perimetro non italiano.")
     row,changes=inventory_snapshot(result["frame"],platform)
     day=row["gas_day"]
-    age=(now.astimezone(ROME).date()-day).days
+    age=((now.astimezone(ROME)-timedelta(hours=6)).date()-day).days
     field="fill_pct" if platform=="AGSI+" else "sendout_gwh_d"
     value=finite(row[field])
     if value is None:
         raise ValueError("Indicatore assente nell'ultimo giorno disponibile.")
-    return {"value":value,"period":data_it(day),"stale":result["failed"] or age>2 or age<0,
+    return {"value":value,"period":data_it(day),"gas_day":day.isoformat(),"stale":result["failed"] or age>2 or age<0,
             "quality_review":bool(row.get("review",False)) if platform=="AGSI+" else False,
             "estimated":str(row.get("status",""))=="E",
             "acquired":result["acquired"],"change":changes.get(field)}
@@ -66,9 +66,9 @@ def acquire_indicators(store,key,now,*,refresh=False):
 
 
 def current_rows(snapshot,now,*,gie_enabled):
-    specs=(("price","Prezzo PSV di riferimento","€/MWh","ARERA · CMEM,m",2),
+    specs=(("price","CMEM,m (ARERA)","€/MWh","ARERA · CMEM,m",2),
            ("storage","Riempimento stoccaggi","%","GIE · AGSI+",1),
-           ("lng","Gas da GNL immesso in rete","GWh/giorno","GIE · ALSI",1))
+           ("lng","Send-out GNL","GWh/giorno","GIE · ALSI",1))
     rows=[]
     for name,label,unit,source,decimals in specs:
         item=snapshot.get(name)
@@ -81,7 +81,14 @@ def current_rows(snapshot,now,*,gie_enabled):
         elapsed=now-item["acquired"]
         old=elapsed>timedelta(hours=12 if name=="price" else 24) or elapsed<timedelta(0)
         detail=source+" · "+item["period"]
-        if item["stale"] or old:
+        gas_day_old=False
+        if name!="price" and item.get("gas_day"):
+            try:
+                age=((now.astimezone(ROME)-timedelta(hours=6)).date()-date.fromisoformat(item["gas_day"])).days
+                gas_day_old=not 0<=age<=2
+            except (ValueError,TypeError):
+                gas_day_old=True
+        if item["stale"] or old or gas_day_old:
             detail+=" · Da aggiornare"
         if item.get("quality_review"):
             detail+=" · Valore da verificare"
@@ -121,7 +128,40 @@ def reuse_indicators(snapshot,context,visited,now):
     return merged
 
 
-def panel(context=None):
+def reuse_briefing(snapshot,run,now):
+    """Read dated Italian public observations already acquired for the report,
+    without refreshing timestamps or replacing newer independent snapshots.
+    """
+    merged=dict(snapshot)
+    if run is None or run.source.archive or run.source.kind==Kind.SYNTHETIC:
+        return merged
+    public=run.assumptions.get("public_operational_context") or {}
+    for name,platform,field in (("storage","AGSI+","fill_pct"),("lng","ALSI","sendout_gwh_d")):
+        item=public.get(platform,{})
+        if item.get("scope")!="IT" or item.get("status") not in ("available","stale"):continue
+        try:
+            day=date.fromisoformat(item["gas_day"])
+            acquired=datetime.fromisoformat(item["acquired"])
+            if acquired.tzinfo is None or acquired>now:continue
+            age=((now.astimezone(ROME)-timedelta(hours=6)).date()-day).days
+            if age<0:continue
+            values=item.get("values",{}) if item["status"]=="available" else item.get("last_observed_values",{})
+            value=finite(values.get(field))
+            if value is None:continue
+            old=merged.get(name,{})
+            if old.get("acquired") is not None and old["acquired"]>=acquired:continue
+            # A new observation may be acquired later but still be an older gas day.
+            if old.get("gas_day") and day<date.fromisoformat(old["gas_day"]):continue
+            merged[name]={"value":value,"period":data_it(day),"gas_day":day.isoformat(),"acquired":acquired,
+                          "stale":item["status"]!="available" or age>2,
+                          "quality_review":bool(item.get("quality_review")),
+                          "estimated":item.get("source_status")=="E"}
+        except (ValueError,TypeError,KeyError,OverflowError):
+            continue
+    return merged
+
+
+def panel(context=None, *, briefing=None):
     with st.container(border=True,key="panel_overview_indicators"):
         left,right=st.columns([2,1],vertical_alignment="center")
         with left:
@@ -147,6 +187,7 @@ def panel(context=None):
                 previous={"attempted":now,"values":retained}
                 st.session_state[STATE]=previous
         snapshots=reuse_indicators(previous.get("values",{}),context,st.session_state,now)
+        snapshots=reuse_briefing(snapshots,briefing,now)
         cards=current_rows(snapshots,now,gie_enabled=bool(key))
         kpi_grid(cards)
         links=["[ARERA · CMEM,m]("+ARERA_URL+")"]
@@ -154,6 +195,6 @@ def panel(context=None):
             source=attribution(platform)
             links.append("["+source["source"]+"]("+source["source_url"]+")")
         links.append("[Condizioni GIE]("+GIE_TERMS+")")
-        st.markdown(" · ".join(links))
-        with st.popover("Indicatori",icon=":material/info:"):
-            st.write("PSV: media mensile pubblicata, non quotazione spot. Gli stoccaggi non misurano la disponibilità commerciale.")
+        with st.expander("Fonti e significato degli indicatori"):
+            st.markdown(" · ".join(links))
+            st.caption("CMEM,m: riferimento mensile, non spot. Riempimento: giacenza fisica, non capacità commerciale. Send-out: gas da GNL immesso in rete.")

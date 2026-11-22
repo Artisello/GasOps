@@ -158,3 +158,44 @@ def test_offline_jrc_series_and_explicit_simulated_scenario():
     assert stress.evidence[0].document == "Italia · Dati di esempio"
     assert stress.values["kind"] == Kind.SIMULATION.value
     assert "non dati osservati" in stress.summary
+
+
+def test_eurostat_germany_validates_geo_and_uses_separate_cache(monkeypatch):
+    from datetime import timezone
+    payload=_payload()
+    payload["dimension"]["geo"]["category"]["index"]={"DE":0}
+    now=datetime(2026,11,17,tzinfo=timezone.utc)
+    result=eurostat.parse(payload,now,geo="DE")
+    assert result.origin.name=="Eurostat · Germania"
+    assert not result.origin.companions and "price_eur_mwh" not in result.origin.fields
+    with pytest.raises(ValueError,match="geo"):
+        eurostat.parse(payload,now)
+    calls=[]
+    def retrieve(store,**kwargs):
+        calls.append(kwargs)
+        return kwargs["parse"](json.dumps(payload),now)
+    monkeypatch.setattr(eurostat,"retrieve",retrieve)
+    assert eurostat.load(None,geo="DE").origin.name=="Eurostat · Germania"
+    assert calls[0]["params"]["geo"]=="DE" and calls[0]["key"]!=eurostat.CACHE_KEY
+
+
+def test_foreign_market_question_never_runs_italian_tools(monkeypatch):
+    from gasops_app import country_analysis as country
+    payload=_payload()
+    payload["dimension"]["geo"]["category"]["index"]={"DE":0}
+    now=datetime(2026,11,17,tzinfo=timezone.utc)
+    bundle=eurostat.parse(payload,now,geo="DE")
+    assert country.requested_country("Il mercato del gas tedesco in che situazione è?")=="DE"
+    assert country.requested_country("Come vanno gli stoccaggi tedeschi?")=="DE"
+    assert country.requested_country("Mercato del gas in Italia e Germania")=="unsupported"
+    monkeypatch.setattr(country.eurostat,"load",lambda store,*,geo:bundle if geo=="DE" else pytest.fail("wrong country"))
+    report=country.country_report(None,"Il mercato del gas tedesco in che situazione è?","DE",
+                                  "Seasonal regression",None,include_gie=False,clock=lambda:now)
+    assert report.source.name=="Eurostat · Germania"
+    assert set(report.results)=={Agent.QUALITY,Agent.MARKET}
+    assert report.results[Agent.MARKET].values["price_eur_mwh"] is None
+    assert "PSV medio" not in report.results[Agent.MARKET].summary
+    def fail(*a,**k):raise SourceUnavailable("Unavailable")
+    monkeypatch.setattr(country.eurostat,"load",fail)
+    missing=country.country_report(None,"Mercato tedesco","DE","Seasonal regression",None,clock=lambda:now)
+    assert missing.assumptions["scope_unavailable"] and not missing.results

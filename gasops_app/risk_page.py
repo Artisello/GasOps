@@ -51,10 +51,13 @@ def _results(result,base,r,unit):
                           for label,key in (("Carenza media (GWh)","expected_deficit_gwh"),
                                             ("Costo lordo medio (€)","expected_gross_cost_eur"))],
                          hide_index=True,width="stretch")
-    energy,cost,method=st.tabs(["Carenza di gas","Impatto economico","Ipotesi e metodo"])
-    with energy:
+    view=st.radio("Risultati",["Carenza di gas","Impatto economico","Ipotesi e metodo"],
+                  horizontal=True,label_visibility="collapsed",key="risk_result_view")
+    if view!="Ipotesi e metodo":
         level=st.radio("Livello di analisi",["95","99"],format_func=lambda v:v+"%",horizontal=True,
-                       key="risk_confidence")
+                       index=1 if st.session_state.get("risk_saved_confidence")=="99" else 0,key="risk_confidence")
+        st.session_state["risk_saved_confidence"]=level
+    if view=="Carenza di gas":
         tail=r["deficit_tail_gwh"][level]
         kpi_grid([("Carenza al percentile "+level,tail["var"],unit,"Soglia empirica (VaR)",1,""),
                   ("Media dei casi peggiori",tail["cvar"],unit,"CVaR · coda "+str(100-int(level))+"%",1,"")])
@@ -65,13 +68,14 @@ def _results(result,base,r,unit):
             fig=_graph("Offerta − domanda ("+unit+")",unit)
             for mask,name,color in ((h["negative"],"Carenza",ROSE),(~h["negative"],"Saldo ≥ 0",TEAL)):
                 fig.add_bar(x=h["center"][mask],y=h["pct"][mask],width=h["width"][mask],
-                            name=name,marker_color=color,marker_pattern_shape="/" if name=="Carenza" else "",hovertemplate="%{y:.2f}% delle simulazioni<extra>%{fullData.name}</extra>")
+                            name=name,marker_color=color,marker_pattern_shape="/" if name=="Carenza" else "",
+                            hovertemplate="%{y:.2f}% delle simulazioni<extra>%{fullData.name}</extra>")
             fig.add_vline(x=0,line_dash="dash",line_color="#a3b4c9")
             plot(fig,"risk_gap_distribution")
         lo,hi=r["probability_deficit_mc_interval95"]
         st.caption("Intervallo Monte Carlo 95%: "+numero(100*lo,2)+"–"+numero(100*hi,2)+"% · solo errore di campionamento.")
         info("Info percentili","Il VaR è il percentile empirico della carenza; il CVaR è la media della coda peggiore, anche con valori uguali. Non è una riserva fisicamente disponibile né un requisito normativo.")
-    with cost:
+    elif view=="Impatto economico":
         if result.loss is None:
             st.info("Rischio economico non calcolato. Attiva il prezzo nelle ipotesi e ripeti la simulazione.")
         else:
@@ -90,7 +94,7 @@ def _results(result,base,r,unit):
                 plot(fig,"risk_cost_distribution")
                 st.caption("Tratteggio: VaR. Puntini: CVaR. Frequenze sul totale, zeri esclusi dal grafico.")
             info("Info costo","Costo lordo ipotetico = carenza × 1.000 × max(prezzo, 0). Non è una perdita contabile o un corrispettivo di sbilanciamento.")
-    with method:
+    else:
         st.caption("Fonte: "+r["source"]+" · "+r["source_kind"]+" · "+r["analysis_period"])
         st.dataframe([{"Variabile":label,**r[key]} for label,key in
                       (("Domanda","demand_gwh"),("Offerta","supply_gwh"),("Saldo","gap_gwh"),("Carenza","deficit_gwh"))],
@@ -106,7 +110,7 @@ def _results(result,base,r,unit):
                        "igor-risk.json","application/json",key="risk_export")
 
 
-def risk_page():
+def risk_page(*, auto_demo=False):
     st.title("Simulazione rischi")
     st.caption("Scenario ipotetico · non rischio ufficiale")
     state=assumptions()
@@ -192,7 +196,7 @@ def risk_page():
             submitted=st.form_submit_button("Esegui simulazione",type="primary",width="stretch")
     fingerprint={"source_fingerprint":data.fingerprint,"forecast_period":forecast_period,
                  "forecast_model":forecast_model,"scenario":preset}
-    if submitted:
+    if submitted or (auto_demo and "risk_workspace_v2" not in st.session_state):
         try:
             if preset=="Personalizzato":
                 stress=Stress(demand_pct=dp,supply_pct=sp,price_delta=pp)

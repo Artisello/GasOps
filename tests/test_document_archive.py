@@ -119,3 +119,20 @@ def test_authorized_contributor_can_publish_but_not_delete(monkeypatch):
     assert called==["POST"]
     with pytest.raises(ValueError):
         ArchiveConfig(CONFIG.url,CONFIG.publishable_key,ADMIN,("invalid",))
+
+
+def test_archive_reads_only_current_manifest_with_optional_reader(monkeypatch):
+    raw=pdf("Versione immutabile.")
+    key=object_name("a.pdf",raw)
+    backend=Archive(CONFIG)
+    monkeypatch.setattr(backend,"list_keys",lambda session=None:(key,))
+    used=[]
+    def reader(name):
+        used.append(name)
+        return raw
+    assert backend.read(reader=reader)==((key,raw),)
+    monkeypatch.setattr(backend,"list_keys",lambda session=None:())
+    assert backend.read(reader=reader)==()
+    assert used==[key]
+    with pytest.raises(ArchiveError):
+        backend.read(AdminSession("jwt",time()+100,ADMIN),reader=reader)

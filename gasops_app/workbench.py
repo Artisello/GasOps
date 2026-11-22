@@ -17,23 +17,26 @@ from .models import AGENT_LABELS, Agent, Kind, Run, utc_now
 from .regulatory import SETTLEMENT_NOTE
 from .reports import markdown
 from .session import analysis_label, assumptions, database, fixture, launch, save_assumptions, source_filters
-from .visuals import chip, evidence, header, heading, info, kind_tag, kpi, kpi_grid, local_time, rows, steps
+from .visuals import chip, evidence, header, heading, info, kind_tag, kpi, kpi_grid, local_time, rows, steps, plot
+from .balancing_charts import scenario_comparison
 
 LOG = logging.getLogger(__name__)
 
 def _settlement_panel() -> None:
     state=assumptions()
     mode=st.radio("Tipo di calcolo",["Semplice","Completo"],horizontal=True,
+                  index=1 if st.session_state.get("balancing_saved_mode")=="Completo" else 0,
                   key="balancing_mode",help="Completo: aggiunge stoccaggio e transazioni nette al PSV.")
+    st.session_state["balancing_saved_mode"]=mode
     advanced=mode=="Completo"
     saved=st.session_state.get("commercial_settlement") if advanced else None
     inputs=(CommercialInput.model_validate(saved) if saved else CommercialInput(**state.settlement.model_dump())) if advanced else state.settlement
-    st.caption("Partecipante ipotetico · IVA esclusa")
+    st.caption("Simulazione individuale · importi IVA esclusa · non fattura ufficiale")
     form,output=st.columns([1,1.2],gap="medium")
     with form,st.container(border=True,key="panel_settlement_input"):
-        st.subheader("Dati")
+        st.subheader("Volumi e prezzi")
         with st.form("settlement_form_"+mode,border=False):
-            unit=st.selectbox("Unità dei volumi",("kWh","MWh","GWh"),index=("kWh","MWh","GWh").index(inputs.unit))
+            unit=st.selectbox("Unità dei volumi",("kWh","MWh","GWh"),index=("kWh","MWh","GWh").index(inputs.unit),help="L’unità vale per tutti i volumi; cambiandola, ricontrolla le quantità. I prezzi restano in €/MWh.")
             def field(label,value,help=None):
                 return st.text_input(label,str(value) if value is not None else "",max_chars=25,help=help)
             st.caption("Volumi di gas")
@@ -47,7 +50,7 @@ def _settlement_panel() -> None:
                 with a:
                     storage=field("Stoccaggio netto",inputs.storage_net,"Prelievo da stoccaggio positivo, iniezione negativa.")
                 with b:
-                    psv=field("Transazioni nette (PSV)",inputs.psv_net,"Acquisti positivi, vendite negative. Inserisci il termine netto completo.")
+                    psv=field("Transazioni nette (PSV)",inputs.psv_net,"Termine T netto completo del bilancio, incluse le componenti previste dalla fonte: acquisti positivi, vendite negative. CdR XCII, cap. 9 §3.1.2, PDF p. 372.")
             st.caption("Prezzi di sbilanciamento (€/MWh)")
             a,b=st.columns(2)
             with a:
@@ -83,9 +86,9 @@ def _settlement_panel() -> None:
         cash=result.cash_flow_eur
         position="Non disponibile" if ds is None else "Carenza di gas" if ds<0 else "Eccesso di gas" if ds>0 else "In equilibrio"
         money="Non disponibile" if cash is None else "Addebito" if cash<0 else "Credito" if cash>0 else "Nessun flusso"
-        st.markdown("**"+position+"**")
+        st.markdown("**"+position+" · "+money+"**")
         kpi_grid([
-            ("Saldo energetico",ds,"MWh","Immissioni + saldi netti − prelievi" if advanced else "Immissioni − prelievi",2,""),
+            ("Saldo energetico",ds,"MWh","Immissioni + saldi netti − prelievi" if advanced else "Immissioni − prelievi",2,"rose" if ds is not None and ds<0 else "teal" if ds is not None and ds>0 else ""),
             ("Flusso economico",cash,"€",money,2,"rose" if cash is not None and cash<0 else "teal" if cash is not None and cash>0 else ""),
         ])
         if ds is not None:
@@ -94,7 +97,9 @@ def _settlement_panel() -> None:
             else:
                 st.write("Per annullare lo sbilanciamento servirebbe un aggiustamento netto di "+
                          numero(abs(ds),2)+" MWh "+("in aumento." if ds<0 else "in diminuzione."))
-        rows([("Operazione applicata",ESITI[result.side] if result.side else "Non disponibile"),
+        rows([("Immissioni",_readout(result.delivered_mwh,"MWh")),
+              ("Prelievi",_readout(result.withdrawn_mwh,"MWh")),
+              ("Operazione applicata",ESITI[result.side] if result.side else "Non disponibile"),
               ("Prezzo applicato",_readout(result.price_eur_mwh,"€/MWh"))])
         for issue in result.problems:
             st.warning(issue)
@@ -146,21 +151,21 @@ def _scenario_panel() -> None:
         st.error("I valori di base non sono validi. Seleziona dati di esempio nella panoramica.")
         return
     if case.storage_gwh is None and changes.storage_pct:
-        changes=changes.model_copy(update={"storage_pct":0})
+        changes=ScenarioInput.model_validate({**changes.model_dump(),"storage_pct":0})
         st.warning("Contributo stoccaggio non disponibile: la variazione stoccaggio è sospesa per questa simulazione.")
     grain="GWh/mese" if data.origin.grain=="monthly" else "GWh/giorno gas"
     st.markdown("**"+("Simulazione · dati fittizi" if data.origin.kind==Kind.SYNTHETIC else "Italia · bilancio nazionale mensile" if data.origin.grain=="monthly" else "Serie selezionata")+"**")
     st.caption(data.origin.name+" · "+facts.get("label","periodo non disponibile")+" · "+grain+
                (" · base modificata dall’utente" if saved else " · base di riferimento"))
-    if data.origin.grain=="monthly":
-        st.caption("Disponibilità contabile, non offerta fisica della rete.")
-    st.caption("Scenario ipotetico · non previsione né SAS ufficiale")
+    st.caption("Scenario ipotetico · "+("disponibilità contabile, non offerta fisica · " if data.origin.grain=="monthly" else "")+"non previsione né SAS ufficiale")
     form,output=st.columns([1,1.2],gap="medium")
+    invalid=False
     with form,st.container(border=True,key="panel_scenario_input"):
         st.subheader("Ipotesi")
+        st.caption("Base: domanda "+numero(case.demand_gwh,1)+" · offerta "+numero(case.supply_gwh,1)+" "+grain)
         with st.form(f"scenario_form_{data.fingerprint[:12]}",border=False):
-            demand_pct=st.slider("Variazione della domanda (%)",-100.,300.,float(changes.demand_pct),1.)
-            supply_pct=st.slider("Variazione dell’offerta escluso stoccaggio (%)",-100.,300.,float(changes.supply_pct),1.)
+            demand_pct=st.slider("Variazione della domanda (%)",-100.,300.,float(changes.demand_pct),1.,format="%+.0f%%")
+            supply_pct=st.slider("Variazione dell’offerta escluso stoccaggio (%)",-100.,300.,float(changes.supply_pct),1.,format="%+.0f%%")
             with st.expander("Valori di base e altre ipotesi"):
                 demand=st.number_input("Domanda di base (GWh)",min_value=0.0,value=float(case.demand_gwh),step=10.)
                 supply=st.number_input("Offerta totale di base (GWh)",min_value=0.0,value=float(case.supply_gwh),step=10.)
@@ -178,6 +183,7 @@ def _scenario_panel() -> None:
                 st.session_state[saved_key]=case.model_dump(mode="json")
                 save_assumptions(state.model_copy(update={"stress":changes}))
             except (ValueError,ArithmeticError) as error:
+                invalid=True
                 st.error("Ipotesi non valide: "+str(error)+". Resta visibile lo scenario precedente.")
         info("Info scenario","Lo stoccaggio è già incluso nell’offerta totale. I cambiamenti si applicano separatamente alle altre fonti e allo stoccaggio.",
              "Il Centro operativo usa gli scostamenti salvati e la propria fonte di riferimento; la base personalizzata resta in questa pagina.")
@@ -187,16 +193,16 @@ def _scenario_panel() -> None:
         stress=scenario(case,changes)
         balance_label="Carenza" if stress.imbalance_gwh<0 else "Eccesso" if stress.imbalance_gwh>0 else "Equilibrio"
         st.markdown("**"+balance_label+" nello scenario**")
+        if invalid:st.caption("Ultimo scenario valido.")
+        st.caption("Ipotesi applicate: domanda "+numero(changes.demand_pct,0,signed=True)+"% · offerta escluso stoccaggio "+numero(changes.supply_pct,0,signed=True)+"% · stoccaggio "+numero(changes.storage_pct,0,signed=True)+"% · prezzo "+numero(changes.price_delta_eur_mwh,2,signed=True)+" €/MWh")
         kpi_grid([
-            ("Saldo semplificato",stress.imbalance_gwh,grain,"Offerta − domanda",1,""),
+            ("Saldo semplificato",stress.imbalance_gwh,grain,"Offerta − domanda",1,"rose" if stress.imbalance_gwh<0 else "teal" if stress.imbalance_gwh>0 else ""),
             ("Copertura della domanda",stress.coverage_pct,"%","Offerta / domanda",1,""),
         ])
-        comparison=pd.DataFrame({"Domanda":[float(base.demand_gwh),float(stress.demand_gwh)],
-                                 "Offerta":[float(base.supply_gwh),float(stress.supply_gwh)]},index=["Base","Scenario"])
         st.caption("Domanda e offerta · "+grain)
-        st.bar_chart(comparison,stack=False)
+        plot(scenario_comparison(base,stress,grain),"balancing_scenario_comparison")
         if stress.gap_value_eur is not None:
-            kpi("Valore indicativo del saldo",stress.gap_value_eur,"€","Non è settlement né fattura",0)
+            kpi("Valore teorico del saldo",stress.gap_value_eur,"€","Valorizzazione al prezzo ipotizzato, non settlement né fattura",0)
         with st.expander("Confronto numerico"):
             st.dataframe([{"Indicatore":label,"Base":_readout(getattr(base,field),unit),
                            "Scenario":_readout(getattr(stress,field),unit)}
@@ -209,22 +215,32 @@ def _scenario_panel() -> None:
 
 
 def balancing() -> None:
-    header("Bilanciamento", "Stime pubblicate · controlli · simulazioni separate")
-    system, daily, participant, aggregate = st.tabs(["Stato sistema", "Controllo giornaliero", "Sbilanciamento del partecipante", "Scenario di mercato"])
-    with system:
+    from .workspace import apply_intent, guide
+    apply_intent("balancing")
+    header("Bilanciamento", "Sistema gas · bilanci e rettifiche · simulazioni")
+    view=st.radio("Vista bilanciamento",["Scenario di mercato","Sbilanciamento del partecipante","Stato sistema","Controllo giornaliero"],
+                  index=2,horizontal=True,label_visibility="collapsed",key="balancing_view")
+    if view=="Scenario di mercato":
+        _scenario_panel()
+    elif view=="Sbilanciamento del partecipante":
+        _settlement_panel()
+    elif view=="Stato sistema":
+        guide("system")
         from .operational_sources_page import _jarvis_panel
         _jarvis_panel(prefix="balancing")
-    with daily:
-        from .settlement_desk_page import panel
-        panel()
-        from .adjustments_page import panel as adjustments_panel
-        adjustments_panel()
-        from .operating_rules_page import network_panel
-        network_panel()
-    with participant:
-        _settlement_panel()
-    with aggregate:
-        _scenario_panel()
+    else:
+        mode=st.radio("Controlli",["Settlement e rettifiche","Riconciliazione infrastrutture"],
+                      horizontal=True,key="balancing_daily_mode",label_visibility="collapsed")
+        if mode=="Riconciliazione infrastrutture":
+            from .interface_reconciliation_page import panel
+            panel()
+        else:
+            from .settlement_desk_page import panel
+            panel()
+            from .adjustments_page import panel as adjustments_panel
+            adjustments_panel()
+            from .operating_rules_page import network_panel
+            network_panel()
 
 
 def regulatory() -> None:

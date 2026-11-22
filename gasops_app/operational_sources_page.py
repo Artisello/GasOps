@@ -14,7 +14,7 @@ from .public_data import SourceUnavailable
 from .session import database
 from .visuals import BLUE, TEAL, info, local_time, mini_chart, plot, kpi_grid
 from .supply_view import scope_label, finite, inventory_snapshot, chart_window
-from .iip_view import MISSING, coverage, display_row, export_rows, filter_messages, options, project_messages
+from .iip_view import MISSING, coverage, display_row, export_rows, filter_messages, options, project_messages, visible_columns
 
 
 def configured_key():
@@ -34,12 +34,18 @@ def operational_context():
                       label_visibility="collapsed",
                       format_func={"AGSI+":"Scorte","ALSI":"Gas liquefatto","IIP":"Avvisi di mercato","Jarvis":"Rete Snam","MASE":"Produzione","ENTSOG":"Interconnessioni"}.__getitem__)
     if not key and selected in ("AGSI+","ALSI","IIP"):
-        st.info("Accesso GIE non configurato. La sezione Rete Snam resta disponibile.")
+        st.info("Accesso GIE non configurato. I controlli HS1 e la sezione Rete Snam restano disponibili.")
     with st.popover("Fonti",icon=":material/info:"):
         st.write("AGSI+: gas negli stoccaggi. ALSI: terminali di gas naturale liquefatto (GNL). IIP: avvisi pubblicati dagli operatori. Jarvis: dati della rete Snam importati manualmente.")
         st.caption("Chiave GIE configurata; verifica al caricamento." if key else "Imposta GASOPS_GIE_API_KEY nei Secrets di Streamlit e riavvia l’app.")
     if selected=="AGSI+":
-        _inventory_panel(selected,load_agsi,key)
+        mode=st.radio("Vista scorte",["Giacenze pubbliche","Bilanciamento HS1"],horizontal=True,
+                      key="storage_view",label_visibility="collapsed")
+        if mode=="Bilanciamento HS1":
+            from .storage_balancing_page import panel
+            panel()
+        else:
+            _inventory_panel(selected,load_agsi,key)
     elif selected=="ALSI":
         _inventory_panel(selected,load_alsi,key)
     elif selected=="IIP":
@@ -73,11 +79,11 @@ def _jarvis_panel(prefix="supply"):
         st.download_button("1. Scarica modello CSV",jarvis_template(),"igor-jarvis-template.csv","text/csv",key=prefix+"_jarvis_template")
         with st.form(prefix+"_jarvis_import"):
             file=st.file_uploader("2. Carica il CSV compilato",type=["csv"],key=prefix+"_jarvis_public_extract")
-            authorized=st.checkbox("Confermo autorizzazione e assenza di dati riservati.")
+            st.caption("CSV pubblico · solo sessione, senza dati riservati.")
             submitted=st.form_submit_button("Importa stime")
         if submitted:
-            if file is None or not authorized:
-                st.warning("Seleziona il CSV e conferma l’autorizzazione.")
+            if file is None:
+                st.warning("Seleziona un CSV.")
             elif file.size>1_000_000:
                 st.warning("CSV superiore a 1 MB.")
             else:
@@ -98,6 +104,8 @@ def _jarvis_panel(prefix="supply"):
     result=st.session_state.get(state)
     if result is None:
         st.info("Importa le pubblicazioni autorizzate per osservare SAS, linepack e prelievi attesi. Nessun dato ipotetico sostitutivo.")
+        from .linepack_page import physical_panel
+        physical_panel(utc_now(),prefix)
         return
     versions=result["versions"]
     days=sorted(versions["gas_day"].unique(),reverse=True)
@@ -133,13 +141,16 @@ def _jarvis_panel(prefix="supply"):
     chart_fields=[label for label,_,_ in fields if frame[label].notna().any()]
     if len(frame)>1 and chart_fields:
         sas_fields=[label for label in chart_fields if label=="SAS pubblicato"]
-        other_fields=[label for label in chart_fields if label!="SAS pubblicato"]
+        other_fields=[label for label in chart_fields if label=="Prelievo atteso"]
         if sas_fields:
             st.line_chart(frame,x="Pubblicazione",y=sas_fields)
         if other_fields:
             st.line_chart(frame,x="Pubblicazione",y=other_fields)
     else:
         st.caption("Servono almeno due pubblicazioni per mostrare l'evoluzione infragiornaliera.")
+    from .linepack_page import panel as linepack_panel, physical_panel
+    linepack_panel(versions,selected,utc_now(),prefix)
+    physical_panel(utc_now(),prefix)
     info("Info stime","Il SAS è il valore riportato dalla fonte, non una differenza domanda/offerta calcolata da I.G.O.R. e non il DS del partecipante. Il linepack indica il gas presente nella rete. Il segno del SAS è mantenuto come pubblicato.","Dati importati nella sessione, nessun aggiornamento automatico. Verifica perimetro, convenzioni e orari della fonte.")
     from .intraday_page import panel as closing_panel
     closing_panel(versions,selected,utc_now(),prefix)
@@ -289,17 +300,16 @@ def _inventory_panel(platform,loader,key):
 
 
 def _iip_panel(key):
-    st.subheader("Interruzioni e avvisi di mercato (UMM)")
-    st.markdown("**Perimetro GIE · richiesta senza filtro geografico**")
-
-    info("Info UMM","Informazioni e indisponibilità pubblicate dagli operatori. Il conteggio non indica eventi unici o capacità persa aggregata.")
-    _credit("IIP")
+    st.subheader("Avvisi di mercato · UMM")
+    st.caption("GIE IIP · record attivi · nessun filtro geografico alla fonte")
+    info("UMM","Avvisi pubblicati dagli operatori. Record ricevuti ≠ eventi distinti o capacità persa aggregata.")
     if not key:
         return
     actions=st.columns([1,1,2],vertical_alignment="bottom")
     with actions[0]:
         result=_load_once("gie_iip","Aggiorna avvisi",load_iip,key,primary=True)
     if result is None:
+        _credit("IIP")
         st.caption("Consulta il portale GIE IIP in caso di errore.")
         return
     with actions[1]:
@@ -313,7 +323,8 @@ def _iip_panel(key):
         if result["cached"]:
             st.caption("Da cache")
     if result["failed"] or utc_now()-result["acquired"]>timedelta(hours=2) or st.session_state.get("gie_iip",{}).get("error"):
-        st.warning("Aggiornamento non riuscito o dati non recenti. Consulta il portale IIP.")
+        reason=result.get("refresh_error") or st.session_state.get("gie_iip",{}).get("error")
+        st.warning("Ultima acquisizione non recente o aggiornamento non riuscito."+((" "+str(reason)) if reason else "")+" Consulta il portale IIP.")
     if state=="Parziale":
         st.warning(f"Prima pagina di {result['pages']}. Non tutti i risultati sono stati acquisiti.")
     elif state=="Non verificata":
@@ -327,6 +338,7 @@ def _iip_panel(key):
         with col,st.container(border=True):
             st.caption(label)
             st.markdown("**"+value+"**")
+    st.caption("Copertura della richiesta API, non completezza di tutti gli avvisi sul mercato.")
     rows=project_messages(result["messages"])
     if not rows:
         st.info("Nessun messaggio restituito per questa richiesta. Non dimostra assenza di indisponibilità.")
@@ -334,16 +346,19 @@ def _iip_panel(key):
         st.subheader("Messaggi ricevuti")
         search=st.text_input("Cerca impianto, operatore o motivo",key="iip_search",
                              placeholder="Cerca nei campi disponibili")
-        with st.expander("Filtri per paese, stato e tipo"):
-            c1,c2,c3=st.columns(3)
-            countries=c1.multiselect("Paese",options(rows,"country"),key="iip_country",placeholder="Tutti")
-            statuses=c2.multiselect("Stato UMM",options(rows,"status"),key="iip_status",placeholder="Tutti")
-            types=c3.multiselect("Tipo di evento",options(rows,"event_type"),key="iip_type",placeholder="Tutti")
+        countries=statuses=types=()
+        available=[(label,field,key) for label,field,key in (("Paese","country","iip_country"),("Stato","status","iip_status"),("Tipo","event_type","iip_type")) if len(options(rows,field))>1]
+        if available:
+            with st.expander("Filtri disponibili"):
+                chosen_filters={field:st.multiselect(label,options(rows,field),key=key,placeholder="Tutti") for label,field,key in available}
+                countries=chosen_filters.get("country",())
+                statuses=chosen_filters.get("status",())
+                types=chosen_filters.get("event_type",())
         visible=filter_messages(rows,query=search,countries=countries,statuses=statuses,types=types)
         st.caption(f"{len(visible)} / {len(rows)} messaggi")
         if visible:
             st.dataframe([display_row(r) for r in visible],hide_index=True,width="stretch",
-                         column_order=["Paese","Asset","Tipo evento","Stato UMM","Inizio evento","Fine evento","Capacità indisponibile"],
+                         column_order=visible_columns(visible),
                          column_config={"Asset":st.column_config.TextColumn("Impianto",width="medium"),
                                         "Motivo":st.column_config.TextColumn(width="large")})
             info("Info tabella","Ordinamento per pubblicazione quando il fuso è noto. I campi non riconosciuti restano non indicati.","Capacità del singolo messaggio, senza aggregazione. Fonte: "+GIE_CREDIT["IIP"])
@@ -351,24 +366,30 @@ def _iip_panel(key):
                                "text/csv",key="iip_csv",icon=":material/download:")
             by_index={r["record_index"]:r for r in visible}
             chosen=st.selectbox("Apri dettaglio del messaggio",list(by_index),
-                format_func=lambda i:f'{i+1} · {by_index[i]["message_id"] or "ID non indicato"} · {by_index[i]["asset"] or MISSING}',
+                format_func=lambda i:f'{by_index[i]["asset"] or "Impianto non indicato"} · {by_index[i]["message_id"] or ("record "+str(i+1))}',
                 key="iip_detail")
             row=by_index[chosen]
-            with st.expander("Leggi il messaggio selezionato"):
+            with st.container(border=True):
                 st.markdown("**Messaggio selezionato**")
                 a,b=st.columns(2)
                 with a:
                     for label,field in (("Asset","asset"),("Operatore","operator"),("Paese","country"),
                                         ("Stato UMM","status"),("Tipo evento","event_type"),("Direzione","direction")):
-                        st.caption(label)
-                        st.text(row.get(field) or MISSING)
+                        value=row.get(field)
+                        if value and value not in (MISSING,"Consulta dettaglio"):
+                            st.caption(label)
+                            st.text(value)
                 with b:
                     for label,field in (("Pubblicato","published_label"),("Inizio","start_label"),("Fine","stop_label"),
                                         ("Capacità indisponibile","impact"),("Motivo","reason"),("Note","remarks")):
-                        st.caption(label)
-                        st.text(row.get(field) or MISSING)
-                st.caption("Dati originali e possibili intervalli di capacità multipli")
-                st.json(result["messages"][chosen],expanded=False)
+                        value=row.get(field)
+                        if value and value not in (MISSING,"Consulta dettaglio"):
+                            st.caption(label)
+                            st.text(value)
+                missing=[label for label,field in (("paese","country"),("inizio","start"),("fine","stop"),("tipo evento","event_type"),("capacità","unavailable")) if not row.get(field) or (field=="unavailable" and row["impact"]=="Consulta dettaglio")]
+                if missing:st.caption("Campi non disponibili o non riconosciuti: "+", ".join(missing)+".")
+                with st.expander("Messaggio originale e intervalli di capacità"):
+                    st.json(result["messages"][chosen],expanded=False)
                 st.caption("Fonte: "+GIE_CREDIT["IIP"])
         else:
             st.info("Nessun risultato corrisponde ai filtri. Modifica la ricerca.")
@@ -382,7 +403,8 @@ def _iip_panel(key):
             st.code(diagnostic_text,language="json")
             st.download_button("Scarica diagnostica JSON",diagnostic_text,"igor-iip-diagnostica.json",
                                "application/json",key="iip_pagination_diagnostic")
-    with st.expander("Messaggi originali (JSON)"):
+    with st.expander("Fonte e messaggi originali"):
+        _credit("IIP")
         st.json(result["messages"],expanded=False)
 
 

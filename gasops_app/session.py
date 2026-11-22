@@ -1,6 +1,7 @@
 """Streamlit session state, source selection and workflow execution."""
 
 from dataclasses import dataclass
+from .source_session_cache import recent_source, remember_source, forget_source
 from html import escape
 import logging
 import os
@@ -17,12 +18,15 @@ from .llm import CompatibleReasoner, configuration
 from .supervisor import ModelUnavailable
 from .mensile import load_monthly
 from .entsog import load as load_daily
-from .models import Kind, Run, utc_now
+from .models import Agent, Kind, Run, utc_now
 from .public_data import SourceUnavailable
 from .regulatory import Library, read_local_pdfs
 from .store import Store
 from .visuals import chip, info, kind_tag, local_time, steps
-from .workflow import DAILY_BRIEFING, run_workflow
+from .workflow import DAILY_BRIEFING, run_workflow, plan
+from .country_analysis import requested_country, country_report, direct_market_question
+from .market import demand_trend_question
+from .assistant_sources import requested_sources, add_price_source, complete_requirements, MARKET
 
 LOG = logging.getLogger(__name__)
 DEMO, PUBLIC, ARCHIVE = "Dati di esempio · giornalieri", "Eurostat + ARERA · mensili", "JRC · archivio giornaliero"
@@ -150,7 +154,7 @@ def ai_controls(*, prefix="sidebar") -> None:
         st.caption(("Groq Cloud" if config.groq else "Ollama locale" if config.local else "Provider remoto")+" · "+config.model)
         if not config.local:
             if budget_ready:
-                st.caption(f"Richieste interne ultime 24 h: {usage}/30 · max 4/min. "
+                st.caption(f"Richieste interne conteggiate nelle ultime 24 h: {usage}/30 · max 4/min. "
                            "Non è il saldo della quota del provider.")
             else:
                 st.caption("Contatore non disponibile: richieste AI bloccate. Se persiste, riavvia l’app.")
@@ -174,11 +178,12 @@ def sidebar() -> None:
     except ValueError:
         pass
     modes=["Deterministic",config.model] if config else ["Deterministic"]
-    st.selectbox("Modalità di analisi",modes,index=0,
+    # A configured model is the initial mode; an operator can still switch to local calculations.
+    st.selectbox("Modalità di analisi",modes,index=1 if config else 0,
                  format_func=lambda value:"Calcoli senza AI" if value=="Deterministic" else value,key="execution_mode")
     ai_controls()
-    with st.expander("Fonti aggiuntive AI",expanded=False):
-        st.checkbox("Stoccaggi, GNL e indisponibilità (GIE)",key="briefing_gie",
+    with st.expander("Fonti bollettino",expanded=False):
+        st.checkbox("GIE · stoccaggi, GNL, UMM",value=True,key="briefing_gie",
                     help="Consulta AGSI+ e ALSI Italia e IIP al lancio del report. Se usi un modello remoto, invia solo indicatori pubblici con attribuzione, non record UMM originali.")
         import os
         weather_allowed=os.getenv("IGOR_WEATHER_ENABLED","1").lower() not in ("0","false","no","off")
@@ -186,7 +191,14 @@ def sidebar() -> None:
                     help="Attivo di default nel prototipo: HDD e previsioni, con cache. Disattivabile qui.")
         st.caption("Solo dati pubblici autorizzati alla condivisione.")
     if config and not config.local:
-        st.caption("Non inserire dati riservati. Selezionando il modello remoto autorizzi l’invio delle domande e dei risultati pubblici al provider; i PDF richiedono conferma separata.")
+        st.caption("AI remota: solo dati pubblici. I PDF richiedono consenso separato.")
+
+
+def ai_configured() -> bool:
+    try:
+        return _configuration() is not None
+    except ValueError:
+        return False
 
 
 def reasoner() -> CompatibleReasoner | None:
@@ -194,7 +206,7 @@ def reasoner() -> CompatibleReasoner | None:
         config = _configuration()
     except ValueError:
         return None
-    if config and st.session_state.get("execution_mode")==config.model:
+    if config and st.session_state.get("execution_mode",config.model)==config.model:
         return CompatibleReasoner(config,reserve=None if config.local else _reserve_remote_request)
     return None
 
@@ -210,19 +222,19 @@ def activate_ai(model_name: str) -> None:
 
 
 def ai_activation_panel(*, prefix: str) -> None:
-    """Never select a provider automatically or send a connection request."""
+    """Allow reactivation after switching to local calculations; no network request here."""
     try:
         config = _configuration()
     except ValueError:
         config = None
     if config:
-        st.info("AI disattivata. Attiva il modello per fare domande in linguaggio naturale.")
+        st.info("Attiva l’AI per fare domande.")
         if not config.local:
-            st.caption("Attivando il modello autorizzi l’invio delle domande e degli aggregati pubblici consentiti al provider. Non inserire dati riservati.")
+            st.caption("Domande e aggregati pubblici saranno inviati al provider esterno. Nessun dato riservato.")
         st.button("Attiva AI · "+config.model, key=prefix+"_activate_ai",type="primary",
                   on_click=activate_ai,args=(config.model,))
     else:
-        st.info("AI non configurata. Imposta un modello e le credenziali nei Secrets; consulta Connessione e limiti AI nella barra laterale.")
+        st.info("AI non configurata. Usa i report locali o configura il modello nelle impostazioni.")
 
 
 def analysis_label() -> str:
@@ -288,7 +300,7 @@ def source_filters(page: str, *, lookback: bool = True) -> Selection:
             refresh = False
             pass
     with ctrl[-1]:
-        with st.popover("Modello e fonte",icon=":material/info:",width="stretch"):
+        with st.popover("Opzioni",icon=":material/info:",width="stretch"):
             previous = assumptions()
             model = st.selectbox("Modello previsionale", MODEL_CHOICES, index=MODEL_CHOICES.index(previous.model),
                                  format_func=MODELLI.__getitem__, key=f"{page}_model",
@@ -310,12 +322,22 @@ def source_filters(page: str, *, lookback: bool = True) -> Selection:
         bundle = archive()
     else:
         try:
-            if name == DAILY:
-                with st.spinner("Aggiornamento ENTSOG (finestre mensili; primo caricamento più lungo)…"):
-                    bundle, warning = load_daily(database(), refresh=refresh)
+            from .live_sources import BUNDLES
+            public_key="daily" if name==DAILY else "monthly"
+            now=utc_now()
+            shared=st.session_state.get(BUNDLES,{}).get(public_key)
+            saved=None if refresh else recent_source(st.session_state,name,now,shared)
+            if saved is not None:
+                bundle,warning=saved
             else:
-                with st.spinner("Caricamento dei dati Eurostat e ARERA…"):
-                    bundle, warning = load_monthly(database(), refresh=refresh)
+                forget_source(st.session_state,name)
+                if name == DAILY:
+                    with st.spinner("Caricamento ENTSOG…"):
+                        bundle, warning = load_daily(database(), refresh=refresh)
+                else:
+                    with st.spinner("Caricamento Eurostat e ARERA…"):
+                        bundle, warning = load_monthly(database(), refresh=refresh)
+                remember_source(st.session_state,name,bundle,warning,utc_now())
             visible_warning, note = source_notices(warning)
             if visible_warning:
                 st.warning(visible_warning)
@@ -324,7 +346,7 @@ def source_filters(page: str, *, lookback: bool = True) -> Selection:
                 with st.expander("Nota tecnica ENTSOG"):
                     st.caption(note)
         except SourceUnavailable as error:
-            st.caption("Fonte temporaneamente indisponibile. Riprova con Aggiorna dati.")
+            st.warning("Fonte non disponibile. Riprova con Aggiorna dati.")
             with st.expander("Dettagli della fonte"):
                 st.text(str(error))
             if name == DAILY:
@@ -341,8 +363,10 @@ def source_filters(page: str, *, lookback: bool = True) -> Selection:
                               bundle.fingerprint)
                 st.warning("Ultimo dato valido della stessa fonte · aggiornamento non riuscito.")
     if bundle is not None and name in (PUBLIC,DAILY) and not bundle.origin.refresh_failed:
-        from .live_sources import remember_bundle
-        remember_bundle(st.session_state,bundle,utc_now())
+        from .live_sources import BUNDLES,remember_bundle
+        public_key="daily" if name==DAILY else "monthly"
+        if st.session_state.get(BUNDLES,{}).get(public_key) is not bundle:
+            remember_bundle(st.session_state,bundle,utc_now())
     st.session_state["active_bundle"] = bundle
     return Selection(name, model, periods, bundle)
 
@@ -391,18 +415,38 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
     model = None if ai_policy == "off" else reasoner()
     if ai_policy == "required" and model is None:
         raise ModelUnavailable("AI non attiva. Nessuna domanda eseguita.")
+    country=requested_country(question) if not full else None
+    if country:
+        from .operational_sources import gie_key
+        try:
+            key=gie_key(st.secrets)
+        except (FileNotFoundError,KeyError):
+            key=gie_key()
+        with st.spinner("Consultazione delle fonti del mercato richiesto…"):
+            report=country_report(
+                database(),question,country,selection.model,model,gie_key=key,
+                include_gie=bool(st.session_state.get("briefing_gie",True)))
+        st.session_state["last_run"]=report
+        return report
     context = MarketContext(selection.bundle, selection.model, utc_now())
     status = st.status("Generazione del bollettino…" if full else "Analisi della domanda…", expanded=not compact)
     stage = status.empty()
     stage.html(steps(None, grid=True))
     try:
-        docs = library()
+        requested=() if full else requested_sources(question)
+        targets={call.agent for call in plan(question,False)} if requested else set()
+        source_direct=bool(requested) and targets<={Agent.QUALITY,Agent.MARKET,Agent.FORECAST}
+        direct=not full and (direct_market_question(question) or source_direct)
+        narrow=direct and demand_trend_question(question) and set(requested)<=set(MARKET)
+        docs = Library(include_notes=False) if direct else library()
         from .briefing_context import collect
         from .operational_sources import gie_key
-        include_gie=bool(st.session_state.get("briefing_gie"))
+        include_gie=bool(st.session_state.get("briefing_gie",True))
         from .weather_source import enabled,refresh as refresh_weather,STATE as WEATHER_STATE
         origin=selection.bundle.origin
-        include_weather=enabled(st.session_state) and not origin.archive and origin.kind in (Kind.HISTORICAL,Kind.LIVE)
+        current_context=not origin.archive and origin.kind in (Kind.HISTORICAL,Kind.LIVE)
+        include_gie=include_gie and current_context and not narrow
+        include_weather=enabled(st.session_state) and current_context and not narrow
         public_context={}
         if include_gie or include_weather:
             try:
@@ -412,9 +456,25 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
             with st.spinner("Consultazione delle fonti pubbliche selezionate…"):
                 if include_weather:refresh_weather(st.session_state,database(),utc_now())
                 public_context=collect(database(),context,utc_now(),key=key,include_gie=include_gie,include_weather=include_weather,
-                    weather_snapshots=st.session_state.get(WEATHER_STATE,{}) if include_weather else None)
+                    weather_snapshots=st.session_state.get(WEATHER_STATE,{}) if include_weather else None,
+                    clock=utc_now)
+        if current_context and (full or model is not None):
+            from .briefing_market_sources import collect_market_sources
+            from .terna_power import credentials
+            try:
+                terna=credentials(st.secrets)
+            except (FileNotFoundError,KeyError):
+                terna=credentials()
+            with st.spinner("Lettura delle fonti di mercato e degli indicatori pubblici…"):
+                public_context.update(collect_market_sources(database(),selection.bundle,utc_now(),
+                    st.session_state,terna=terna,clock=utc_now,only=set(MARKET) if narrow else None))
+        if current_context and model is not None and not full:
+            add_price_source(public_context)
+            complete_requirements(public_context,requested)
+        requirements=requested if current_context and model is not None and not full else ()
         report = run_workflow(
-            context, docs, assumptions(), question, full=full, reasoner=model,public_context=public_context,planned_only=planned_only,
+            context, docs, assumptions(), question, full=full, reasoner=model,public_context=public_context,planned_only=planned_only or direct,
+            source_requirements=requirements,
             notify=lambda run: stage.html(steps(run, grid=True)),
         )
     except ValueError as error:
@@ -422,6 +482,10 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
         status.update(label="Verifica i dati di ingresso", state="error")
         status.write(str(error))
         return None
+    # Record why AI was not used on this run, not the state of a later rerun.
+    if model is None:
+        report.assumptions["ai_mode_reason"] = ("Modalità locale selezionata" if ai_policy=="off" or ai_configured()
+                                               else "Modello AI non configurato o configurazione non valida")
     st.session_state["last_run"] = report
     if full:
         st.session_state["last_briefing"] = report
@@ -437,5 +501,5 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
         for warning in report.warnings:
             st.warning(warning)
     state = "error" if any(step.status == "failed" for step in report.steps.values()) else "complete"
-    status.update(label=f"{MODALITA[report.mode]} · {local_time(report.finished_at)}", state=state, expanded=False)
+    status.update(label="Analisi completata" if state=="complete" else "Analisi con errori", state=state, expanded=False)
     return report

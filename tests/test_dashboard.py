@@ -1,4 +1,5 @@
 from pathlib import Path
+import pytest
 
 from streamlit.testing.v1 import AppTest
 
@@ -8,17 +9,30 @@ from gasops_app.public_data import SourceUnavailable
 from gasops_app.session import ARCHIVE, DEMO
 
 
+@pytest.fixture(autouse=True)
+def workbench_mode(monkeypatch):
+    monkeypatch.setenv("GASOPS_APP_MODE", "workbench")
+
+
+def _market_app(*args, **kwargs):
+    app=AppTest.from_file(*args, **kwargs)
+    app.session_state["overview_workspace"]="Mercato in sintesi"
+    return app
+
+
 def test_overview_button_completes_offline_run(monkeypatch, tmp_path):
     monkeypatch.setenv("GASOPS_STATE_DIR", str(tmp_path))
     monkeypatch.setenv("GASOPS_PDF_DIR", str(tmp_path))
     monkeypatch.setenv("GASOPS_LLM_MODEL", "")
     monkeypatch.delenv("GROQ_API_KEY",raising=False)
-    app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=30)
+    app = _market_app(Path(__file__).resolve().parents[1] / "app.py", default_timeout=30)
     app.session_state["selected_source"] = DEMO
     app.run()
     assert not app.exception
     assert app.title[0].value == "Panoramica del mercato"
     assert app.button(key="analysis_launch").label == "Genera bollettino di mercato"
+    assert sum(b.key=="analysis_launch" for b in app.button)==1
+    assert app.checkbox(key="briefing_gie").value is True
     assert any("Nessun bollettino generato" in e.value for e in app.caption)
     assert app.selectbox(key="overview_model").value == AUTOMATIC
     app.button(key="analysis_launch").click().run()
@@ -29,7 +43,12 @@ def test_overview_button_completes_offline_run(monkeypatch, tmp_path):
     assert report.finished_at and len(report.results) == 6
     assert app.session_state["last_briefing"].id == report.id
     assert any("Ultimo bollettino generato" in e.value for e in app.markdown)
-    assert any(m.label=="Modalità effettiva" and m.value=="Deterministica" for m in app.metric)
+    assert report.mode == "Deterministic" and report.interpretation is None
+    assert any(e.value.endswith(" · Calcoli locali") and report.source.name in e.value for e in app.caption)
+    completed = sum(r.status in ("completed", "review") for r in report.results.values())
+    issues = sum(f.severity in ("high", "medium") for f in report.findings)
+    assert any(e.value == f"Analisi eseguite: {completed}/{len(report.steps)} · Da verificare: {issues}" for e in app.caption)
+    assert any("Consumi" in e.proto.body and "Previsione di esempio" in e.proto.body for e in app.get("html"))
     assert any("Scarica bollettino"==b.proto.label for b in app.get("download_button"))
     projection = report.results[Agent.FORECAST].values["forecast"]
     assert projection["model"] in MODELS
@@ -43,7 +62,7 @@ def test_unavailable_public_feed_can_open_the_real_offline_archive(monkeypatch, 
         raise SourceUnavailable("Eurostat non disponibile")
 
     monkeypatch.setattr("gasops_app.session.load_monthly", unavailable)
-    app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=30).run()
+    app = _market_app(Path(__file__).resolve().parents[1] / "app.py", default_timeout=30).run()
     assert any("Eurostat non disponibile" in x.value for x in app.text)
     app.button(key="overview_archive").click().run()
     assert not app.exception
@@ -111,7 +130,7 @@ def test_entsog_notice_does_not_hide_other_warnings():
 
 def test_overview_compact_model_controls(monkeypatch,tmp_path):
     monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
-    app=AppTest.from_file(Path(__file__).resolve().parents[1]/"app.py",default_timeout=30)
+    app=_market_app(Path(__file__).resolve().parents[1]/"app.py",default_timeout=30)
     app.session_state["selected_source"]=DEMO
     app.run()
     assert not app.exception
@@ -188,7 +207,7 @@ def test_briefing_keeps_previous_report_when_source_changes(monkeypatch,tmp_path
     monkeypatch.setattr(session,"_configuration",lambda:None)
     report=run_workflow(MarketContext(synthetic(),"Seasonal regression",utc_now()),Library(),Assumptions(),full=True)
     report.assumptions["model"]="Seasonal regression"
-    app=AppTest.from_file(Path(__file__).resolve().parents[1]/"app.py",default_timeout=30)
+    app=_market_app(Path(__file__).resolve().parents[1]/"app.py",default_timeout=30)
     app.session_state["selected_source"]=DEMO
     app.session_state["last_briefing"]=report
     app.run()
@@ -203,7 +222,7 @@ def test_lean_interface_preserves_diagnostics_and_author_credit(monkeypatch,tmp_
     from gasops_app import session
     monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
     monkeypatch.setattr(session,"_configuration",lambda:None)
-    app=AppTest.from_file(Path(__file__).resolve().parents[1]/"app.py",default_timeout=30)
+    app=_market_app(Path(__file__).resolve().parents[1]/"app.py",default_timeout=30)
     app.session_state["selected_source"]=DEMO
     app.run()
     assert not app.exception
@@ -242,7 +261,7 @@ def test_overview_has_plain_language_and_responsive_cards(monkeypatch,tmp_path):
     from gasops_app import session
     monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
     monkeypatch.setattr(session,"_configuration",lambda:None)
-    app=AppTest.from_file(Path(__file__).resolve().parents[1]/"app.py",default_timeout=30)
+    app=_market_app(Path(__file__).resolve().parents[1]/"app.py",default_timeout=30)
     app.session_state["selected_source"]=DEMO
     app.run()
     assert not app.exception
@@ -281,8 +300,16 @@ def test_market_layout_and_no_weather_request_for_demo(monkeypatch,tmp_path):
     app.run()
     assert not app.exception
     assert any("**Simulazione**" in e.value for e in app.markdown)
-    assert [tab.label for tab in app.tabs]==["Consumi e previsioni","Composizione e prezzi","Meteo","Modelli e dati"]
+    assert app.radio(key="market_section").options==["Consumi e previsioni","Composizione e prezzi","Meteo","Modelli e dati"]
+    assert app.radio(key="market_section").value=="Consumi e previsioni"
     assert any("Variazione dei consumi" in e.proto.body for e in app.get("html"))
+    assert not any("Dati osservati e previsioni"==e.label for e in app.expander)
+    app.radio(key="market_section").set_value("Composizione e prezzi").run()
+    assert not app.exception
+    app.radio(key="market_section").set_value("Meteo").run()
+    assert not app.exception
+    app.radio(key="market_section").set_value("Modelli e dati").run()
+    assert not app.exception
     assert any("Dati osservati e previsioni"==e.label for e in app.expander)
     assert any("Provenienza e metodologia"==e.label for e in app.expander)
 
@@ -321,7 +348,11 @@ def test_balancing_page_simple_and_complete(monkeypatch,tmp_path):
     monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
     app=AppTest.from_string("from gasops_app.workbench import balancing\nbalancing()",default_timeout=30).run()
     assert not app.exception
-    assert [tab.label for tab in app.tabs]==["Stato sistema","Controllo giornaliero","Sbilanciamento del partecipante","Scenario di mercato"]
+    assert app.radio(key="balancing_view").options==["Scenario di mercato","Sbilanciamento del partecipante","Stato sistema","Controllo giornaliero"]
+    assert app.radio(key="balancing_view").value=="Stato sistema"
+    assert not any("Saldo energetico" in e.proto.body for e in app.get("html"))
+    app.radio(key="balancing_view").set_value("Sbilanciamento del partecipante").run()
+    assert not app.exception
     assert any("Saldo energetico" in e.proto.body for e in app.get("html"))
     app.radio(key="balancing_mode").set_value("Completo").run()
     assert not app.exception
@@ -345,10 +376,11 @@ def test_balancing_missing_storage_shock_does_not_crash(monkeypatch,tmp_path):
     monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
     app=AppTest.from_string("from gasops_app.workbench import balancing\nbalancing()",default_timeout=30)
     data=synthetic()
+    app.session_state["balancing_view"]="Scenario di mercato"
     app.session_state["active_bundle"]=data
     app.session_state["scenario_case_"+data.fingerprint]={"demand_gwh":"100","supply_gwh":"120","storage_gwh":None,"price_eur_mwh":"42"}
     ass=Assumptions()
-    app.session_state["assumptions"]=ass.model_copy(update={"stress":ass.stress.model_copy(update={"storage_pct":10})}).model_dump(mode="json")
+    app.session_state["assumptions"]=ass.model_copy(update={"stress":type(ass.stress).model_validate({**ass.stress.model_dump(), "storage_pct":10})}).model_dump(mode="json")
     app.run()
     assert not app.exception
     assert any("variazione stoccaggio è sospesa" in e.value for e in app.warning)
@@ -397,13 +429,19 @@ def test_risk_workspace_stress_and_confidence_without_recompute(monkeypatch,tmp_
     saved=app.session_state["risk_workspace_v2"]
     assert saved["result"].summary["stress"]=={"demand_pct":10.,"supply_pct":-10.,"price_delta":10.}
     assert saved["result"].summary["probability_deficit"]>=saved["base"]["probability_deficit"]
-    assert [tab.label for tab in app.tabs]==["Carenza di gas","Impatto economico","Ipotesi e metodo"]
+    assert app.radio(key="risk_result_view").options==["Carenza di gas","Impatto economico","Ipotesi e metodo"]
+    assert app.radio(key="risk_result_view").value=="Carenza di gas"
     assert any("Probabilità di carenza" in e.proto.body for e in app.get("html"))
     first=saved["result"].summary["executed_at"]
     app.radio(key="risk_confidence").set_value("99").run()
     assert not app.exception
     assert app.session_state["risk_workspace_v2"]["result"].summary["executed_at"]==first
     assert any("Carenza al percentile 99" in e.proto.body for e in app.get("html"))
+    for view in ("Impatto economico","Ipotesi e metodo","Carenza di gas"):
+        app.radio(key="risk_result_view").set_value(view).run()
+        assert not app.exception
+        assert app.session_state["risk_workspace_v2"]["result"].summary["executed_at"]==first
+    assert app.radio(key="risk_confidence").value=="99"
     app.selectbox(key="risk_preset").set_value("Base").run()
     assert not app.exception
     assert any("Fonte, previsione o scenario cambiati" in e.value for e in app.warning)
@@ -415,7 +453,7 @@ def test_document_desk_empty_state_has_no_precompiled_findings(monkeypatch,tmp_p
     app=AppTest.from_string("from gasops_app.document_page import document_page\ndocument_page()").run()
     assert not app.exception
     assert any("Aggiungi almeno un PDF" in e.value for e in app.info)
-    assert not any("Preavviso di esattamente sette giorni" in e.value for e in app.markdown)
+    assert not any("Piombino · Mancata discarica" in e.value for e in app.markdown)
 
 
 def test_document_desk_pdf_search_and_rag_without_model(monkeypatch,tmp_path):
@@ -447,6 +485,7 @@ def test_assistant_session_history_isolated_and_shortcut_works(monkeypatch,tmp_p
     monkeypatch.setattr(session,"reasoner",lambda:None)
     monkeypatch.setattr(assistant_page,"reasoner",lambda:None)
     monkeypatch.setattr(assistant_page,"analysis_label",lambda:"Genera bollettino di mercato")
+    monkeypatch.setattr(assistant_page,"ai_configured",lambda:False)
     db=session.database()
     data=synthetic()
     foreign=Run(question="DOMANDA_DI_UN_ALTRO_VISITATORE",source=data.origin,input_sha256=data.fingerprint,assumptions={})
@@ -455,10 +494,9 @@ def test_assistant_session_history_isolated_and_shortcut_works(monkeypatch,tmp_p
     app.session_state["selected_source"]=DEMO
     app.run()
     assert not app.exception
-    assert app.chat_input(key="assistant_question").disabled
-    assert not app.button or not any(b.key=="assistant_starter_Consumi" for b in app.button)
-    app.radio(key="assistant_view").set_value("Report locali").run()
-    assert not app.exception and not app.chat_input
+    assert app.radio(key="assistant_view").value=="Report locali"
+    assert not app.chat_input
+    assert app.button(key="assistant_starter_Consumi")
     assert not any(foreign.question in e.value for e in app.text)
     assert any("Il risultato apparirà qui" in e.value for e in app.caption)
     app.button(key="assistant_starter_Consumi").click().run()
@@ -563,7 +601,7 @@ def test_visitor_pdf_survives_rerun_but_is_not_shared(monkeypatch,tmp_path):
     assert search(first.session_state[desk.VISITOR_STATE]["docs"],"deposito cauzionale")
     first.run()
     assert not first.exception and first.session_state[desk.VISITOR_UPLOADS][0][1]==raw
-    assert not first.session_state[desk.STATE]["docs"].documents
+    assert desk.STATE not in first.session_state
     second=AppTest.from_string(script).run()
     assert not second.exception and desk.VISITOR_UPLOADS not in second.session_state
     assert not second.session_state[desk.STATE]["docs"].documents
@@ -602,13 +640,14 @@ def test_daily_settlement_desk_and_jarvis_no_implicit_fetch():
     app=AppTest.from_string("from gasops_app.settlement_desk_page import panel\npanel()",default_timeout=30).run()
     assert not app.exception
     assert not app.get("html") or not any("172.200,00" in x.proto.body for x in app.get("html"))
-    app.checkbox(key="daily_desk_demo").check().run()
-    assert any("30/30 giorni" in x.value for x in app.caption)
+    app.radio(key="daily_desk_data_mode").set_value("Esempio guidato").run()
+    assert any("30/30 giorni" in x.value for x in app.success)
     assert any("172.200,00" in x.proto.body for x in app.get("html"))
     app.radio(key="daily_desk_filter").set_value("Rettifiche").run()
     assert not app.exception
-    rows=next(d.value for d in app.dataframe if "Δ DS (MWh)" in d.value.columns)
+    rows=next(d.value for d in app.dataframe if "Rettifica (€)" in d.value.columns)
     assert len(rows)==1
+    assert float(rows["Rettifica (€)"].iloc[0])==-4200
     app.radio(key="daily_desk_filter").set_value("Eccezioni").run()
     assert not app.exception
     assert any("Nessuna giornata" in c.value for c in app.caption)
@@ -640,3 +679,199 @@ def test_jarvis_snapshot_reused_between_panels():
     assert any("consultazione storica" in e.value.casefold() for e in app.caption)
     assert not any("consultazione storica" in e.value.casefold() for e in app.warning)
     assert len(app.session_state["jarvis_public_snapshot_v1"]["versions"]) == 2
+
+
+def test_briefing_period_prefers_observed_and_fallback_is_not_monolithic(monkeypatch):
+    from datetime import date
+    from gasops_app import dashboard, session
+    from gasops_app.models import Agent, Result, Run, Finding
+    from gasops_app.data import synthetic
+    data=synthetic()
+    run=Run(question="briefing",source=data.origin.model_copy(update={"latest_period":None}),
+            input_sha256=data.fingerprint,assumptions={"model":session.MODEL_CHOICES[0],"source_period":"2026-10-01"},
+            mode="Deterministic fallback",warnings=["Fixture AI failure","Fixture AI failure"],summary="MONOLITHIC_FIXTURE")
+    run.results[Agent.MARKET]=Result(agent=Agent.MARKET,summary="Mercato",values={"period":"2026-10-01","demand_gwh":100})
+    run.findings=[Finding(id="fixture",title="Verifica fixture",severity="medium",detail="Dettaglio",category="Test")]
+    assert dashboard._briefing_period(run)==dashboard.data_it(date(2026,10,1),day=data.origin.grain=="daily")
+    monkeypatch.setattr(dashboard,"briefing_run",lambda:run)
+    monkeypatch.setattr(dashboard,"analysis_label",lambda:"Genera bollettino di mercato")
+    app=AppTest.from_string("from gasops_app import dashboard,session\nfrom gasops_app.data import synthetic\ndashboard._briefing_panel(session.Selection(session.DEMO,session.MODEL_CHOICES[0],30,synthetic()))").run()
+    assert not app.exception
+    assert sum(w.value=="Fixture AI failure" for w in app.warning)==1
+    assert not any("MONOLITHIC_FIXTURE" in t.value for t in app.text)
+    assert any("Verifica fixture" in m.value for m in app.markdown)
+
+
+def test_briefing_context_keeps_missing_gie_and_umm_separate():
+    app=AppTest.from_string("""from gasops_app.dashboard import _briefing_operational_context
+_briefing_operational_context({
+    "AGSI+":{"status":"available","gas_day":"2026-11-17","values":{"fill_pct":75.0,"stock_twh":100.0}},
+    "ALSI":{"status":"unavailable","reason":"Chiave non configurata"},
+    "IIP":{"status":"available","received_records":4,"coverage":"Completa"},
+    "Open-Meteo":{"status":"available","points":[{"day":"2026-11-19","hdd":10.0,"temperature_c":8.0}]}
+})
+""").run()
+    assert not app.exception
+    assert any("Stoccaggi Italia" in e.proto.body and "75,0" in e.proto.body and "record, non eventi" in e.proto.body for e in app.get("html"))
+    assert any("Copertura incompleta" in e.value and "ALSI" in e.value for e in app.caption)
+    assert any("picco HDD" in e.value for e in app.caption)
+
+
+def test_unverified_iip_not_shown_as_kpi():
+    for source in ({"status":"stale","received_records":None,"coverage":"Completa"},
+                   {"status":"available","received_records":4,"coverage":"Parziale"}):
+        app=AppTest.from_string("from gasops_app.dashboard import _briefing_operational_context\n_briefing_operational_context("+repr({"IIP":source,"AGSI+":{"status":"available","values":{"fill_pct":75.0}}})+")").run()
+        assert not app.exception
+        assert not any("Record UMM ricevuti" in e.proto.body for e in app.get("html"))
+        assert any("Copertura incompleta" in e.value and "IIP" in e.value for e in app.caption)
+
+
+def test_briefing_regulatory_finding_cta_selects_exact_case(monkeypatch):
+    from gasops_app import dashboard
+    from gasops_app.regulatory import registered_case
+    opened=[]
+    monkeypatch.setattr(dashboard.st,"switch_page",lambda page:opened.append(page.url_path))
+    app=AppTest.from_string("from gasops_app.dashboard import _registered_finding\nfrom gasops_app.regulatory import registered_case\n_registered_finding(registered_case('notice-7').finding)").run()
+    assert not app.exception
+    assert any("Piombino" in m.value and "7 giorni" in m.value for m in app.markdown)
+    assert any("PDF p. 103" in c.value for c in app.caption)
+    assert any("PDF p. 104" in c.value for c in app.caption)
+    app.button(key="overview_finding_notice-7").click().run()
+    assert not app.exception
+    assert opened==["regulatory"]
+    assert app.session_state["desk_finding_target"]=="notice-7"
+
+
+def test_regulatory_cta_opens_historical_register_even_without_pdf(monkeypatch,tmp_path):
+    from gasops_app import document_page
+    monkeypatch.setenv("GASOPS_PDF_DIR",str(tmp_path))
+    monkeypatch.setattr(document_page,"_archive_config",lambda:None)
+    app=AppTest.from_string("from gasops_app.document_page import document_page\ndocument_page()")
+    app.session_state["desk_finding_target"]="notice-7"
+    app.session_state["document_archive_scope"]="I miei PDF"
+    app.run()
+    assert not app.exception
+    assert app.radio(key="desk_mode").value=="Registro rilievi"
+    assert app.radio(key="desk_register_origin").value=="Edizioni esaminate"
+    assert app.radio(key="document_archive_scope").value=="Archivio pubblico"
+    assert app.selectbox(key="desk_historical_case").value=="notice-7"
+    assert any("Copia esatta dell’edizione non disponibile" in c.value for c in app.caption)
+    assert not any(c.label=="Mostra pagina originale" for c in app.checkbox)
+    app.radio(key="desk_register_origin").set_value("Rilievi di sessione").run()
+    assert not app.exception
+    assert any("Nessun rilievo nel registro" in e.value for e in app.info)
+
+
+def test_registered_citation_resolves_by_revision_digest_not_filename():
+    from types import SimpleNamespace
+    from gasops_app.regulatory import EDITIONS, PIOMBINO, matching_edition, registered_case
+    cite=registered_case("notice-7").finding.citations[0]
+    fake=SimpleNamespace(digest="wrong-edition",pages=200)
+    digest=next(key for key,name in EDITIONS.items() if name==PIOMBINO)
+    exact=SimpleNamespace(digest=digest,pages=200)
+    assert matching_edition(SimpleNamespace(documents={PIOMBINO:fake}),cite) is None
+    assert matching_edition(SimpleNamespace(documents={"renamed.pdf":exact}),cite) is exact
+
+
+def test_briefing_shows_dated_market_signals_and_stale_inventory():
+    app=AppTest.from_string("""from gasops_app.dashboard import _briefing_market_context,_briefing_operational_context
+_briefing_market_context({
+    "ENTSOG · SRG":{"status":"available","period":"2026-11-17","values":{"demand_gwh":2260.7},"changes_pct":{"demand_gwh":-12}},
+    "ACER · GNL":{"status":"available","values":{
+        "eu":{"status":"available","period":"2026-11-18","value":86.09},
+        "benchmark":{"status":"available","period":"2026-11-18","value":5.24}}}
+})
+_briefing_operational_context({"AGSI+":{"status":"stale","gas_day":"2026-11-16","last_observed_values":{"fill_pct":86.8,"stock_twh":176.6}}})
+""").run()
+    assert not app.exception
+    assert any("Prelievi dei tre aggregati SRG" in c.value and "medie delle due finestre" in c.value for c in app.caption)
+    assert any("Prezzo GNL UE" in c.value and "Differenziale" in c.value for c in app.caption)
+    assert any("ultimo dato non recente" in h.proto.body and "86,8" in h.proto.body for h in app.get("html"))
+
+
+def test_overview_compact_chart_hides_only_exact_duplicate_accounting_series():
+    import pandas as pd
+    from types import SimpleNamespace
+    from gasops_app.visuals import demand_chart
+    frame=pd.DataFrame({"demand_gwh":[10.,20.],"supply_gwh":[10.,20.]},
+                       index=pd.to_datetime(["2026-09-01","2026-10-01"]))
+    projection=SimpleNamespace(points=[])
+    compact=demand_chart(frame,projection,"monthly",compact=True)
+    assert compact.layout.meta=="coincident_accounting"
+    assert [trace.name for trace in compact.data]==["Consumi osservati"]
+    assert len(demand_chart(frame,projection,"monthly").data)==2
+    frame.loc[frame.index[-1],"supply_gwh"]=None
+    assert len(demand_chart(frame,projection,"monthly",compact=True).data)==2
+
+
+def test_ai_readout_can_show_sections_without_repeating_usage():
+    from gasops_app.data import synthetic
+    from gasops_app.models import Run
+    data=synthetic()
+    run=Run(question="briefing",source=data.origin,input_sha256=data.fingerprint,assumptions={},
+            ai_sections=[{"id":"summary","text":"Executive fixture","references":[]},
+                         {"id":"market","text":"Market fixture","references":[]}],
+            ai_usage={"calls":1})
+    app=AppTest.from_string("from gasops_app.visuals import ai_readout\nimport streamlit as st\nai_readout(st.session_state['fixture'],section_ids={'summary'},usage=False)")
+    app.session_state["fixture"]=run
+    app.run()
+    assert not app.exception
+    assert any(t.value=="Executive fixture" for t in app.text)
+    assert not any(t.value=="Market fixture" for t in app.text)
+
+
+def test_document_workspace_precedes_management_and_keeps_tools(monkeypatch,tmp_path):
+    import pymupdf
+    from gasops_app import document_page as desk
+    monkeypatch.setenv("GASOPS_PDF_DIR",str(tmp_path))
+    monkeypatch.setattr(desk,"_archive_config",lambda:None)
+    monkeypatch.setattr(desk,"reasoner",lambda:None)
+    with pymupdf.open() as pdf:
+        for phrase in ("Garanzia economica deposito cauzionale.", "Garanzia economica pagamento."):
+            pdf.new_page().insert_text((70,80),phrase)
+        pdf.save(tmp_path/"regole.pdf")
+    app=AppTest.from_string("from gasops_app.document_page import document_page\ndocument_page()").run()
+    assert not app.exception
+    assert app.radio(key="desk_mode").value=="Cerca"
+    assert len(app.radio(key="desk_mode").options)==8
+    assert any("1 PDF · 2/2 pagine con testo" in c.value for c in app.caption)
+    search=next(e for e in app.text_input if e.label=="Cosa vuoi cercare?")
+    upload=next(e for e in app.expander if e.label=="Carica PDF")
+    assert search and upload
+    search.set_value("Garanzia economica")
+    next(b for b in app.button if b.label=="Cerca nei PDF").click().run()
+    assert not app.exception
+    assert len(app.selectbox(key="desk_search_hit").options)==2
+    assert any(e.label=="Altri passaggi · 1" for e in app.expander)
+    app.button(key="desk_search_save").click().run()
+    assert not app.exception
+    assert len(app.session_state[desk.STATE]["reference_list"])==1
+    app.radio(key="desk_mode").set_value("Riferimenti salvati").run()
+    assert not app.exception
+    assert any("1 riferimenti" in c.value for c in app.caption)
+    app.radio(key=desk.SCOPE).set_value("I miei PDF").run()
+    assert not app.exception
+    assert any("Aggiungi almeno un PDF" in e.value for e in app.info)
+    assert len(app.session_state[desk.STATE]["reference_list"])==1
+
+
+def test_assistant_retains_last_result_when_launch_fails(monkeypatch,tmp_path):
+    from gasops_app import session, assistant_page as assistant
+    monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
+    monkeypatch.setenv("GASOPS_PDF_DIR",str(tmp_path))
+    monkeypatch.setattr(session,"reasoner",lambda:None)
+    monkeypatch.setattr(assistant,"reasoner",lambda:None)
+    monkeypatch.setattr(assistant,"ai_configured",lambda:False)
+    app=AppTest.from_string("from gasops_app.assistant_page import assistant_page\nassistant_page()",default_timeout=30)
+    app.session_state["selected_source"]=DEMO
+    app.run()
+    app.button(key="assistant_starter_Consumi").click().run()
+    assert not app.exception
+    prior=app.session_state[assistant.HISTORY][0]
+    def fail(*args,**kwargs):raise RuntimeError("fixture")
+    monkeypatch.setattr(assistant,"launch",fail)
+    app.button(key="assistant_starter_Stress +10%").click().run()
+    assert not app.exception
+    assert app.session_state[assistant.HISTORY][0].id==prior.id
+    assert any("Ultimo risultato conservato" in c.value for c in app.caption)
+    assert any(e.value==prior.question for e in app.text)

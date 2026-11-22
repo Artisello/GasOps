@@ -13,9 +13,7 @@ from .forecast import Forecast, ForecastPoint
 from .italiano import ESITI, TIPI, data_it, numero
 from .models import AGENT_LABELS, Agent, Citation, Kind, Run
 
-TEAL, BLUE, AMBER, ROSE, MUTED = "#65dfbf", "#83b4ff", "#f2be72", "#f6929d", "#b6c4d4"
-TEXT, PANEL, BORDER = "#f1f5f9", "#14202e", "#34475a"
-CHART_FONT = "Inter, Avenir Next, system-ui, sans-serif"
+TEAL, BLUE, AMBER, ROSE, MUTED = "#65dfbf", "#83b4ff", "#f2be72", "#f6929d", "#b0bed0"
 CHIP = {
     Kind.SYNTHETIC: "synthetic", Kind.HISTORICAL: "historical", Kind.LIVE: "live",
     Kind.FORECAST: "forecast", Kind.SIMULATION: "simulation", Kind.ACCOUNTING: "review", Kind.PHYSICAL: "ok",
@@ -53,6 +51,7 @@ def header(title: str, meta: str, action: str | None = None, disabled: bool = Fa
             with right:
                 clicked = st.button(action, icon=":material/play_arrow:", type="primary",
                                     width="stretch", disabled=disabled, key="analysis_launch")
+        st.html('<div class="gas-topline"></div>')
     return clicked
 
 
@@ -138,13 +137,13 @@ def _frame(fig: go.Figure, grain: str, unit: str, height: int) -> go.Figure:
     fig.update_layout(
         template="plotly_dark", height=height, separators=",.",
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=8, r=14, t=42, b=16), hovermode="x unified", dragmode="zoom",
-        font=dict(family=CHART_FONT, color=MUTED, size=13),
+        margin=dict(l=12, r=18, t=42, b=24), hovermode="x unified", dragmode="zoom",
+        font=dict(family="Inter, Avenir Next, system-ui, sans-serif", color=MUTED, size=13),
         legend=dict(orientation="h", x=0, y=1.03, yanchor="bottom", xanchor="left",
-                    font=dict(size=12), traceorder="normal", itemclick="toggle", itemdoubleclick="toggleothers"),
-        hoverlabel=dict(bgcolor=PANEL, bordercolor=BORDER, font=dict(color=TEXT, size=13)),
+                    font=dict(size=13), traceorder="normal", itemclick="toggle", itemdoubleclick="toggleothers"),
+        hoverlabel=dict(bgcolor="#1e2b3c", bordercolor="#63768b", font=dict(color="#f1f5f9", size=13)),
         xaxis=dict(showgrid=True, gridcolor="rgba(153,180,214,0.09)", showline=True, linecolor="#253548",
-                   tickformat="%d/%m" if grain == "daily" else "%m/%Y", zeroline=False, nticks=8),
+                   tickformat="%d/%m" if grain == "daily" else "%m/%Y", zeroline=False, nticks=8, automargin=True),
         yaxis=dict(side="right", title=dict(text=unit, font=dict(size=12)), showgrid=True, gridcolor="rgba(153,180,214,0.12)", showline=True,
                    linecolor="#253548", tickformat=",.0f" if unit == "GWh" else ",.1f",
                    zeroline=False, nticks=6, automargin=True),
@@ -154,12 +153,12 @@ def _frame(fig: go.Figure, grain: str, unit: str, height: int) -> go.Figure:
 
 def _line(name: str, x, y, color: str, unit: str, grain: str, dash: str = "solid") -> go.Scatter:
     return go.Scatter(name=name, x=x, y=y, mode="lines", connectgaps=False,
-                      line=dict(color=color, width=2, dash=dash),
+                      line=dict(color=color, width=2.2, dash=dash),
                       hovertemplate=f"%{{y:,.2f}} {unit}<extra>{name}</extra>",
                       xhoverformat="%d/%m/%Y" if grain == "daily" else "%m/%Y")
 
 
-def demand_chart(data: pd.DataFrame, projection: Forecast, grain: str, *, height: int = 330) -> go.Figure:
+def demand_chart(data: pd.DataFrame, projection: Forecast, grain: str, *, height: int = 330, compact: bool = False) -> go.Figure:
     fig = go.Figure()
     future = projection.points
     if future:
@@ -170,7 +169,7 @@ def demand_chart(data: pd.DataFrame, projection: Forecast, grain: str, *, height
             fig.add_trace(go.Scatter(x=dates, y=lower, mode="lines", showlegend=False, hoverinfo="skip",
                                      line=dict(width=0), legendgroup="interval"))
             fig.add_trace(go.Scatter(x=dates, y=upper, name="Intervallo stimato (80%)", fill="tonexty",
-                                     fillcolor="rgba(131,180,255,0.18)", hoverinfo="skip",
+                                     fillcolor="rgba(131,172,255,0.17)", hoverinfo="skip",
                                      mode="lines", line=dict(width=0, color=BLUE), legendrank=4,
                                      legendgroup="interval"))
         boundary=data["demand_gwh"].last_valid_index()
@@ -181,7 +180,10 @@ def demand_chart(data: pd.DataFrame, projection: Forecast, grain: str, *, height
     demand = _line("Consumi osservati", data.index, data["demand_gwh"], TEAL, "GWh", grain)
     demand.legendrank = 1
     fig.add_trace(demand)
-    if data["supply_gwh"].notna().any():
+    coincident=(compact and grain=="monthly" and data["demand_gwh"].notna().any()
+                and data["supply_gwh"].equals(data["demand_gwh"]))
+    if coincident:fig.update_layout(meta="coincident_accounting")
+    if not coincident and data["supply_gwh"].notna().any():
         label = "Disponibilità contabile" if grain == "monthly" else "Offerta"
         supply = _line(label, data.index, data["supply_gwh"], "#afc3de", "GWh", grain)
         supply.update(line=dict(color="#afc3de", width=1.3, dash="dot"),
@@ -191,7 +193,11 @@ def demand_chart(data: pd.DataFrame, projection: Forecast, grain: str, *, height
         dotted = _line("Consumi previsti", dates, [p.estimate for p in future], BLUE, "GWh", grain, "dash")
         dotted.update(mode="lines+markers", marker=dict(size=4, color=BLUE), legendrank=3)
         fig.add_trace(dotted)
-    return _frame(fig, grain, "GWh", height)
+    _frame(fig, grain, "GWh", height)
+    if compact:
+        fig.update_xaxes(nticks=6)
+        fig.update_yaxes(nticks=5)
+    return fig
 
 
 def mini_chart(values: pd.Series, label: str, grain: str, unit: str, color: str, *, zero: bool = False) -> go.Figure:
@@ -204,9 +210,10 @@ def mini_chart(values: pd.Series, label: str, grain: str, unit: str, color: str,
 
 def breakdown_chart(frame: pd.DataFrame, series: list[tuple[str, str, str]], grain: str) -> go.Figure:
     fig = go.Figure()
-    for field, label, color in series:
+    for index, (field, label, color) in enumerate(series):
         if frame[field].notna().any():
-            fig.add_trace(_line(label, frame.index, frame[field], color, "GWh", grain))
+            dash = ("solid", "dash", "dot", "dashdot", "longdash", "longdashdot")[index % 6]
+            fig.add_trace(_line(label, frame.index, frame[field], color, "GWh", grain, dash))
     return _frame(fig, grain, "GWh", 223).update_xaxes(nticks=5)
 
 
@@ -222,19 +229,35 @@ def error_chart(forecast: Forecast, grain: str) -> go.Figure:
     return _frame(fig, grain, "GWh", 220)
 
 
-def style_figure(figure: go.Figure) -> go.Figure:
-    """Harmonize chart chrome without changing traces, axes, scales or chart semantics."""
-    figure.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family=CHART_FONT, color=MUTED, size=13),
-        hoverlabel=dict(bgcolor=PANEL, bordercolor=BORDER, font=dict(color=TEXT, size=13)),
-    )
-    figure.update_xaxes(automargin=True)
-    figure.update_yaxes(automargin=True)
-    return figure
-
-
 def plot(figure: go.Figure, key: str) -> None:
-    st.plotly_chart(style_figure(figure), key=key, width="stretch", theme=None,
+    st.plotly_chart(figure, key=key, width="stretch", theme=None,
                     config={"displaylogo": False, "displayModeBar": "hover", "scrollZoom": False,
                             "modeBarButtonsToRemove": ["lasso2d", "select2d"]})
+
+
+def ai_readout(run: Run, *, section_ids=None, usage=True):
+    """Fixed headings and plain-text output; provider markup is not executed."""
+    from .ai_response import SECTION_TITLES, reference_labels
+    sections=getattr(run,"ai_sections",[])
+    if sections:
+        for section in sections:
+            if section_ids is not None and section["id"] not in section_ids:continue
+            st.markdown("**"+SECTION_TITLES.get(section["id"],"Analisi")+"**")
+            st.text(section["text"])
+            labels=reference_labels(run,section["references"])
+            if labels:st.caption("Fonti · "+"; ".join(labels))
+    elif run.interpretation and section_ids is None:
+        for paragraph in run.interpretation.splitlines():
+            if paragraph.strip():st.text(paragraph.strip())
+        if run.interpretation_sources:
+            labels=reference_labels(run,[a.value for a in run.interpretation_sources])
+            st.caption("Fonti · "+"; ".join(labels))
+    usage=getattr(run,"ai_usage",{}) if usage else {}
+    if usage:
+        calls=usage.get("calls",0)
+        note=f"Chiamate: {calls}"
+        if usage.get("reported_calls")==calls and calls and "total_tokens" in usage:
+            note+=f" · Token effettivi: {usage['total_tokens']} (input {usage['prompt_tokens']}, output {usage['completion_tokens']})"
+        else:
+            note+=" · Conteggio token completo non fornito dal provider"
+        info("Utilizzo AI",note)

@@ -24,20 +24,28 @@ SERIES = {
     "STK_CHG_MG": "stock_change_gwh",
 }
 CACHE_KEY = "eurostat-nrg_cb_gasm-IT-bilancio-TJ_GCV"
+COUNTRIES = {"IT":"Italia","DE":"Germania"}
+
+
+def _parameters(geo):
+    if geo not in COUNTRIES:
+        raise ValueError("Perimetro Eurostat non supportato.")
+    return {**PARAMETERS,"geo":geo}
 
 
 def _indexed(items: dict | list, position: int):
     return items.get(str(position)) if isinstance(items, dict) else items[position]
 
 
-def parse(payload: dict, retrieved_at: datetime, *, cached: bool = False, failed: bool = False) -> Bundle:
+def parse(payload: dict, retrieved_at: datetime, *, cached: bool = False, failed: bool = False, geo: str = "IT") -> Bundle:
+    parameters=_parameters(geo)
     if payload.get("source") != "ESTAT" or payload.get("class") != "dataset":
         raise ValueError("Risposta Eurostat non riconosciuta")
     dimensions = payload["dimension"]
     codes, sizes = payload["id"], payload["size"]
-    if len(codes) != len(sizes) or set(codes) != {*PARAMETERS, "nrg_bal", "time"} or len(set(codes)) != len(codes):
+    if len(codes) != len(sizes) or set(codes) != {*parameters, "nrg_bal", "time"} or len(set(codes)) != len(codes):
         raise ValueError("Dimensioni Eurostat non riconosciute")
-    for field, code in PARAMETERS.items():
+    for field, code in parameters.items():
         if sizes[codes.index(field)] != 1 or dimensions[field]["category"]["index"] != {code: 0}:
             raise ValueError(f"Filtro Eurostat non valido ({field})")
     balances = dimensions["nrg_bal"]["category"]["index"]
@@ -79,16 +87,16 @@ def parse(payload: dict, retrieved_at: datetime, *, cached: bool = False, failed
     frame = pd.DataFrame(rows)
     frame[list(SERIES.values())] = frame[list(SERIES.values())].apply(pd.to_numeric)
     if frame["demand_gwh"].notna().sum() == 0:
-        raise ValueError("Consumi italiani assenti nella risposta Eurostat")
+        raise ValueError("Consumi del perimetro richiesto assenti nella risposta Eurostat")
     # Il segno MOS GAS è positivo in caso di aumento delle scorte.
     frame["net_imports_gwh"] = frame["imports_gwh"] - frame["exports_gwh"]
     frame["storage_gwh"] = (-frame["stock_change_gwh"]).clip(lower=0)
     return frame_bundle(frame, Origin(
-        name="Eurostat · Italia", kind=Kind.HISTORICAL, grain="monthly",
+        name="Eurostat · "+COUNTRIES[geo], kind=Kind.HISTORICAL, grain="monthly",
         fields=(*SERIES.values(), "net_imports_gwh", "storage_gwh"), url=SOURCE_PAGE,
         retrieved_at=retrieved_at,
         published_at=datetime.strptime(payload["updated"], "%Y-%m-%dT%H:%M:%S%z").astimezone(timezone.utc),
-        description="nrg_cb_gasm (IT, G3000). Consumo osservato (IC_OBS) e disponibilità contabile "
+        description=f"nrg_cb_gasm ({geo}, G3000). Consumo osservato (IC_OBS) e disponibilità contabile "
                     "(consumo interno calcolato MOS GAS, IC_CAL_MG). Produzione, importazioni, esportazioni e "
                     "variazione scorte in TJ a PCS, divisi per 3,6 per ottenere GWh. La variazione scorte è positiva "
                     "in accumulo. Il contributo di prelievo netto è max(0, −variazione scorte).",
@@ -100,9 +108,12 @@ def _parse_text(text: str, fetched_at: datetime, **kwargs) -> Bundle:
     return parse(json.loads(text), fetched_at, **kwargs)
 
 
-def load(store: Store, *, refresh: bool = False) -> Bundle:
+def load(store: Store, *, refresh: bool = False, geo: str = "IT") -> Bundle:
+    parameters=_parameters(geo)
+    def parse_country(text,fetched_at,**kwargs):
+        return _parse_text(text,fetched_at,geo=geo,**kwargs)
     return retrieve(
-        store, key=CACHE_KEY, name="Eurostat", url=URL, parse=_parse_text,
+        store, key=f"eurostat-nrg_cb_gasm-{geo}-bilancio-TJ_GCV", name="Eurostat", url=URL, parse=parse_country,
         ttl=timedelta(hours=8), refresh=refresh,
-        params={**PARAMETERS, "nrg_bal": tuple(SERIES), "lang": "EN", "sinceTimePeriod": "2018-01"},
+        params={**parameters, "nrg_bal": tuple(SERIES), "lang": "EN", "sinceTimePeriod": "2018-01"},
     )

@@ -4,6 +4,8 @@ import json
 
 from .italiano import ESITI, GRANULARITA, GRAVITA, MODALITA, TIPI
 from .models import AGENT_LABELS, Run
+from .executive_briefing import management_readout
+from .ai_response import SECTION_TITLES, reference_labels
 
 
 def _plain(text: str) -> str:
@@ -16,16 +18,37 @@ def markdown(run: Run, reviewed: dict[str, str]) -> str:
         "# I.G.O.R. — rapporto operativo", "", f"**Obiettivo** {_plain(run.question)}",
         f"**Analisi** `{run.id}` · {run.started_at.isoformat()} UTC · {MODALITA[run.mode]}",
         f"**Fonte** {_plain(source.name)} · {TIPI[source.kind]} · {GRANULARITA[source.grain]}",
-        f"**Impronta dei dati SHA-256** `{run.input_sha256}`", "", "## Sintesi operativa", "", _plain(run.summary),
+        f"**Impronta dei dati SHA-256** `{run.input_sha256}`", "", "## Sintesi operativa", "",
     ]
+    if run.assumptions.get("full_briefing"):
+        overview,forecast,priorities=management_readout(run)
+        lines.extend([_plain(overview), "", _plain(forecast), "", "### Priorità di verifica",
+                      *[f"- {_plain(item)}" for item in priorities]])
+    else:
+        lines.append(_plain(run.summary))
     for feed in (source, *source.companions):
         if feed.url:
             lines.extend(["", f"[{_plain(feed.name)}]({feed.url})"])
     if run.warnings:
         lines.extend(["", *[f"- {_plain(warning)}" for warning in run.warnings]])
     if run.interpretation:
-        refs = ", ".join(AGENT_LABELS[name] for name in run.interpretation_sources)
-        lines.extend(["", f"**Interpretazione del modello** {_plain(run.interpretation)}", f"Strumenti consultati · {refs}"])
+        lines.extend(["", "## Interpretazione AI"])
+        for section in getattr(run,"ai_sections",[]):
+            lines.extend(["", "### "+SECTION_TITLES[section["id"]], "", _plain(section["text"]),
+                          "", "Fonti · "+_plain("; ".join(reference_labels(run,section["references"])))])
+        if not getattr(run,"ai_sections",[]):
+            refs=", ".join(AGENT_LABELS[name] for name in run.interpretation_sources)
+            lines.extend(["", _plain(run.interpretation), f"Strumenti consultati · {refs}"])
+
+    public=run.assumptions.get("public_operational_context") or {}
+    if public:
+        lines.extend(["", "## Contesto operativo pubblico", ""])
+        for name,item in public.items():
+            status={"available":"Disponibile","stale":"Non recente","unavailable":"Non disponibile"}.get(item.get("status"),"Stato non indicato")
+            lines.append(f"- **{_plain(str(item.get('source',name)))}** · {status} · {_plain(str(item.get('gas_day') or item.get('period') or item.get('acquired') or 'data non indicata'))}")
+            if item.get("limitation") or item.get("reason"):
+                lines.append(f"  - {_plain(str(item.get('limitation') or item.get('reason')))}")
+        lines.append("Indicatori e metadati completi nelle ipotesi dell’analisi. Nessun record UMM originale.")
 
     lines.extend(["", "## Riscontri degli agenti", ""])
     for agent, result in run.results.items():

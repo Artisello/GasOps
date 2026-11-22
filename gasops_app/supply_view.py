@@ -47,5 +47,5 @@ def chart_window(frame,days):
     series=frame.copy().set_index("gas_day")
     series.index=pd.to_datetime(series.index)
     last=series.index.max()
-    index=pd.date_range(last-pd.Timedelta(days=days-1),last,freq="D")
+    index=pd.date_range(last-pd.Timedelta(days-1, unit="D"),last,freq="D")
     return series.reindex(index)

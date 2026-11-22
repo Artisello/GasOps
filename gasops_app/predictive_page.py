@@ -74,7 +74,7 @@ def panel():
                 last=frame["demand_gwh"].last_valid_index()
                 if last is None:
                     raise ValueError("Domanda assente.")
-                reference=last+pd.Timedelta(days=2)
+                reference=last+pd.Timedelta(2, unit="D")
                 if use_recent:
                     local=now.astimezone(ROME)
                     active_day=local.date() if local.hour>=6 else local.date()-timedelta(days=1)
