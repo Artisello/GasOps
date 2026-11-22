@@ -88,7 +88,7 @@ def test_every_feature_route_is_reachable_offline_and_preserves_imports(monkeypa
         if path=="risk":
             assert "risk_workspace_v2" in app.session_state
         if path=="security-of-supply":
-            assert app.radio(key="operational_platform").value=="MASE"
+            assert app.radio(key="operational_platform").value=="MAP"
 
 
 def test_all_page_modules_have_a_dependency_path_from_the_application():

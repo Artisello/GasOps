@@ -46,8 +46,8 @@ class NetworkResult:
 
 
 def check_point(point):
-    if not isinstance(point,str) or not re.fullmatch(r"[A-Z]{2}-TSO-\d{4}ITP-\d{5}(?:entry|exit)",point):
-        raise SourceSchemaError("Usa una chiave operatore-punto ITP-direzione dal catalogo ENTSOG.")
+    if not isinstance(point,str) or not re.fullmatch(r"[A-Z]{2}-TSO-\d{4}(?:ITP|LNG|UGS|PRD)-\d{5}(?:entry|exit)",point):
+        raise SourceSchemaError("Usa una chiave operatore-punto-direzione dal catalogo ENTSOG.")
     return point
 
 
@@ -56,7 +56,7 @@ def query_params(point, first, last):
     if not isinstance(first,date) or not isinstance(last,date) or not 0 <= (last-first).days < 31:
         raise SourceSchemaError("Seleziona da 1 a 31 giorni gas.")
     return {"pointDirection":point,"from":first.isoformat(),"to":last.isoformat(),
-            "indicator":",".join(INDICATORS),"periodType":"day","timezone":"CET","limit":LIMIT}
+            "indicator":",".join(INDICATORS),"periodType":"day","timeZone":"CET","limit":LIMIT}
 
 
 def _meta_int(meta, field, default=None):

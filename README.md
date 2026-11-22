@@ -4,6 +4,8 @@
 
 Demo indipendente delle potenzialità per Balancing, Settlement e Operations. La sidebar dà accesso all’intero programma: mercato, Security of Supply, AI, rischi, documenti, KPI, controlli commerciali, fonti e casi dimostrativi.
 
+**Security of Supply → Mappa della rete**: 456 elementi geografici italiani, estratto ENTSOG reale per 11 ingressi, filtri e dettagli consultabili anche offline. Aggiornamento mirato su richiesta; geografie storiche e copertura parziale esplicite. [Fonti, licenze e limiti](docs/ITALIAN_GAS_NETWORK_MAP.md).
+
 **Demo live:** https://snamigor.streamlit.app/
 
 I.G.O.R. è un prototipo indipendente, non ufficiale Snam. Gli identificatori tecnici e le configurazioni di deployment restano invariati per compatibilità.

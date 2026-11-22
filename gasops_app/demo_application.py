@@ -17,10 +17,7 @@ def prepare(route):
         state.setdefault("daily_desk_data_mode","Esempio guidato")
         state.setdefault("daily_desk_filter","Rettifiche")
     elif route=="security-of-supply" and "operational_platform" not in state:
-        from .operational_sources_page import configured_key
-        try:key=configured_key()
-        except (ValueError,KeyError,FileNotFoundError):key=None
-        state["operational_platform"]="AGSI+" if key else "MASE"
+        state["operational_platform"]="MAP"
     elif route=="kpi":
         state.setdefault("bso_view","Registro operativo")
         state.setdefault("bso_mode","Demo")

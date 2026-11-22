@@ -125,4 +125,4 @@ def test_network_rate_limit_does_not_trigger_extra_requests(monkeypatch):
     monkeypatch.setattr(en,"retrieve",fake)
     with pytest.raises(SourceUnavailable,match="429"):
         en.load_network(None,POINT,DAY,DAY,now=NOW)
-    assert len(calls)==1 and calls[0]["params"]["timezone"]=="CET"
+    assert len(calls)==1 and calls[0]["params"]["timeZone"]=="CET"

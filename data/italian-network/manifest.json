@@ -1,0 +1,12 @@
+{
+  "algorithm": "sha256",
+  "files": {
+    "infrastructure.geojson": "910272f33f682d70703fb655441573b03e00954b28e028b2ceaa7ad433b13b8d",
+    "italy.geojson": "f87487f84a9e10d1d8fb2e9e47d9efea4442f14a3560ef2bcd5e10b07e15ef50",
+    "catalog.json": "ab96738a5a0f51d21ac971ab8e6f748e4c22849197079e7522d0ed99ec4d0fda",
+    "curated.json": "c3601f7478ce514d9f53b6f60a78a76691b68a29698f1d8a4b07e11bfb58cc81",
+    "operational.json": "3d4cd7ae545091276257aa6d1d4dc0c150a45f23fb958a8e6585105a41424e00",
+    "interruptions.json": "0ecd2b524efe5c84504142e3d7b41f17edd88864ca36df79903bef37edf68fe6",
+    "LICENSE-SciGRID.txt": "9e5f1b3c610b9c2da5c313bf81d577a7d1acec686bdb0384edefa6df0f90cd94"
+  }
+}
