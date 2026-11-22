@@ -499,7 +499,7 @@ def overview() -> None:
     from .workspace import render
     from .italian_network_page import panel as network_panel
     with st.container(key="network_home_title"):
-        st.title("Sistema gas italiano")
+        st.title("I.G.O.R. — Sistema Gas Italiano")
     network_panel(mode="overview")
     st.divider()
     top = st.container()
