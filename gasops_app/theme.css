@@ -160,6 +160,30 @@ div[data-testid="stVerticalBlockBorderWrapper"] {border-color:var(--gas-border);
 .gas-map-legend span {display:inline-flex;align-items:center;gap:.3rem;white-space:nowrap;}
 .gas-map-legend b {font-size:1rem;font-weight:600;line-height:1;}
 .gas-map-legend img {display:inline-block;width:14px;height:14px;object-fit:contain;flex-shrink:0;}
+.st-key-system_status_header [data-testid="stCaptionContainer"] {margin-bottom:0;}
+.st-key-system_status_header {gap:.35rem;}
+.st-key-system_status_kpis .gas-kpi-grid {grid-template-columns:repeat(4,minmax(0,1fr));gap:.6rem;}
+.st-key-system_status_kpis .gas-kpi {padding:.75rem;min-height:0;}
+.st-key-system_status_kpis .gas-kpi .value {font-size:1.6rem;}
+.st-key-system_status_kpis .gas-kpi .detail {font-size:.75rem;line-height:1.35;}
+.gas-balance-side {font-size:.8rem;font-weight:650;color:var(--gas-muted);margin:.45rem 0;}
+.gas-balance-strip {display:flex;flex-wrap:wrap;gap:.5rem;}
+.gas-balance-cell {flex:1 1 150px;min-width:0;border:1px solid var(--gas-border);border-radius:10px;padding:.65rem .75rem;background:var(--gas-panel);}
+.gas-balance-label,.gas-balance-meta,.gas-balance-note {display:block;overflow-wrap:anywhere;}
+.gas-balance-label {font-size:.8rem;font-weight:600;min-height:1.2rem;}
+.gas-balance-cell strong {display:block;font-size:1.25rem;margin:.2rem 0;}
+.gas-balance-cell small {font-size:.7rem;color:var(--gas-muted);font-weight:400;}
+.gas-balance-meta {font-size:.7rem;color:var(--gas-muted);}
+.gas-balance-note {display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:.65rem;color:#d6b57c;line-height:1.35;margin-top:.2rem;}
+.st-key-system_operational_attention [data-testid="stVerticalBlock"] {gap:.4rem;}
+@media(max-width:760px) {.st-key-system_status_kpis .gas-kpi-grid {grid-template-columns:repeat(2,minmax(0,1fr));}.st-key-system_status_kpis .gas-kpi .value {font-size:1.3rem;}.gas-balance-cell {flex-basis:140px;}}
+@media(max-width:640px) {
+ .stApp .st-key-system_status_header [data-testid="stHorizontalBlock"] {flex-direction:row;flex-wrap:wrap;gap:.5rem;}
+ .stApp .st-key-system_status_header [data-testid="stColumn"] {width:auto!important;min-width:0;}
+ .stApp .st-key-system_status_header [data-testid="stColumn"]:first-child {flex:1 1 100%!important;}
+ .stApp .st-key-system_status_header [data-testid="stColumn"]:nth-child(2) {flex:1 1 200px!important;}
+ .stApp .st-key-system_status_header [data-testid="stColumn"]:nth-child(3) {flex:0 0 90px!important;align-self:end;}
+}
 :is(.st-key-network_overview,.st-key-network_explorer) .deck-tooltip {left:12px!important;top:12px!important;transform:none!important;max-width:min(240px,calc(100% - 24px))!important;}
 .gas-map-description {position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
 .stApp [class*="st-key-network_map_frame_"] {gap:0!important;position:relative;}

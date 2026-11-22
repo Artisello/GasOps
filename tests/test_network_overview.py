@@ -33,14 +33,14 @@ def test_both_home_modes_open_map_and_side_panel_without_api_calls(monkeypatch,t
         return original(*a,**kw)
     monkeypatch.setattr(view.st,"pydeck_chart",capture)
     app=AppTest.from_file(ROOT/"app.py",default_timeout=30).run()
-    assert not app.exception and app.title[0].value == "Sistema gas italiano"
+    assert not app.exception and app.title[0].value == "I.G.O.R. — Sistema Gas Italiano"
     assert len(app.get("deck_gl_json_chart")) == 1 and calls[0]["height"] == 500
     assert "overview" in calls[0]["key"] and callable(calls[0]["on_select"])
     assert app.button(key="net_overview_open").label == "Esplora la rete"
     assert not any(w.key == "net_layers" for w in app.multiselect)
     assert not any(b.key == "net_refresh" for b in app.button)
-    assert any("Copertura parziale" in c.value for c in app.caption)
-    assert any("Storico" in h.proto.body and "giorno gas" in h.proto.body for h in app.get("html"))
+    assert any("componenti" in c.value and "/9" in c.value for c in app.caption)
+    assert any("Giorno gas storico" in h.proto.body for h in app.get("html"))
     assert any("SciGRID 2021" in c.value for c in app.caption)
     if mode == "demo":
         assert any("simulazioni" in s.value for s in app.subheader)
@@ -143,13 +143,13 @@ def test_overview_limits_kpis_and_retains_gie_date_and_failed_refresh_state(monk
     app=AppTest.from_string("from gasops_app.italian_network_page import panel\npanel(mode='overview')",default_timeout=30)
     # Synthetic GIE state, deliberately one day older than the ENTSOG extract.
     app.session_state["AGSI+_IT"]={"result":{"frame":pd.DataFrame([{"gas_day":date(2026,11,19),"stock_twh":123.4}]),
-        "acquired":datetime(2026,11,21,tzinfo=timezone.utc),"failed":True}}
+        "acquired":datetime(2026,11,21,tzinfo=timezone.utc),"failed":True,"scope":"IT"}}
     app.run()
     assert not app.exception
     grid=next(h.proto.body for h in app.get("html") if 'class="gas-kpi-grid"' in h.proto.body)
-    assert grid.count('class="gas-kpi"') == 4
+    assert grid.count('class="gas-kpi"') + grid.count('class="gas-kpi gas-kpi-missing"') == 4
     assert "19 nov 2026" in grid and "ultima copia valida" in grid
-    assert any("GIE AGSI+" in c.value and "aggregato nazionale distinto" in c.value for c in app.caption)
+    assert "GIE AGSI+" in grid
 
 
 def test_crowded_labels_are_decluttered_without_moving_the_markers():

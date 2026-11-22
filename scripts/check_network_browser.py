@@ -85,6 +85,9 @@ def main():
         def check_layout(page,width):
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"),"Horizontal overflow"
             assert not page.locator('[data-testid="stException"]').count()
+            expect(page.locator(".st-key-system_status_kpis .gas-kpi")).to_have_count(4)
+            expect(page.locator(".st-key-system_daily_balance .gas-balance-cell")).to_have_count(9)
+            expect(page.get_by_role("heading",name="Attenzione operativa",exact=True)).to_be_visible()
             assert page.locator("#deckgl-overlay").evaluate("e=>!!e.getContext('webgl2')"),"WebGL2 unavailable"
             assert page.locator("#deckgl-overlay").evaluate("e=>getComputedStyle(e).cursor") == "default","Expected arrow cursor"
             assert page.locator(".gas-map-legend img").evaluate_all("xs=>xs.length>0&&xs.every(x=>x.naturalWidth>0)"),"Legend symbols did not render"
@@ -185,6 +188,18 @@ def main():
         page.screenshot(path=str(args.output/"desktop-full.png"),full_page=True)
         page.get_by_role("link",name="Panoramica",exact=True).click()
         expect(page.locator(".st-key-network_home_detail h3")).to_have_text("Tarvisio",timeout=30000)
+        # A calculated finding uses the existing verified point/day drill-down.
+        page.get_by_role("button",name="Apri punto",exact=True).first.click()
+        expect(page.locator(".st-key-network_detail h3")).to_contain_text("Adriatic LNG",timeout=30000)
+        page.get_by_role("link",name="Panoramica",exact=True).click()
+        expect(page.locator(".st-key-network_home_detail h3")).to_contain_text("Adriatic LNG",timeout=30000)
+        page.locator(".st-key-system_daily_balance").screenshot(path=str(args.output/"daily-balance.png"))
+        page.locator(".st-key-system_operational_attention").screenshot(path=str(args.output/"attention.png"))
+        page.set_viewport_size({"width":1440,"height":2200})
+        page.locator("h1").first.scroll_into_view_if_needed()
+        end = page.locator(".st-key-net_overview_open").bounding_box()
+        page.screenshot(path=str(args.output/"system-status-desktop.png"),
+            clip={"x":0,"y":0,"width":1440,"height":min(2200,end["y"]+end["height"]+16)})
         context.close()
         for width,height in [(820,1180),(390,844),(375,812)]:
             page,context = new_page(width,height)
@@ -196,7 +211,7 @@ def main():
     assert not any(any(host in url for host in ("cartocdn","mapbox.com","entsog","gie.eu","openstreetmap"))
                    for url in report["blocked"]),"Map tried to reach an external data or tile service"
     (args.output/"checks.json").write_text(json.dumps(report,indent=2))
-    print("PASS: offline WebGL, arrow cursor, opaque selection, shared legend, bounded zoom/reset, overview history, navigation, date axis, four viewports")
+    print("PASS: offline system status, four KPIs, nine balance components, attention drill-down, WebGL, map interactions, history and four viewports")
 
 
 if __name__ == "__main__":

@@ -49,7 +49,7 @@ def test_ready_examples_can_explore_every_view_offline_without_changing_imports(
 def test_default_mode_exposes_all_features_in_the_sidebar(monkeypatch, mode):
     monkeypatch.setenv("GASOPS_APP_MODE", mode)
     app = AppTest.from_file(ROOT / "app.py", default_timeout=30).run()
-    assert not app.exception and app.title[0].value == "Sistema gas italiano"
+    assert not app.exception and app.title[0].value == "I.G.O.R. — Sistema Gas Italiano"
     assert len(app.get("page_link")) == 11
     assert not any(r.key == NAV for r in app.radio)
     assert not app.get("file_uploader") and not app.sidebar.selectbox

@@ -162,6 +162,10 @@ def _operational_summary(network, item, observations, snapshots, direction, firs
 
 
 def _open_full(identifier, first, last, direction=None):
+    snapshots = (*assets()[2], *st.session_state.get(STATE,{}).get("snapshots",{}).values())
+    earliest = min(s.first for s in snapshots)
+    last = max(earliest, min(last, _last_completed(utc_now())))
+    first = max(earliest, min(first, last))
     st.session_state[FOCUS] = {"id":identifier,"period":(first,last),"direction":direction}
     st.session_state["operational_platform"] = "MAP"
     from .operational_sources_page import operational_context
@@ -169,15 +173,17 @@ def _open_full(identifier, first, last, direction=None):
 
 
 def overview_panel():
+    from .system_status import build_status
+    from . import system_status_page as system
     network,boundary,bundled = assets()
     saved = st.session_state.get(STATE,{})
     snapshots = (*bundled,*saved.get("snapshots",{}).values())
     observations = merge_observations(snapshots)
     now = utc_now()
-    current_day = _last_completed(now)
-    days = [o.gas_day for o in observations if o.indicator == "Physical Flow" and o.gas_day and o.gas_day <= current_day
-            and o.value is not None and o.quality_status not in ("conflict","N/A","unaligned")]
-    day = max(days) if days else current_day
+    status = build_status(network,snapshots,st.session_state,now,
+                          gas_day=st.session_state.get(system.SELECTED_DAY,st.session_state.get(system.DAY_KEY)),
+                          interruptions=(bundled_interruptions(),),policy=system.policy())
+    day = status.gas_day
     first = day-timedelta(days=6)
     identifier = st.session_state.get(SELECTED,st.session_state.get("net_infrastructure","INET_BP_65"))
     all_items = {i.id:i for i in network.infrastructure}
@@ -185,25 +191,13 @@ def overview_panel():
         identifier = "INET_BP_65"
     st.session_state[SELECTED] = identifier
     visible = tuple(i for i in network.infrastructure if i.category in ("pipeline","entry","lng","storage") or i.id == identifier)
-    metrics = map_kpis(network,visible,observations,day)
-    items = []
-    if metrics["entry_flow_gwh_d"] is not None:
-        items.append(("Frontiere coperte",metrics["entry_flow_gwh_d"],"GWh/d",f"{metrics['valid_entry_points']}/{metrics['mapped_entry_points']} ingressi · GNL escluso",1))
-    if metrics["utilization_pct"] is not None:
-        items.append(("Utilizzo capacità",metrics["utilization_pct"],"%",f"{metrics['comparable_points']} ingressi confrontabili",1))
-    items.append(("Copertura ENTSOG",metrics["valid_points"],"",f"su {metrics['mapped_points']} punti mappati",0))
-    national = st.session_state.get("AGSI+_IT",{}).get("result")
-    if national and not national["frame"].empty:
-        row = national["frame"].iloc[-1]
-        if pd.notna(row.stock_twh):
-            failed = national["failed"] or st.session_state.get("AGSI+_IT",{}).get("error")
-            items.insert(2,("Scorte nazionali GIE",row.stock_twh,"TWh",data_it(row.gas_day)+(" · ultima copia valida" if failed else ""),2))
     item = all_items[identifier]
     bindings = network.bindings_for(identifier,"ENTSOG")
     directions = sorted({b.direction for b in bindings})
     if st.session_state.get("net_overview_direction") not in directions:
         st.session_state["net_overview_direction"] = "entry" if "entry" in directions else directions[0] if directions else None
     direction = st.session_state.get("net_overview_direction")
+    system.header(status)
     with st.container(key="network_overview"):
         map_col, detail = st.columns([1,1.3],gap="small")
         with map_col:
@@ -211,12 +205,6 @@ def overview_panel():
             render_legend(c for c in CATEGORIES if any(i.category == c for i in visible))
             st.caption("SciGRID 2021 · collegamenti storici schematici · CC BY 4.0 · Natural Earth, pubblico dominio")
         with detail.container(key="network_home_detail"):
-            with st.container(key="network_home_summary"):
-                kpi_grid(items)
-            status = kpi_status(metrics,snapshots,day,now,current_day=current_day,failures=saved.get("failures",()))
-            _source_status(status,day)
-            if len(items) == 4:
-                st.caption("GIE AGSI+ · acquisito "+local_time(national["acquired"])+" · aggregato nazionale distinto dai punti di rete")
             st.subheader(display_name(item.name))
             st.caption(" · ".join(filter(None,[CATEGORIES[item.category],item.operator,*item.regions])))
             if len(directions)>1:
@@ -236,13 +224,15 @@ def overview_panel():
                         st.caption("Storico GIE disponibile nella scheda Dati del singolo impianto.")
             else:
                 _operational_summary(network,item,observations,snapshots,direction,first,day,saved,compact=True)
-            st.button("Esplora la rete",icon=":material/arrow_forward:",key="net_overview_open",
-                width="stretch",on_click=_open_full,args=(identifier,first,day,direction))
             with st.popover("Cerca infrastruttura",width="stretch"):
                 st.session_state["net_overview_infrastructure"] = identifier
                 st.selectbox("Infrastruttura",[i.id for i in sorted(network.infrastructure,key=lambda i:i.name)],
                     key="net_overview_infrastructure",format_func=lambda key:display_name(all_items[key].name),
                     on_change=_widget_selection,args=("net_overview_infrastructure",))
+    system.balance(status)
+    system.attention(status,network,_open_full)
+    st.button("Esplora la rete",icon=":material/arrow_forward:",key="net_overview_open",
+              width="stretch",on_click=_open_full,args=(identifier,first,day,direction))
 
 
 def _plain(value):
@@ -441,7 +431,7 @@ def panel(mode="full"):
                     for notice in saved["notices"]:
                         st.caption(notice)
     period = period_col.date_input("Periodo · giorni gas", value=(default_last-timedelta(days=6),default_last),
-        min_value=min(s.first for s in bundled), max_value=_last_completed(now), key="net_period", format="DD/MM/YYYY")
+        min_value=min(s.first for s in snapshots), max_value=_last_completed(now), key="net_period", format="DD/MM/YYYY")
     with actions:
         refresh_col, reset_col = st.columns(2)
         refresh_clicked = refresh_col.button("Aggiorna", icon=":material/refresh:", key="net_refresh", width="stretch",
