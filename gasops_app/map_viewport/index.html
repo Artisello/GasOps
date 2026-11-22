@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><title>Dimensioni mappa</title></head>
+<body aria-hidden="true" style="margin:0">
+<script>
+// Measure only this invisible frame, without touching the parent app or map.
+const send = (type, data={}) => parent.postMessage({isStreamlitMessage:true,type,...data},"*");
+let previous, pending;
+const measure = () => {
+  const width = Math.round(innerWidth);
+  if (width >= 200 && width !== previous) {
+    previous = width;
+    send("streamlit:setComponentValue",{value:width,dataType:"json"});
+  }
+};
+addEventListener("message",event => {
+  if (event.data?.type === "streamlit:render") measure();
+});
+addEventListener("resize",() => {
+  clearTimeout(pending);
+  pending = setTimeout(measure,150);
+});
+send("streamlit:componentReady",{apiVersion:1});
+send("streamlit:setFrameHeight",{height:0});
+</script>
+</body></html>

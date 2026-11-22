@@ -23,7 +23,7 @@ def offline(monkeypatch,tmp_path):
 
 
 @pytest.mark.parametrize("mode",["demo","workbench"])
-def test_both_home_modes_open_a_full_width_map_without_api_calls(monkeypatch,tmp_path,mode):
+def test_both_home_modes_open_map_and_side_panel_without_api_calls(monkeypatch,tmp_path,mode):
     offline(monkeypatch,tmp_path)
     monkeypatch.setenv("GASOPS_APP_MODE",mode)
     calls=[]
@@ -33,13 +33,14 @@ def test_both_home_modes_open_a_full_width_map_without_api_calls(monkeypatch,tmp
         return original(*a,**kw)
     monkeypatch.setattr(view.st,"pydeck_chart",capture)
     app=AppTest.from_file(ROOT/"app.py",default_timeout=30).run()
-    assert not app.exception and app.title[0].value == "I.G.O.R. - Sistema gas italiano"
+    assert not app.exception and app.title[0].value == "Sistema gas italiano"
     assert len(app.get("deck_gl_json_chart")) == 1 and calls[0]["height"] == 500
     assert "overview" in calls[0]["key"] and callable(calls[0]["on_select"])
     assert app.button(key="net_overview_open").label == "Esplora la rete"
     assert not any(w.key == "net_layers" for w in app.multiselect)
     assert not any(b.key == "net_refresh" for b in app.button)
-    assert any("Estratto ENTSOG" in c.value and "copertura parziale" in c.value for c in app.caption)
+    assert any("Copertura parziale" in c.value for c in app.caption)
+    assert any("Storico" in h.proto.body and "giorno gas" in h.proto.body for h in app.get("html"))
     assert any("SciGRID 2021" in c.value for c in app.caption)
     if mode == "demo":
         assert any("simulazioni" in s.value for s in app.subheader)

@@ -9,7 +9,8 @@ import shutil
 import pytest
 
 from gasops_app.italian_network import (ASSETS, CATEGORIES, applicable, filter_infrastructure,
-    load_network_assets, map_kpis, merge_observations, selected_id, validate_geometry, valid_position)
+    load_network_assets, map_kpis, merge_observations, selected_id, validate_geometry, valid_position,
+    evidence_status, kpi_status, point_metrics)
 from gasops_app.italian_network_sources import parse_observations, Snapshot, encode_snapshot, decode_snapshot
 
 DAY = date(2026,11,20)
@@ -34,6 +35,80 @@ def row(binding, indicator="Physical Flow", value=2_000_000, **kwargs):
 
 def observations(binding, rows):
     return parse_observations(rows,binding,DAY,DAY,NOW)
+
+
+def test_kpi_dates_ignore_unrelated_indicator_and_gas_day(network,binding):
+    source = observations(binding,[row(binding),row(binding,"Firm Technical",4_000_000)])
+    older = NOW-timedelta(hours=2)
+    source = tuple(replace(o,retrieved_at=older,publication_status="Confirmed") for o in source)
+    # Synthetic fresh records must not freshen the older measures being shown.
+    flow = next(o for o in source if o.indicator == "Physical Flow")
+    unrelated = (replace(flow,indicator="Nomination",retrieved_at=NOW),
+                 replace(flow,gas_day=DAY-timedelta(days=1),retrieved_at=NOW))
+    visible = tuple(i for i in network.infrastructure if i.id == binding.infrastructure_id)
+    metrics = map_kpis(network,visible,(*source,*unrelated),DAY)
+    snapshot = Snapshot(binding.point_direction,source,DAY,DAY,older)
+    status = kpi_status(metrics,(snapshot,),DAY,NOW,current_day=DAY)
+    assert status["status"] == "Aggiornato" and status["complete"]
+    assert status["oldest"] == status["newest"] == older
+    assert status["age"] == timedelta(hours=2)
+    assert {o.indicator for o in metrics["observations"]} == {"Physical Flow","Firm Technical"}
+
+
+def test_one_recent_point_does_not_freshen_the_other_points(network,binding):
+    other = next(b for b in network.bindings if b.provider == "ENTSOG" and b.direction == "entry"
+                 and b.external_id.startswith("ITP-") and b.infrastructure_id != binding.infrastructure_id)
+    old = replace(observations(binding,[row(binding)])[0],retrieved_at=NOW-timedelta(hours=18),publication_status="Confirmed")
+    new = replace(observations(other,[row(other)])[0],retrieved_at=NOW,publication_status="Confirmed")
+    visible = tuple(i for i in network.infrastructure if i.id in (binding.infrastructure_id,other.infrastructure_id))
+    metrics = map_kpis(network,visible,(old,new),DAY)
+    snapshots = (Snapshot(binding.point_direction,(old,),DAY,DAY,old.retrieved_at),Snapshot(other.point_direction,(new,),DAY,DAY,NOW))
+    status = kpi_status(metrics,snapshots,DAY,NOW,current_day=DAY)
+    assert status["status"] == "Storico" and status["age"] == timedelta(hours=18)
+    assert status["oldest"] == old.retrieved_at and status["newest"] == NOW
+
+
+@pytest.mark.parametrize("case,expected",[("partial","Parziale"),("failed","Parziale"),("missing_snapshot","Parziale"),
+    ("unconfirmed","Parziale"),("future_acquisition","Parziale"),("older_day","Storico"),("fresh","Aggiornato")])
+def test_data_status_requires_current_complete_confirmed_evidence(network,binding,case,expected):
+    record = replace(observations(binding,[row(binding)])[0],publication_status="Confirmed")
+    if case == "unconfirmed":record = replace(record,publication_status="Provisional")
+    if case == "future_acquisition":record = replace(record,retrieved_at=NOW+timedelta(hours=1))
+    snap = Snapshot(binding.point_direction,(record,),DAY,DAY,record.retrieved_at,partial=case == "partial")
+    visible = tuple(i for i in network.infrastructure if i.id == binding.infrastructure_id)
+    metrics = map_kpis(network,visible,(record,),DAY)
+    status = kpi_status(metrics,() if case == "missing_snapshot" else (snap,),DAY,NOW,
+        current_day=DAY+timedelta(days=1) if case == "older_day" else DAY,
+        failures={binding.point_direction:NOW} if case == "failed" else {})
+    assert status["status"] == expected
+
+
+def test_missing_evidence_and_missing_publication_are_explicit(binding):
+    missing = evidence_status((),DAY,NOW,complete=True,current_day=DAY)
+    assert missing["status"] == "Non disponibile" and missing["age"] is None and not missing["complete"]
+    record = observations(binding,[row(binding)])[0]
+    status = evidence_status((replace(record,observed_at=None),),DAY,NOW,current_day=DAY)
+    assert status["published_oldest"] is None
+    published = evidence_status((replace(record,observed_at="2026-11-21T14:00:00+01:00"),),DAY,NOW,current_day=DAY)
+    assert published["published_oldest"] == datetime(2026,11,21,13,tzinfo=timezone.utc)
+
+
+def test_point_summary_uses_latest_valid_flow_day_and_only_comparable_capacity(binding):
+    current = observations(binding,[row(binding,value=0),row(binding,"Firm Technical",4_000_000),
+        row(binding,"Firm Available",1_000_000),row(binding,"Nomination",3_000_000),row(binding,"Renomination",2_000_000)])
+    flow = next(o for o in current if o.indicator == "Physical Flow")
+    nomination = next(o for o in current if o.indicator == "Nomination")
+    previous = replace(flow,gas_day=DAY-timedelta(days=1),period_from=flow.period_from-timedelta(days=1),
+                       period_to=flow.period_to-timedelta(days=1),value=Decimal("2"))
+    unrelated = replace(nomination,gas_day=DAY+timedelta(days=1),retrieved_at=NOW+timedelta(hours=1))
+    result = point_metrics((*current,previous,unrelated),binding.point_direction,DAY-timedelta(days=1),DAY+timedelta(days=1))
+    assert result["day"] == DAY and result["values"]["Physical Flow"] == 0
+    assert result["utilization_pct"] == 0 and result["change_gwh_d"] == -2
+    assert result["values"]["Firm Available"] == 1 and result["values"]["Renomination"] == 2
+    assert unrelated not in result["observations"]
+    assert previous in result["observations"]  # The displayed delta has its own evidence too.
+    missing = point_metrics((),binding.point_direction,DAY,DAY)
+    assert missing["values"] == {} and missing["utilization_pct"] is None and missing["change_gwh_d"] is None
 
 
 def test_public_assets_have_real_ids_provenance_and_italy_only(network):

@@ -1,6 +1,6 @@
 """Italian infrastructure identities, geography and observations are separate records."""
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 import json
@@ -182,21 +182,26 @@ def selected_id(event, visible_ids):
     return None
 
 
-def applicable(observations, point_direction, day, indicator):
+def applicable_observations(observations, point_direction, day, indicator):
     """A capacity rate must cover the whole same gas day; no clock correction."""
     first, last = _start(day), _start(day + timedelta(days=1))
     if indicator in ("Firm Technical", "Firm Booked", "Firm Available") and any(
             o.point_direction == point_direction and o.indicator == indicator
             and o.period_from < last and o.period_to > first
             and (o.value is None or o.quality_status == "conflict") for o in observations):
-        return None
+        return ()
     candidates = [o for o in observations if o.point_direction == point_direction and o.indicator == indicator
                   and o.unit == "GWh/d"
                   and o.value is not None and o.quality_status not in ("conflict", "N/A", "unaligned")
                   and (o.gas_day == day if indicator not in ("Firm Technical", "Firm Booked", "Firm Available")
                        else o.period_from <= first and o.period_to >= last)]
     values = {o.value for o in candidates}
-    return next(iter(values)) if len(values) == 1 else None
+    return tuple(candidates) if len(values) == 1 else ()
+
+
+def applicable(observations, point_direction, day, indicator):
+    rows = applicable_observations(observations,point_direction,day,indicator)
+    return rows[0].value if rows else None
 
 
 def merge_observations(snapshots):
@@ -218,20 +223,90 @@ def map_kpis(network, visible, observations, day):
     ids = {i.id for i in visible}
     points = [b for b in network.bindings if b.provider == "ENTSOG" and b.infrastructure_id in ids and b.direction == "entry"
               and b.external_id.startswith("ITP-")]
-    values, comparable = [], []
+    values, comparable, evidence = [], [], {}
+    def collect(point, indicator):
+        rows = applicable_observations(observations,point.point_direction,day,indicator)
+        for row in rows:
+            evidence[(row.point_direction,row.indicator,row.period_from,row.period_to,row.source_id)] = row
+        return rows[0].value if rows else None
     for point in points:
-        flow = applicable(observations, point.point_direction, day, "Physical Flow")
+        flow = collect(point, "Physical Flow")
         capacity = applicable(observations, point.point_direction, day, "Firm Technical")
         if flow is not None:
             values.append(flow)
         if flow is not None and flow >= 0 and capacity is not None and capacity > 0:
             comparable.append((flow, capacity))
+            collect(point,"Firm Technical")
     all_points = [b for b in network.bindings if b.provider == "ENTSOG" and b.infrastructure_id in ids]
     valid_ids = {b.infrastructure_id for b in all_points
-                 if applicable(observations, b.point_direction, day, "Physical Flow") is not None}
+                 if collect(b,"Physical Flow") is not None}
     return {"mapped": len(ids), "categories": {c: sum(i.category == c for i in visible) for c in CATEGORIES},
             "valid_points": len(valid_ids), "mapped_points": len({b.infrastructure_id for b in all_points}),
             "valid_entry_points": len(values), "mapped_entry_points": len(points),
             "entry_flow_gwh_d": sum(values) if values else None,
             "utilization_pct": 100 * sum(f for f, _ in comparable) / sum(c for _, c in comparable) if comparable else None,
-            "comparable_points": len(comparable)}
+            "comparable_points": len(comparable),"observations":tuple(evidence.values())}
+
+
+def evidence_status(records, day, now, *, complete=False, failed=False, current_day=None):
+    """Dates refer only to records actually supporting the displayed measures.
+
+    A recent refresh of another indicator/day cannot freshen these records.
+    Cache expiry follows the operational adapter's 12-hour TTL.
+    """
+    records = tuple(records)
+    if not records:
+        return {"status":"Non disponibile","oldest":None,"newest":None,"age":None,
+                "published_oldest":None,"published_newest":None,"failed":failed,"complete":False}
+    oldest=min(o.retrieved_at for o in records)
+    newest=max(o.retrieved_at for o in records)
+    publications=[]
+    for row in records:
+        if row.observed_at:
+            try:
+                stamp=datetime.fromisoformat(row.observed_at.replace("Z","+00:00"))
+                if stamp.tzinfo is not None:publications.append(stamp.astimezone(timezone.utc))
+            except (ValueError,AttributeError):pass
+    historical=(current_day is not None and day<current_day) or now-oldest>timedelta(hours=12)
+    confirmed=all(o.publication_status.casefold() in ("confirmed","final","definitive") for o in records)
+    future = newest > now or (current_day is not None and day > current_day)
+    status="Storico" if historical else "Aggiornato" if complete and confirmed and not failed and not future else "Parziale"
+    return {"status":status,"oldest":oldest,"newest":newest,"age":max(timedelta(0),now-oldest),
+            "published_oldest":min(publications) if publications else None,
+            "published_newest":max(publications) if publications else None,"failed":failed,"complete":complete}
+
+
+def kpi_status(metrics, snapshots, day, now, *, current_day, failures=()):
+    records=metrics["observations"]
+    points={o.point_direction for o in records}
+    latest={}
+    for snapshot in sorted(snapshots,key=lambda s:s.acquired):
+        if snapshot.point_direction in points and snapshot.first<=day<=snapshot.last:
+            latest[snapshot.point_direction]=snapshot
+    complete=(metrics["valid_points"] == metrics["mapped_points"] and bool(points)
+              and points<=set(latest) and not any(s.partial for s in latest.values()))
+    failed = any(s.failed for s in latest.values()) or bool(points & set(failures))
+    return evidence_status(records,day,now,complete=complete,failed=failed,current_day=current_day)
+
+
+def point_metrics(observations, point, first, last):
+    """Latest usable gas day in the chosen window, plus same-day capacity rates.
+
+    Never use a newer nomination or an unrelated day to date the physical flow.
+    The previous calendar day's flow is required for the daily change.
+    """
+    days = (last-timedelta(days=n) for n in range((last-first).days+1))
+    day = next((d for d in days if applicable(observations,point,d,"Physical Flow") is not None),last)
+    values, evidence = {}, []
+    for indicator in ("Physical Flow","Firm Technical","Firm Available","Nomination","Renomination"):
+        rows = applicable_observations(observations,point,day,indicator)
+        if rows:
+            values[indicator] = rows[0].value
+            evidence.extend(rows)
+    flow, capacity = values.get("Physical Flow"), values.get("Firm Technical")
+    utilization = 100*flow/capacity if flow is not None and flow >= 0 and capacity is not None and capacity > 0 else None
+    previous = applicable(observations,point,day-timedelta(days=1),"Physical Flow")
+    change = flow-previous if flow is not None and previous is not None and day > first else None
+    if change is not None:
+        evidence.extend(applicable_observations(observations,point,day-timedelta(days=1),"Physical Flow"))
+    return {"day":day,"values":values,"utilization_pct":utilization,"change_gwh_d":change,"observations":tuple(evidence)}

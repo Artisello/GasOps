@@ -52,7 +52,8 @@ def _sas_chart(b, key, height=290):
 def _overview(pack, *, network=True):
     if network:
         from .italian_network_page import panel
-        st.title("I.G.O.R. - Sistema gas italiano")
+        with st.container(key="network_home_title"):
+            st.title("Sistema gas italiano")
         panel(mode="overview")
         st.divider()
         st.subheader("Casi BSO · simulazioni")

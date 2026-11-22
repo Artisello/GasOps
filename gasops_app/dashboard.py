@@ -498,7 +498,8 @@ def _overview_mix(context):
 def overview() -> None:
     from .workspace import render
     from .italian_network_page import panel as network_panel
-    st.title("I.G.O.R. - Sistema gas italiano")
+    with st.container(key="network_home_title"):
+        st.title("Sistema gas italiano")
     network_panel(mode="overview")
     st.divider()
     top = st.container()

@@ -20,7 +20,7 @@ def test_home_works_with_presentation_module_loaded_before_sidebar_release(monke
     monkeypatch.delenv("GASOPS_APP_MODE",raising=False)
     app=AppTest.from_file(ROOT/"app.py",default_timeout=30).run()
     assert not app.exception
-    assert app.title[0].value=="I.G.O.R. - Sistema gas italiano"
+    assert app.title[0].value=="Sistema gas italiano"
     assert len(app.get("page_link"))==11
     assert len(app.get("plotly_chart"))==1
 
@@ -32,7 +32,7 @@ def test_home_does_not_call_a_cached_callback_from_the_previous_release(monkeypa
     monkeypatch.delenv("GASOPS_APP_MODE",raising=False)
     app=AppTest.from_file(ROOT/"app.py",default_timeout=30).run()
     assert not app.exception
-    assert app.title[0].value=="I.G.O.R. - Sistema gas italiano"
+    assert app.title[0].value=="Sistema gas italiano"
     assert len(app.get("page_link"))==11
 
 
