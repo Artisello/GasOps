@@ -3,6 +3,7 @@ from dataclasses import asdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from html import escape
+from functools import partial
 import json
 
 import pandas as pd
@@ -27,6 +28,8 @@ LABELS = dict(zip(INDICATORS, ("Flusso fisico", "Nomina", "Rinomina", "Allocazio
                               "Capacità tecnica", "Capacità prenotata", "Capacità disponibile")))
 FILTER_KEYS = ("net_layers", "net_operators", "net_regions", "net_statuses", "net_period",
                "net_events", "net_only_events", "net_labels", "net_infrastructure", "net_direction", "net_indicator")
+SELECTED = "italian_network_selected_v1"
+FOCUS = "italian_network_focus_v1"
 
 
 @st.cache_data(show_spinner=False)
@@ -50,7 +53,96 @@ def reset_filters():
     for key in FILTER_KEYS:
         st.session_state.pop(key, None)
     st.session_state.pop("net_pending_selection", None)
+    st.session_state.pop(SELECTED,None)
     st.session_state["net_map_epoch"] = st.session_state.get("net_map_epoch", 0)+1
+
+
+def _accept_pick(chart_key, visible_ids, mode, event=None):
+    identifier = selected_id(event if event is not None else st.session_state.get(chart_key,{}), set(visible_ids))
+    if identifier:
+        st.session_state[SELECTED] = identifier
+        if mode == "full":
+            st.session_state["net_pending_selection"] = identifier
+
+
+def _widget_selection(key):
+    if st.session_state.get(key):
+        st.session_state[SELECTED] = st.session_state[key]
+
+
+def render_map(network, boundary, visible, identifier, *, mode, observations, day, direction="entry", events=(), show_labels=True):
+    """Native selection callback runs before the single Streamlit rerun."""
+    key = f"italian_network_{mode}_deck_{st.session_state.get('net_map_epoch',0)}"
+    st.pydeck_chart(deck(network,boundary,visible,identifier,events,observations=observations,
+        day=day,direction=direction,show_labels=show_labels,mode=mode),key=key,
+        height=500 if mode == "overview" else 650,selection_mode="single-object",
+        on_select=partial(_accept_pick,key,tuple(i.id for i in visible),mode))
+
+
+def render_legend(categories):
+    labels = " · ".join(f'<span style="color:rgb({",".join(map(str,COLORS[c]))})">●</span> {escape(CATEGORIES[c])}' for c in categories)
+    st.html('<div style="font-size:12px;color:#b0bed0">'+labels+'</div>')
+
+
+def _open_full(identifier, first, last):
+    st.session_state[FOCUS] = {"id":identifier,"period":(first,last)}
+    st.session_state["operational_platform"] = "MAP"
+    from .operational_sources_page import operational_context
+    st.switch_page(st.Page(operational_context,title="Security of Supply",icon=":material/shield:",url_path="security-of-supply"))
+
+
+def overview_panel():
+    network,boundary,bundled = assets()
+    saved = st.session_state.get(STATE,{})
+    snapshots = (*bundled,*saved.get("snapshots",{}).values())
+    observations = merge_observations(snapshots)
+    day = min(max(s.last for s in snapshots if s.records),_last_completed(utc_now()))
+    first = day-timedelta(days=6)
+    identifier = st.session_state.get(SELECTED,st.session_state.get("net_infrastructure","INET_BP_65"))
+    all_items = {i.id:i for i in network.infrastructure}
+    if identifier not in all_items:
+        identifier = "INET_BP_65"
+    st.session_state[SELECTED] = identifier
+    visible = tuple(i for i in network.infrastructure if i.category in ("pipeline","entry","lng","storage") or i.id == identifier)
+    render_map(network,boundary,visible,identifier,mode="overview",observations=observations,day=day)
+    render_legend(("pipeline","entry","lng","storage"))
+    metrics = map_kpis(network,visible,observations,day)
+    items = [("Frontiere coperte",metrics["entry_flow_gwh_d"],"GWh/d",f"{data_it(day)} · {metrics['valid_entry_points']}/{metrics['mapped_entry_points']} ingressi",1),
+        ("Utilizzo capacità",metrics["utilization_pct"],"%",f"{data_it(day)} · {metrics['comparable_points']} ingressi confrontabili",1),
+        ("Copertura ENTSOG",metrics["valid_points"],"",f"{data_it(day)} · su {metrics['mapped_points']} punti mappati",0)]
+    national = st.session_state.get("AGSI+_IT",{}).get("result")
+    if national and not national["frame"].empty:
+        row = national["frame"].iloc[-1]
+        if pd.notna(row.stock_twh):
+            failed = national["failed"] or st.session_state.get("AGSI+_IT",{}).get("error")
+            items.insert(2,("Scorte nazionali GIE",row.stock_twh,"TWh",data_it(row.gas_day)+(" · ultima copia valida" if failed else ""),2))
+    with st.container(key="network_home_summary"):
+        kpi_grid(items)
+    acquired = max(o.retrieved_at for o in observations)
+    st.caption(f"Estratto ENTSOG · giorno gas {data_it(day)} · acquisito {local_time(acquired)} · copertura parziale")
+    st.caption("SciGRID 2021 · collegamenti storici schematici · CC BY 4.0 · Natural Earth, pubblico dominio")
+    if len(items) == 4:
+        st.caption("GIE AGSI+ · acquisito "+local_time(national["acquired"])+" · aggregato nazionale distinto dai punti di rete")
+    item = all_items[identifier]
+    detail, actions = st.columns([3,1],vertical_alignment="center")
+    with detail:
+        st.markdown("**"+display_name(item.name)+"** · "+CATEGORIES[item.category])
+        st.caption(" · ".join(filter(None,[item.operator,*item.regions])))
+        st.caption("Geografia: "+item.status)
+        binding = next((b for b in network.bindings_for(identifier,"ENTSOG") if b.direction == "entry"),None)
+        flow = applicable(observations,binding.point_direction,day,"Physical Flow") if binding else None
+        if flow is not None:
+            st.caption(f"Flusso pubblicato: {numero(flow,1)} GWh/d · {data_it(day)} · {binding.external_id}")
+        if item.category == "pipeline":
+            st.caption("Selezione evidenziata in verde · collegamento storico, senza misura di flusso sul segmento")
+    with actions:
+        st.button("Esplora la rete",icon=":material/arrow_forward:",key="net_overview_open",
+            width="stretch",on_click=_open_full,args=(identifier,first,day))
+        with st.popover("Cerca infrastruttura",width="stretch"):
+            st.session_state["net_overview_infrastructure"] = identifier
+            st.selectbox("Infrastruttura",[i.id for i in sorted(visible,key=lambda i:i.name)],
+                key="net_overview_infrastructure",format_func=lambda key:display_name(all_items[key].name),
+                on_change=_widget_selection,args=("net_overview_infrastructure",))
 
 
 def _plain(value):
@@ -94,8 +186,11 @@ def _history(observations, point, first, last):
     figure = go.Figure(go.Scatter(x=days, y=[float(v) if v is not None else None for v in values],
         mode="lines+markers", connectgaps=False, line={"color":"#65dfbf", "width":2.5},
         marker={"size":5}, hovertemplate="%{x|%d/%m/%Y}<br>%{y:.2f} GWh/d<extra></extra>"))
-    figure.update_layout(height=220, margin={"l":0,"r":0,"t":8,"b":10},
-                         yaxis_title="GWh/d", showlegend=False)
+    figure.update_layout(template="plotly_dark",height=250, margin={"l":42,"r":14,"t":12,"b":52},
+                         paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",
+                         font={"color":"#b0bed0","family":"Arial, sans-serif","size":11},
+                         yaxis={"title":"GWh/d","automargin":True},
+                         xaxis={"tickformat":"%d/%m","nticks":4,"tickangle":0,"automargin":True},showlegend=False)
     plot(figure, key="net_entsog_history")
     st.caption(f"{len(usable)}/{len(days)} giorni gas · 06:00–06:00 Europe/Rome")
     if len(usable) >= 2:
@@ -218,8 +313,24 @@ def _detail(network, item, observations, snapshots, direction, events, first, la
         st.link_button("Fonte geografica", geo.source_url)
 
 
-def panel():
+def panel(mode="full"):
+    if mode == "overview":
+        try:
+            return overview_panel()
+        except (OSError,ValueError,KeyError):
+            st.info("Mappa temporaneamente non disponibile. Le analisi restano accessibili qui sotto.")
+            return
+    if mode != "full":
+        raise ValueError("Modalità cartografica non riconosciuta")
     network, boundary, bundled = assets()
+    focus = st.session_state.pop(FOCUS,None)
+    if focus and focus["id"] in {i.id for i in network.infrastructure}:
+        st.session_state["net_pending_selection"] = focus["id"]
+        st.session_state["net_period"] = focus["period"]
+        item = next(i for i in network.infrastructure if i.id == focus["id"])
+        st.session_state["net_layers"] = sorted(set(st.session_state.get("net_layers",["pipeline","entry","lng","storage","compressor"]))|{item.category})
+        for key in ("net_operators","net_regions","net_statuses","net_only_events"):
+            st.session_state.pop(key,None)
     saved = st.session_state.get(STATE, {})
     snapshots = (*bundled, *saved.get("snapshots", {}).values())
     observations = merge_observations(snapshots)
@@ -269,17 +380,19 @@ def panel():
     options = [i.id for i in sorted(visible, key=lambda i:(i.category != "entry",i.name))]
     lookup = {i.id:i for i in visible}
     visible_events = [e for e in events if e["infrastructure_id"] in lookup]
-    pending = st.session_state.pop("net_pending_selection", None)
+    pending = st.session_state.pop("net_pending_selection", st.session_state.get(SELECTED))
     if pending in options:
         st.session_state["net_infrastructure"] = pending
     if st.session_state.get("net_infrastructure") not in options:
         st.session_state["net_infrastructure"] = "INET_BP_65" if "INET_BP_65" in options else options[0] if options else None
+    st.session_state[SELECTED] = st.session_state.get("net_infrastructure")
     summary = st.container(key="network_summary")
     map_col, detail = st.columns([3.5,1.2], gap="medium")
     detail_content = detail.container(key="network_detail", border=True)
     with detail_content:
         identifier = st.selectbox("Infrastruttura", options, format_func=lambda k:display_name(lookup[k].name), key="net_infrastructure",
-                                 placeholder="Nessuna infrastruttura nei filtri", disabled=not options)
+                                 placeholder="Nessuna infrastruttura nei filtri", disabled=not options,
+                                 on_change=_widget_selection,args=("net_infrastructure",))
         points = network.bindings_for(identifier, "ENTSOG")
         directions = sorted({b.direction for b in points})
         if st.session_state.get("net_direction") not in directions:
@@ -313,21 +426,9 @@ def panel():
         if metrics["mapped_points"]:
             st.caption(f"Giorno gas: {data_it(last)} · flussi aggregati dei soli ingressi di frontiera; GNL separato.")
     with map_col:
-        chart_key = "italian_network_deck_"+str(st.session_state.get("net_map_epoch",0))
-        event = st.pydeck_chart(deck(network,boundary,visible,identifier,event_ids if show_events else (),
-            observations=observations,day=last,direction=direction,show_labels=show_labels),
-            key=chart_key, height=650, on_select="rerun", selection_mode="single-object")
-        pick = selected_id(event, set(options))
-        signature = repr(event.get("selection", {}))
-        signature_key = chart_key+"_seen"
-        if pick and st.session_state.get(signature_key) != signature:
-            st.session_state[signature_key] = signature
-            if pick != identifier:
-                st.session_state["net_pending_selection"] = pick
-                st.rerun()
-        legend = " · ".join(f'<span style="color:rgb({",".join(map(str,COLORS[c]))})">●</span> {escape(CATEGORIES[c])}'
-                             for c in st.session_state.net_layers if metrics["categories"][c])
-        st.html('<div style="font-size:12px;color:#b0bed0">'+legend+'</div>')
+        render_map(network,boundary,visible,identifier,mode="full",observations=observations,day=last,
+                   direction=direction,events=event_ids if show_events else (),show_labels=show_labels)
+        render_legend(c for c in st.session_state.net_layers if metrics["categories"][c])
         st.caption("Collegamenti schematici SciGRID 2021: non tracciati certificati né flussi sui gasdotti. Posizioni storiche indicative, salvo fonte del gestore.")
         st.caption("© SciGRID_gas / DLR-VE · CC BY 4.0 · INET_Raw 1.4 · confini Natural Earth, pubblico dominio")
         if not options:
