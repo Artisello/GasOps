@@ -13,8 +13,9 @@ import pandas as pd
 import json
 
 from .gas_calendar import closed_gas_day, gas_day_bounds
-from .italian_network import applicable_observations, evidence_status, map_kpis, merge_observations, point_metrics
-from .italian_network_events import iip_events, relevant_events
+from .italian_network import (applicable_observations, evidence_status, map_kpis, merge_observations,
+                             point_metrics, validated_observations, verified_bindings)
+from .italian_network_events import iip_events, verified_events
 from .models import Agent, Kind, Run
 from .source_health import session_health, stamp
 
@@ -294,25 +295,8 @@ def _event_records(network, state, interruptions, day, now):
         unique = {json.dumps(m, sort_keys=True, default=str):m for m in iip_result["messages"]}
         iip_result = {**iip_result, "messages":list(unique.values())}
     iip, unresolved = iip_events(network, iip_result, day, day)
-    candidates = relevant_events((*iip, *(r for s in copies.values() for r in s["records"])), day, day)
-    ids = {i.id for i in network.infrastructure}
-    grouped = {}
-    for event in candidates:
-        at, retrieved = _stamp(event.get("observed_at")), _stamp(event.get("retrieved_at"))
-        if (event.get("mapping_confidence") != "confirmed" or event.get("infrastructure_id") not in ids
-                or not retrieved or retrieved > now or at and at > now):
-            continue
-        key = (event["source"], event["source_id"], event["infrastructure_id"], event.get("point_direction"))
-        grouped.setdefault(key, []).append(event)
-    events = []
-    for rows in grouped.values():
-        latest = max((_stamp(r.get("observed_at")) for r in rows if _stamp(r.get("observed_at"))), default=None)
-        versions = [r for r in rows if _stamp(r.get("observed_at")) == latest]
-        # A tied, contradictory release is not an established event.
-        if len({(r.get("value"), r["period_from"], r["period_to"], r.get("status")) for r in versions}) == 1:
-            events.append(max(versions, key=lambda r: r["retrieved_at"]))
-        else:
-            unresolved += 1
+    events, withheld = verified_events(network,(*iip, *(r for s in copies.values() for r in s["records"])),day,day,now)
+    unresolved += withheld
     queried = {s["point_direction"] for s in copies.values() if s["first"] <= day <= s["last"]
                and _stamp(s.get("acquired")) and s["acquired"] <= now}
     expected = {b.point_direction for b in network.bindings if b.provider == "ENTSOG"}
@@ -327,13 +311,7 @@ def build_status(network, snapshots, state, now, *, gas_day=None, interruptions=
     closed = closed_gas_day(now)
     active = closed+timedelta(days=1)
     snapshots = tuple(sorted((s for s in snapshots if s.acquired <= now), key=lambda s: s.acquired))
-    identities = {(b.infrastructure_id, b.point_direction) for b in network.bindings if b.provider == "ENTSOG"}
-    observations = tuple(o for o in merge_observations(snapshots)
-        if (o.infrastructure_id, o.point_direction) in identities and o.mapping_confidence == "confirmed" and o.retrieved_at <= now
-        and (o.indicator != "Physical Flow" or o.period_to <= now)
-        and (_stamp(o.observed_at) is None or _stamp(o.observed_at) <= now)
-        and (o.value is None or _number(o.value) is not None)
-        and (o.gas_day is None or gas_day_bounds(o.gas_day) == (o.period_from, o.period_to)))
+    observations = validated_observations(network,merge_observations(snapshots),now,nonnegative=True)
     days = {o.gas_day for o in observations if o.indicator == "Physical Flow" and o.unit == "GWh/d" and o.gas_day is not None
             and o.gas_day <= closed and o.value is not None and o.quality_status not in ("conflict", "N/A", "unaligned")}
     inspections = {}
@@ -353,8 +331,7 @@ def build_status(network, snapshots, state, now, *, gas_day=None, interruptions=
     if not isinstance(day, date) or isinstance(day, datetime) or day > active:
         raise ValueError("Giorno gas futuro o non valido")
     categories = {i.id:i.category for i in network.infrastructure}
-    group = lambda category, direction: tuple(b for b in network.bindings if b.provider == "ENTSOG"
-        and b.mapping_confidence == "confirmed" and b.direction == direction
+    group = lambda category, direction: tuple(b for b in verified_bindings(network) if b.direction == direction
         and categories.get(b.infrastructure_id) == category
         and (category != "entry" or b.external_id.startswith("ITP-")))
     imports = _network_measure(group("entry", "entry"), observations, snapshots, day, now, policy,

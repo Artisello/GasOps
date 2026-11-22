@@ -84,11 +84,13 @@ def _pick(fields, aliases):
 def _timestamp(value):
     if not value:
         return None
+    if isinstance(value,datetime):
+        return value if value.tzinfo is not None else None
     try:
         stamp=datetime.fromisoformat(value.replace("Z","+00:00"))
         # Without an offset the raw API format is not proved to be UTC.
         return stamp if stamp.tzinfo is not None else None
-    except (ValueError,OverflowError):
+    except (ValueError,OverflowError,TypeError,AttributeError):
         return None
 
 
