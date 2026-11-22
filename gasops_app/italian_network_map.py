@@ -25,9 +25,24 @@ SYMBOLS = {
     "power":'<path d="M14 1 3 14H10L8 23 22 9H14Z"/>',
     "node":'<circle cx="12" cy="12" r="7"/>'}
 ICON_SIZES = {"entry":16,"lng":16,"storage":14,"compressor":12,"production":12,"power":11,"node":6}
-ICON_MAPPING = {category:{"x":n*24,"y":0,"width":24,"height":24,"mask":True} for n,category in enumerate(SYMBOLS)}
-ICON_ATLAS = "data:image/svg+xml,"+quote('<svg xmlns="http://www.w3.org/2000/svg" width="168" height="24" fill="white">'+
-    ''.join(f'<g transform="translate({n*24} 0)">{symbol}</g>' for n,symbol in enumerate(SYMBOLS.values()))+'</svg>')
+_ATLAS_SYMBOLS = {**SYMBOLS,"ring":'<circle cx="12" cy="12" r="10" fill="none" stroke="white" stroke-width="2"/>'}
+ICON_MAPPING = {category:{"x":n*24,"y":0,"width":24,"height":24,"mask":True} for n,category in enumerate(_ATLAS_SYMBOLS)}
+ICON_ATLAS = "data:image/svg+xml,"+quote(f'<svg xmlns="http://www.w3.org/2000/svg" width="{24*len(_ATLAS_SYMBOLS)}" height="24" fill="white">'+
+    ''.join(f'<g transform="translate({n*24} 0)">{symbol}</g>' for n,symbol in enumerate(_ATLAS_SYMBOLS.values()))+'</svg>')
+MAX_ZOOM = 9
+
+
+def legend_symbol(category):
+    """The legend and atlas use exactly the same authored SVG geometry."""
+    color = ",".join(map(str,COLORS[category]))
+    shape = SYMBOLS.get(category,'<path d="M1 11h22v2H1Z"/>')
+    svg = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="rgb({color})">{shape}</svg>'
+    return "data:image/svg+xml,"+quote(svg)
+
+
+def point_features(rows):
+    return {"type":"FeatureCollection","features":[{"type":"Feature",
+        "geometry":{"type":"Point","coordinates":row["position"]},"properties":row} for row in rows]}
 
 
 def display_name(name):
@@ -128,32 +143,39 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
             events.append(row)
     layers = [pdk.Layer("GeoJsonLayer", boundary, id="italy-outline", pickable=False,
         filled=True, stroked=True, get_fill_color=[34,56,70,255], get_line_color=[109,140,158,230],
-        line_width_min_pixels=1.2)]
+        line_width_min_pixels=1.2,
+        # Explicit sublayer colors keep Streamlit's native selection tint from
+        # dimming the background or the rest of the network.
+        _sub_layer_props={"polygons-fill":{"getFillColor":[34,56,70,255]},
+                          "polygons-stroke":{"getColor":[109,140,158,230]}})]
     if lines:
         # Keep the visible stroke fine while giving the mouse a 12 px target.
         # Alpha 1 remains pickable without a visible corridor across the map.
         layers.append(pdk.Layer("GeoJsonLayer", {"type":"FeatureCollection", "features":lines},
             id="pipeline-hit-targets", pickable=True, auto_highlight=True, highlight_color=[101,223,191,75],
             filled=False, get_line_color=[91,139,181,1], get_line_width=12,
-            line_width_units=pdk.types.String("pixels"), line_width_min_pixels=12, line_width_max_pixels=12))
+            line_width_units=pdk.types.String("pixels"), line_width_min_pixels=12, line_width_max_pixels=12,
+            _sub_layer_props={"linestrings":{"getColor":[91,139,181,1]}}))
         layers.append(pdk.Layer("GeoJsonLayer", {"type":"FeatureCollection", "features":lines},
             id="historical-links", pickable=False, filled=False,
-            get_line_color="properties.color", line_width_min_pixels=1.4))
+            get_line_color="properties.color", line_width_min_pixels=1.4,
+            _sub_layer_props={"linestrings":{"getColor":[*COLORS["pipeline"],255]}}))
     if highlight:
         layers.append(pdk.Layer("GeoJsonLayer", {"type":"FeatureCollection", "features":highlight},
             id="selected-link-halo", pickable=False, filled=False, get_line_color=[101,223,191,100],
-            line_width_min_pixels=8, line_width_max_pixels=8))
+            line_width_min_pixels=8, line_width_max_pixels=8,
+            _sub_layer_props={"linestrings":{"getColor":[101,223,191,100]}}))
         layers.append(pdk.Layer("GeoJsonLayer", {"type":"FeatureCollection", "features":highlight},
             id="selected-link", pickable=False, filled=False, get_line_color=[170,255,231],
-            line_width_min_pixels=3, line_width_max_pixels=3))
+            line_width_min_pixels=3, line_width_max_pixels=3,
+            _sub_layer_props={"linestrings":{"getColor":[170,255,231,255]}}))
     if points:
         selected_points = [r for r in points if r["infra_id"] == selected]
         if selected_points:
-            layers.append(pdk.Layer("ScatterplotLayer", selected_points, id="selected-point", pickable=False,
-                get_position="position", get_radius=10, radius_units=pdk.types.String("pixels"),
-                radius_min_pixels=10, radius_max_pixels=10, filled=False, stroked=True,
-                get_line_color=[245,250,255,210], get_line_width=1.5,
-                line_width_units=pdk.types.String("pixels"), line_width_max_pixels=1.5))
+            layers.append(pdk.Layer("GeoJsonLayer", point_features(selected_points), id="selected-point", pickable=False,
+                point_type=pdk.types.String("icon"),icon_atlas=pdk.types.String(ICON_ATLAS),icon_mapping=ICON_MAPPING,
+                get_icon=pdk.types.String("ring"),get_icon_color=[245,250,255,255],get_icon_size=22,
+                icon_size_units=pdk.types.String("pixels"),icon_size_min_pixels=22,icon_size_max_pixels=22))
         layers.append(pdk.Layer("ScatterplotLayer", points, id="infrastructure-points", pickable=True,
             auto_highlight=True, get_position="position", get_fill_color=[20,34,49,1], get_radius="radius",
             radius_units=pdk.types.String("pixels"), radius_min_pixels=2.5, radius_max_pixels=7,
@@ -161,25 +183,30 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
             line_width_units=pdk.types.String("pixels"), line_width_min_pixels=1, line_width_max_pixels=1.5))
         # Keep one picking identity per point; the symbols are presentation only.
         symbols = [{k:r[k] for k in ("position","color","category","icon_size")} for r in points]
-        layers.append(pdk.Layer("IconLayer", symbols, id="category-symbols", pickable=False,
+        layers.append(pdk.Layer("GeoJsonLayer", point_features(symbols), id="category-symbols", pickable=False,
+            point_type=pdk.types.String("icon"),
             icon_atlas=pdk.types.String(ICON_ATLAS), icon_mapping=ICON_MAPPING,
-            get_icon="category",get_position="position",get_color="color",get_size="icon_size",
-            size_units=pdk.types.String("pixels"),size_min_pixels=6,size_max_pixels=18))
+            get_icon="properties.category",get_icon_color="properties.color",get_icon_size="properties.icon_size",
+            icon_size_units=pdk.types.String("pixels"),icon_size_min_pixels=6,icon_size_max_pixels=18))
     if events:
-        layers.append(pdk.Layer("ScatterplotLayer", events, id="event-rings", pickable=True,
-            get_position="position", get_radius=13, radius_units=pdk.types.String("pixels"),
-            radius_min_pixels=13, radius_max_pixels=13, filled=False,
-            stroked=True, get_line_color=[246,146,157], get_line_width=2,
-            line_width_units=pdk.types.String("pixels"), line_width_max_pixels=2))
+        layers.append(pdk.Layer("GeoJsonLayer", point_features(events), id="event-rings", pickable=True,
+            point_type=pdk.types.String("icon"),icon_atlas=pdk.types.String(ICON_ATLAS),icon_mapping=ICON_MAPPING,
+            get_icon=pdk.types.String("ring"),get_icon_color=[246,146,157,255],get_icon_size=28,
+            icon_size_units=pdk.types.String("pixels"),icon_size_min_pixels=28,icon_size_max_pixels=28))
     if labels:
         labels.sort(key=lambda r:-r["label_priority"])
-        layers.append(pdk.Layer("TextLayer", label_layout(labels,zoom=camera["zoom"],width=viewport_width,
-            height=498 if mode == "overview" else 648,longitude=camera["longitude"],latitude=camera["latitude"]), id="point-labels", pickable=True,
-            get_position="position", get_text="label", get_color="label_color",
-            get_size="label_size", size_units=pdk.types.String("pixels"), size_min_pixels=12, size_max_pixels=14,
-            get_pixel_offset="offset", get_text_anchor="anchor", font_family=pdk.types.String("Arial, sans-serif"),
-            font_weight=pdk.types.String("500"),background=True, get_background_color="label_background", background_padding=[5,3]))
-    return pdk.Deck(layers=layers, initial_view_state=pdk.ViewState(**camera,min_zoom=3, max_zoom=12, pitch=0),
+        arranged = label_layout(labels,zoom=camera["zoom"],width=viewport_width,
+            height=498 if mode == "overview" else 648,longitude=camera["longitude"],latitude=camera["latitude"])
+        layers.append(pdk.Layer("GeoJsonLayer", point_features(arranged), id="point-labels", pickable=True,
+            point_type=pdk.types.String("text"),get_text="properties.label",get_text_color="properties.label_color",
+            get_text_size="properties.label_size",text_size_units=pdk.types.String("pixels"),text_size_min_pixels=12,text_size_max_pixels=14,
+            get_text_pixel_offset="properties.offset",get_text_anchor="properties.anchor",text_font_family=pdk.types.String("Arial, sans-serif"),
+            text_font_weight=pdk.types.String("500"),text_character_set=pdk.types.String("auto"),text_background=True,
+            get_text_background_color="properties.label_background",text_background_padding=[5,3]))
+    return pdk.Deck(layers=layers, initial_view_state=pdk.ViewState(**camera,min_zoom=camera["zoom"]-.25,max_zoom=MAX_ZOOM,
+        pitch=0,min_pitch=0,max_pitch=0),
+        views=[pdk.View(type="MapView",controller={"dragPan":True,"scrollZoom":True,"doubleClickZoom":True,
+            "touchZoom":True,"dragRotate":False,"touchRotate":False,"keyboard":True})],
         map_provider=None, **({} if NATIVE_BASEMAP_OMISSION else {"map_style":LOCAL_STYLE_URL}),
         tooltip={"html":"<b>{safe_name}</b><br/>{safe_type}<br/>{safe_status}<br/>{safe_value}",
                  "style":{"backgroundColor":"#142231", "color":"#eef5fc", "fontSize":"12px",
