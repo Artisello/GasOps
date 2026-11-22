@@ -99,6 +99,8 @@ Si riusano timeout, limiti di dimensione, gestione redirect autenticati e SQLite
 
 Le chiavi non vengono scritte negli asset, nei parametri URL, nell’export o nella sessione della mappa. La dipendenza diretta aggiunta, `pydeck>=0.9,<1`, era già transitiva di Streamlit. Shapely/pyshp servono soltanto all’ETL offline.
 
+I marker hanno diametri di 5–12 pixel e raggio massimo di sicurezza di 7 pixel a ogni zoom. Le unità sono costanti `pydeck.types.String("pixels")`: una semplice stringa veniva serializzata come espressione `@@=pixels`, causando cerchi sproporzionati nel renderer. Selezione e avvisi hanno anelli separati, limitati rispettivamente a raggi di 10 e 13 pixel. I test verificano il JSON trasmesso per ogni categoria. Il filtro Nomi mantiene sempre riconoscibile l’elemento selezionato; la sintesi mostra solo KPI pertinenti ai livelli attivi.
+
 ## Rigenerare gli asset
 
 Usare un ambiente ETL separato con le dipendenze dell’app e `shapely`, `pyshp`. Acquisire le fonti soltanto dopo aver verificato la versione e i diritti:
@@ -134,7 +136,7 @@ Senza `--all-entry` si aggiorna soltanto Mazara, oppure il `--point` esplicito g
 - Streamlit AppTest: apertura offline, cambio livelli/regione/periodo, selezione e dettaglio, pick nativo validato dal backend, selezioni obsolete ignorate, zero risultati, reset senza perdita dei dati, GIE nazionale separato, tutte le undici pagine principali raggiungibili.
 - Scene PyDeck: dati incorporati, Italia soltanto, nessun URL di tile o token, layer selezionabili con ID stabili. La selezione viene verificata lato Python; **la resa WebGL e il clic fisico in un browser non sono stati verificati in questa sessione**.
 - Smoke live limitati del 22/11/2026: cataloghi ENTSOG, sette indicatori per undici ingressi, `/interruptions` su Mazara; cataloghi AGSI+/ALSI pubblici. I dati ricevuti e le loro acquisizioni sono inclusi negli asset. **Inventari GIE e IIP autenticati non verificati live localmente**: adapter e separazione delle fonti sono coperti da fixture, non dichiarati come accesso riuscito.
-- Suite completa: **592 test passati**; gate offline esteso al manifest e agli asset della mappa. AppTest della nuova vista eseguiti anche con l’API Streamlit 1.49. I warning osservati sono deprecazioni PyMuPDF/SWIG già presenti.
+- Suite completa: **599 test passati**; gate offline esteso al manifest e agli asset della mappa. AppTest della nuova vista eseguiti anche con l’API Streamlit 1.49. I warning osservati sono deprecazioni PyMuPDF/SWIG già presenti.
 
 ## Esclusioni e priorità
 

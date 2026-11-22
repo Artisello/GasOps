@@ -16,7 +16,7 @@ from .italiano import numero, data_it
 from .italian_network import (ASSETS, CATEGORIES, COLORS, applicable, filter_infrastructure,
                               load_network_assets, map_kpis, merge_observations, selected_id)
 from .italian_network_events import iip_events, relevant_events, parse_interruptions
-from .italian_network_map import deck
+from .italian_network_map import deck, display_name
 from .italian_network_refresh import STATE, refresh_network
 from .italian_network_sources import decode_snapshot
 from .models import utc_now
@@ -26,7 +26,7 @@ from .visuals import local_time, plot, kpi_grid
 LABELS = dict(zip(INDICATORS, ("Flusso fisico", "Nomina", "Rinomina", "Allocazione",
                               "Capacità tecnica", "Capacità prenotata", "Capacità disponibile")))
 FILTER_KEYS = ("net_layers", "net_operators", "net_regions", "net_statuses", "net_period",
-               "net_events", "net_only_events", "net_infrastructure", "net_direction", "net_indicator")
+               "net_events", "net_only_events", "net_labels", "net_infrastructure", "net_direction", "net_indicator")
 
 
 @st.cache_data(show_spinner=False)
@@ -145,7 +145,7 @@ def _gie_detail(saved, identifier, network, first, last):
 
 def _detail(network, item, observations, snapshots, direction, events, first, last, saved):
     geo = next(g for g in network.geography if g.infrastructure_id == item.id)
-    st.subheader(item.name)
+    st.subheader(display_name(item.name))
     st.caption(" · ".join([CATEGORIES[item.category], *item.regions]))
     if item.operator:
         st.write(item.operator)
@@ -250,6 +250,7 @@ def panel():
         st.multiselect("Operatore", sorted({i.operator or "Non indicato" for i in network.infrastructure}), key="net_operators")
         st.multiselect("Regione", sorted({r for i in network.infrastructure for r in i.regions}), key="net_regions")
         st.multiselect("Stato", sorted({i.status for i in network.infrastructure}), key="net_statuses")
+        show_labels = st.toggle("Nomi sulla mappa", value=True, key="net_labels")
         st.checkbox("Solo con avvisi associati", key="net_only_events", disabled=not show_events)
     if len(period) != 2 or not 0 <= (period[1]-period[0]).days < 31:
         st.info("Seleziona un periodo da 1 a 31 giorni gas conclusi.")
@@ -273,10 +274,11 @@ def panel():
         st.session_state["net_infrastructure"] = pending
     if st.session_state.get("net_infrastructure") not in options:
         st.session_state["net_infrastructure"] = "INET_BP_65" if "INET_BP_65" in options else options[0] if options else None
-    summary = st.container()
-    map_col, detail = st.columns([3,1.35], gap="medium")
-    with detail:
-        identifier = st.selectbox("Infrastruttura", options, format_func=lambda k:lookup[k].name, key="net_infrastructure",
+    summary = st.container(key="network_summary")
+    map_col, detail = st.columns([3.5,1.2], gap="medium")
+    detail_content = detail.container(key="network_detail", border=True)
+    with detail_content:
+        identifier = st.selectbox("Infrastruttura", options, format_func=lambda k:display_name(lookup[k].name), key="net_infrastructure",
                                  placeholder="Nessuna infrastruttura nei filtri", disabled=not options)
         points = network.bindings_for(identifier, "ENTSOG")
         directions = sorted({b.direction for b in points})
@@ -301,15 +303,19 @@ def panel():
     else:
         data_status.caption("Nessun dato operativo per questi filtri e questo periodo.")
     with summary:
-        kpi_grid([("Infrastrutture",metrics["mapped"],"", "Nei livelli selezionati",0),
-            ("Punti con flusso",metrics["valid_points"],"",f"Su {metrics['mapped_points']} punti ENTSOG mappati",0),
-            ("Ingressi di frontiera coperti",metrics["entry_flow_gwh_d"],"GWh/d",f"{metrics['valid_entry_points']}/{metrics['mapped_entry_points']} ingressi · {data_it(last)}",1),
-            ("Utilizzo capacità",metrics["utilization_pct"],"%",f"{metrics['comparable_points']} ingressi confrontabili · media ponderata",1)])
-        st.caption(f"Giorno gas KPI: {data_it(last)} · soli ingressi di frontiera coperti; GNL separato.")
+        items = [("Infrastrutture",metrics["mapped"],"", "Nei livelli selezionati",0)]
+        if metrics["mapped_points"]:
+            items.append(("Punti con dati",metrics["valid_points"],"",f"Su {metrics['mapped_points']} punti ENTSOG",0))
+        if metrics["mapped_entry_points"]:
+            items.extend([("Ingressi di frontiera",metrics["entry_flow_gwh_d"],"GWh/d",f"{metrics['valid_entry_points']}/{metrics['mapped_entry_points']} ingressi coperti",1),
+                ("Utilizzo capacità",metrics["utilization_pct"],"%",f"{metrics['comparable_points']} ingressi confrontabili",1)])
+        kpi_grid(items)
+        if metrics["mapped_points"]:
+            st.caption(f"Giorno gas: {data_it(last)} · flussi aggregati dei soli ingressi di frontiera; GNL separato.")
     with map_col:
         chart_key = "italian_network_deck_"+str(st.session_state.get("net_map_epoch",0))
         event = st.pydeck_chart(deck(network,boundary,visible,identifier,event_ids if show_events else (),
-            observations=observations,day=last,direction=direction),
+            observations=observations,day=last,direction=direction,show_labels=show_labels),
             key=chart_key, height=650, on_select="rerun", selection_mode="single-object")
         pick = selected_id(event, set(options))
         signature = repr(event.get("selection", {}))
@@ -328,7 +334,7 @@ def panel():
             st.info("Nessuna infrastruttura nei filtri. Modifica i livelli o usa Reset filtri.")
         if "production" in st.session_state.net_layers:
             st.caption("Produzione: nessuna localizzazione verificata inclusa. I dati MASE restano nella vista Produzione.")
-    with detail:
+    with detail_content:
         if identifier:
             _detail(network,lookup[identifier],observations,snapshots,direction,events,first,last,saved)
     with st.expander("Copertura e fonti"):
