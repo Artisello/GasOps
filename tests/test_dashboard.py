@@ -29,7 +29,7 @@ def test_overview_button_completes_offline_run(monkeypatch, tmp_path):
     app.session_state["selected_source"] = DEMO
     app.run()
     assert not app.exception
-    assert app.title[0].value == "I.G.O.R. - Sistema gas italiano"
+    assert app.title[0].value == "Sistema gas italiano"
     assert app.button(key="analysis_launch").label == "Genera bollettino di mercato"
     assert sum(b.key=="analysis_launch" for b in app.button)==1
     assert app.checkbox(key="briefing_gie").value is True

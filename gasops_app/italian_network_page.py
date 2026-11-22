@@ -4,25 +4,29 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from html import escape
 from functools import partial
+from inspect import signature
+from pathlib import Path
 import json
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from streamlit.components.v1 import declare_component
 
 from .data import ROME
 from .entsog import _last_completed, _start
 from .entsog_network import INDICATORS
 from .italiano import numero, data_it
 from .italian_network import (ASSETS, CATEGORIES, COLORS, applicable, filter_infrastructure,
-                              load_network_assets, map_kpis, merge_observations, selected_id)
+                              load_network_assets, map_kpis, merge_observations, selected_id,
+                              kpi_status, point_metrics)
 from .italian_network_events import iip_events, relevant_events, parse_interruptions
 from .italian_network_map import deck, display_name
 from .italian_network_refresh import STATE, refresh_network
 from .italian_network_sources import decode_snapshot
 from .models import utc_now
 from .session import database
-from .visuals import local_time, plot, kpi_grid
+from .visuals import chip, local_time, plot, kpi_grid
 
 LABELS = dict(zip(INDICATORS, ("Flusso fisico", "Nomina", "Rinomina", "Allocazione",
                               "Capacità tecnica", "Capacità prenotata", "Capacità disponibile")))
@@ -30,6 +34,7 @@ FILTER_KEYS = ("net_layers", "net_operators", "net_regions", "net_statuses", "ne
                "net_events", "net_only_events", "net_labels", "net_infrastructure", "net_direction", "net_indicator")
 SELECTED = "italian_network_selected_v1"
 FOCUS = "italian_network_focus_v1"
+_viewport_width = declare_component("network_viewport_width",path=str(Path(__file__).with_name("map_viewport")))
 
 
 @st.cache_data(show_spinner=False)
@@ -73,15 +78,80 @@ def _widget_selection(key):
 def render_map(network, boundary, visible, identifier, *, mode, observations, day, direction="entry", events=(), show_labels=True):
     """Native selection callback runs before the single Streamlit rerun."""
     key = f"italian_network_{mode}_deck_{st.session_state.get('net_map_epoch',0)}"
-    st.pydeck_chart(deck(network,boundary,visible,identifier,events,observations=observations,
-        day=day,direction=direction,show_labels=show_labels,mode=mode),key=key,
-        height=500 if mode == "overview" else 650,selection_mode="single-object",
-        on_select=partial(_accept_pick,key,tuple(i.id for i in visible),mode))
+    description = "Mappa del sistema gas italiano. Gasdotti storici schematici e impianti; seleziona con il mouse o usa la ricerca infrastruttura per leggere gli stessi dettagli."
+    # Native alt was added after our minimum supported Streamlit version.
+    accessible = {"alt":description} if "alt" in signature(st.pydeck_chart).parameters else {}
+    if not accessible:
+        st.html('<p class="gas-map-description">'+escape(description)+'</p>')
+    with st.container(key="network_map_frame_"+mode):
+        width = _viewport_width(default=600,key="network_map_width_"+mode)
+        width = width if isinstance(width,(int,float)) and not isinstance(width,bool) and 200 <= width <= 4000 else 600
+        st.pydeck_chart(deck(network,boundary,visible,identifier,events,observations=observations,
+            day=day,direction=direction,show_labels=show_labels,mode=mode,viewport_width=width-2),key=key,
+            height=500 if mode == "overview" else 650,selection_mode="single-object",
+            on_select=partial(_accept_pick,key,tuple(i.id for i in visible),mode),**accessible)
 
 
 def render_legend(categories):
-    labels = " · ".join(f'<span style="color:rgb({",".join(map(str,COLORS[c]))})">●</span> {escape(CATEGORIES[c])}' for c in categories)
-    st.html('<div style="font-size:12px;color:#b0bed0">'+labels+'</div>')
+    symbols = {"pipeline":"━","entry":"◆","lng":"■","storage":"▰","compressor":"▲","production":"⬟","power":"ϟ","node":"●"}
+    labels = "".join(f'<span><b aria-hidden="true" style="color:rgb({",".join(map(str,COLORS[c]))})">{symbols[c]}</b>{escape(CATEGORIES[c])}</span>' for c in categories)
+    st.html('<div class="gas-map-legend" aria-label="Legenda della mappa">'+labels+'</div>')
+
+
+def _age(value):
+    hours = max(0,int(value.total_seconds()//3600))
+    return f"{hours//24} g {hours%24} h" if hours >= 24 else f"{hours} h"
+
+
+def _source_status(status, day, *, expanded=False):
+    style = {"Storico":"historical","Aggiornato":"ok","Parziale":"review","Non disponibile":""}[status["status"]]
+    st.html('<div class="gas-map-status">'+chip(status["status"],style)+f'<span>ENTSOG · giorno gas {escape(data_it(day))}</span></div>')
+    if status["oldest"]:
+        st.caption(f"Copia più vecchia: {_age(status['age'])}"+(" · acquisizioni diverse" if status["oldest"] != status["newest"] else ""))
+    if status["failed"]:
+        st.caption("Aggiornamento non riuscito · ultima copia valida")
+    with st.expander("Date e copertura della fonte", expanded=expanded):
+        st.caption("Giorno gas: "+data_it(day)+" · 06:00–06:00 Europe/Rome")
+        st.caption("Pubblicazione fonte: "+local_time(status["published_oldest"]))
+        if status["published_newest"] != status["published_oldest"]:
+            st.caption("Ultima pubblicazione contribuente: "+local_time(status["published_newest"]))
+        st.caption("Prima acquisizione contribuente: "+local_time(status["oldest"]))
+        if status["newest"] != status["oldest"]:
+            st.caption("Ultima acquisizione contribuente: "+local_time(status["newest"]))
+        st.caption("Età della copia in cache: "+(_age(status["age"]) if status["age"] is not None else "Non disponibile"))
+        st.caption("Copertura completa nel perimetro osservato." if status["complete"] else
+                   "Copertura parziale o non certificata. N/A e conflitti esclusi; capacità confrontate sullo stesso giorno gas.")
+
+
+def _operational_summary(network, item, observations, snapshots, direction, first, last, saved, *, compact=False):
+    binding = next((b for b in network.bindings_for(item.id,"ENTSOG") if b.direction == direction),None)
+    if not binding:
+        if item.category == "pipeline":
+            st.caption("Collegamento storico schematico · nessuna misura di flusso sul segmento")
+        elif not network.bindings_for(item.id,"ALSI") and not network.bindings_for(item.id,"AGSI+"):
+            st.caption("Geografia storica · dati operativi non associati")
+        return
+    metrics = point_metrics(observations,binding.point_direction,first,last)
+    values = metrics["values"]
+    if not values:
+        st.caption("Nessun dato operativo confrontabile nel periodo.")
+        return
+    day = metrics["day"]
+    flow = values.get("Physical Flow")
+    if flow is not None:
+        delta = metrics["change_gwh_d"]
+        st.metric("Ultimo flusso pubblicato",numero(flow,1)+" GWh/d",
+                  delta=(f"{numero(delta,1)} GWh/d sul giorno precedente" if delta is not None else None),delta_color="off")
+    st.caption("Giorno gas "+data_it(day)+" · "+("Ingresso" if direction == "entry" else "Uscita"))
+    if metrics["utilization_pct"] is not None:
+        st.caption(f"Utilizzo capacità: {numero(metrics['utilization_pct'],1)}% · intervalli confrontabili")
+    if not compact:
+        measures = [(LABELS[k],v,"GWh/d","",1) for k,v in values.items() if k != "Physical Flow"]
+        if measures:
+            kpi_grid(measures)
+        m = {"observations":metrics["observations"],"valid_points":int(flow is not None),"mapped_points":1}
+        status = kpi_status(m,snapshots,day,utc_now(),current_day=_last_completed(utc_now()),failures=saved.get("failures",()))
+        _source_status(status,day)
 
 
 def _open_full(identifier, first, last):
@@ -96,7 +166,11 @@ def overview_panel():
     saved = st.session_state.get(STATE,{})
     snapshots = (*bundled,*saved.get("snapshots",{}).values())
     observations = merge_observations(snapshots)
-    day = min(max(s.last for s in snapshots if s.records),_last_completed(utc_now()))
+    now = utc_now()
+    current_day = _last_completed(now)
+    days = [o.gas_day for o in observations if o.indicator == "Physical Flow" and o.gas_day and o.gas_day <= current_day
+            and o.value is not None and o.quality_status not in ("conflict","N/A","unaligned")]
+    day = max(days) if days else current_day
     first = day-timedelta(days=6)
     identifier = st.session_state.get(SELECTED,st.session_state.get("net_infrastructure","INET_BP_65"))
     all_items = {i.id:i for i in network.infrastructure}
@@ -104,45 +178,43 @@ def overview_panel():
         identifier = "INET_BP_65"
     st.session_state[SELECTED] = identifier
     visible = tuple(i for i in network.infrastructure if i.category in ("pipeline","entry","lng","storage") or i.id == identifier)
-    render_map(network,boundary,visible,identifier,mode="overview",observations=observations,day=day)
-    render_legend(("pipeline","entry","lng","storage"))
     metrics = map_kpis(network,visible,observations,day)
-    items = [("Frontiere coperte",metrics["entry_flow_gwh_d"],"GWh/d",f"{data_it(day)} · {metrics['valid_entry_points']}/{metrics['mapped_entry_points']} ingressi",1),
-        ("Utilizzo capacità",metrics["utilization_pct"],"%",f"{data_it(day)} · {metrics['comparable_points']} ingressi confrontabili",1),
-        ("Copertura ENTSOG",metrics["valid_points"],"",f"{data_it(day)} · su {metrics['mapped_points']} punti mappati",0)]
+    items = []
+    if metrics["entry_flow_gwh_d"] is not None:
+        items.append(("Frontiere coperte",metrics["entry_flow_gwh_d"],"GWh/d",f"{metrics['valid_entry_points']}/{metrics['mapped_entry_points']} ingressi · GNL escluso",1))
+    if metrics["utilization_pct"] is not None:
+        items.append(("Utilizzo capacità",metrics["utilization_pct"],"%",f"{metrics['comparable_points']} ingressi confrontabili",1))
+    items.append(("Copertura ENTSOG",metrics["valid_points"],"",f"su {metrics['mapped_points']} punti mappati",0))
     national = st.session_state.get("AGSI+_IT",{}).get("result")
     if national and not national["frame"].empty:
         row = national["frame"].iloc[-1]
         if pd.notna(row.stock_twh):
             failed = national["failed"] or st.session_state.get("AGSI+_IT",{}).get("error")
             items.insert(2,("Scorte nazionali GIE",row.stock_twh,"TWh",data_it(row.gas_day)+(" · ultima copia valida" if failed else ""),2))
-    with st.container(key="network_home_summary"):
-        kpi_grid(items)
-    acquired = max(o.retrieved_at for o in observations)
-    st.caption(f"Estratto ENTSOG · giorno gas {data_it(day)} · acquisito {local_time(acquired)} · copertura parziale")
-    st.caption("SciGRID 2021 · collegamenti storici schematici · CC BY 4.0 · Natural Earth, pubblico dominio")
-    if len(items) == 4:
-        st.caption("GIE AGSI+ · acquisito "+local_time(national["acquired"])+" · aggregato nazionale distinto dai punti di rete")
     item = all_items[identifier]
-    detail, actions = st.columns([3,1],vertical_alignment="center")
-    with detail:
-        st.markdown("**"+display_name(item.name)+"** · "+CATEGORIES[item.category])
-        st.caption(" · ".join(filter(None,[item.operator,*item.regions])))
-        st.caption("Geografia: "+item.status)
-        binding = next((b for b in network.bindings_for(identifier,"ENTSOG") if b.direction == "entry"),None)
-        flow = applicable(observations,binding.point_direction,day,"Physical Flow") if binding else None
-        if flow is not None:
-            st.caption(f"Flusso pubblicato: {numero(flow,1)} GWh/d · {data_it(day)} · {binding.external_id}")
-        if item.category == "pipeline":
-            st.caption("Selezione evidenziata in verde · collegamento storico, senza misura di flusso sul segmento")
-    with actions:
-        st.button("Esplora la rete",icon=":material/arrow_forward:",key="net_overview_open",
-            width="stretch",on_click=_open_full,args=(identifier,first,day))
-        with st.popover("Cerca infrastruttura",width="stretch"):
-            st.session_state["net_overview_infrastructure"] = identifier
-            st.selectbox("Infrastruttura",[i.id for i in sorted(visible,key=lambda i:i.name)],
-                key="net_overview_infrastructure",format_func=lambda key:display_name(all_items[key].name),
-                on_change=_widget_selection,args=("net_overview_infrastructure",))
+    with st.container(key="network_overview"):
+        map_col, detail = st.columns([1,1.3],gap="small")
+        with map_col:
+            render_map(network,boundary,visible,identifier,mode="overview",observations=observations,day=day)
+            render_legend(c for c in CATEGORIES if any(i.category == c for i in visible))
+            st.caption("SciGRID 2021 · collegamenti storici schematici · CC BY 4.0 · Natural Earth, pubblico dominio")
+        with detail.container(key="network_home_detail"):
+            with st.container(key="network_home_summary"):
+                kpi_grid(items)
+            status = kpi_status(metrics,snapshots,day,now,current_day=current_day,failures=saved.get("failures",()))
+            _source_status(status,day)
+            if len(items) == 4:
+                st.caption("GIE AGSI+ · acquisito "+local_time(national["acquired"])+" · aggregato nazionale distinto dai punti di rete")
+            st.subheader(display_name(item.name))
+            st.caption(" · ".join(filter(None,[CATEGORIES[item.category],item.operator,*item.regions])))
+            _operational_summary(network,item,observations,snapshots,"entry",first,day,saved,compact=True)
+            st.button("Esplora la rete",icon=":material/arrow_forward:",key="net_overview_open",
+                width="stretch",on_click=_open_full,args=(identifier,first,day))
+            with st.popover("Cerca infrastruttura",width="stretch"):
+                st.session_state["net_overview_infrastructure"] = identifier
+                st.selectbox("Infrastruttura",[i.id for i in sorted(network.infrastructure,key=lambda i:i.name)],
+                    key="net_overview_infrastructure",format_func=lambda key:display_name(all_items[key].name),
+                    on_change=_widget_selection,args=("net_overview_infrastructure",))
 
 
 def _plain(value):
@@ -241,25 +313,13 @@ def _gie_detail(saved, identifier, network, first, last):
 def _detail(network, item, observations, snapshots, direction, events, first, last, saved):
     geo = next(g for g in network.geography if g.infrastructure_id == item.id)
     st.subheader(display_name(item.name))
-    st.caption(" · ".join([CATEGORIES[item.category], *item.regions]))
-    if item.operator:
-        st.write(item.operator)
-    st.caption(item.status)
+    st.caption(" · ".join(filter(None,[CATEGORIES[item.category],item.operator,*item.regions])))
+    _operational_summary(network,item,observations,snapshots,direction,first,last,saved)
     bindings = network.bindings_for(item.id, "ENTSOG")
     binding = next((b for b in bindings if b.direction == direction), None)
     if binding:
-        st.caption(f"ENTSOG {binding.external_id} · {'Ingresso' if direction == 'entry' else 'Uscita'}")
         rows = [o for o in observations if o.point_direction == binding.point_direction
                 and o.period_from < _start(last+timedelta(days=1)) and o.period_to > _start(first)]
-        days, values = _daily(rows, binding.point_direction, first, last, "Physical Flow")
-        published = [(d,v) for d,v in zip(days,values) if v is not None]
-        if published:
-            day, flow = published[-1]
-            st.metric("Ultimo flusso pubblicato", numero(flow,1)+" GWh/d")
-            st.caption("Giorno gas "+data_it(day))
-            capacity = applicable(rows, binding.point_direction, day, "Firm Technical")
-            if capacity is not None and capacity > 0 and flow >= 0:
-                st.caption(f"Utilizzo capacità tecnica: {numero(100*flow/capacity,1)}% · intervalli confrontabili")
         if rows:
             _history(observations, binding.point_direction, first, last)
             with st.expander("Valori e qualità"):
@@ -267,10 +327,10 @@ def _detail(network, item, observations, snapshots, direction, events, first, la
                           for indicator in INDICATORS if any(o.indicator == indicator for o in rows)]
                 st.dataframe([{"Misura":LABELS[o.indicator],"GWh/d":numero(o.value,2),
                     "Da":o.source_period_from or o.period_from.isoformat(),"A":o.source_period_to or o.period_to.isoformat(),
-                    "Qualità":o.quality_status,"Stato fonte":o.publication_status,"Versioni":len(o.revisions)} for o in latest],
+                    "Qualità":o.quality_status,"Stato fonte":o.publication_status,"Versioni":len(o.revisions),
+                    "Pubblicato":o.observed_at or "Non disponibile","Acquisito":local_time(o.retrieved_at)} for o in latest],
                     hide_index=True, width="stretch")
                 st.caption("Intervalli originali. N/A e conflitti esclusi dai calcoli; le capacità devono coprire lo stesso giorno gas.")
-                st.caption("Acquisizione più recente: "+local_time(max(o.retrieved_at for o in rows)))
                 for s in snapshots:
                     if s.point_direction == binding.point_direction and s.first <= last and s.last >= first:
                         if s.partial:
@@ -296,6 +356,7 @@ def _detail(network, item, observations, snapshots, direction, events, first, la
                 st.caption(event["source"]+" · "+event["status"])
                 st.link_button("Fonte avviso", event["source_url"])
     with st.expander("Identità e geografia"):
+        st.caption(item.status)
         st.caption(geo.geometry_accuracy)
         st.write("Fonte: "+geo.source)
         st.caption(f"Edizione {geo.dataset_version} · {geo.observed_at} · acquisita {geo.retrieved_at}")
@@ -387,7 +448,8 @@ def panel(mode="full"):
         st.session_state["net_infrastructure"] = "INET_BP_65" if "INET_BP_65" in options else options[0] if options else None
     st.session_state[SELECTED] = st.session_state.get("net_infrastructure")
     summary = st.container(key="network_summary")
-    map_col, detail = st.columns([3.5,1.2], gap="medium")
+    with st.container(key="network_explorer"):
+        map_col, detail = st.columns([1,1], gap="small")
     detail_content = detail.container(key="network_detail", border=True)
     with detail_content:
         identifier = st.selectbox("Infrastruttura", options, format_func=lambda k:display_name(lookup[k].name), key="net_infrastructure",
@@ -409,19 +471,18 @@ def panel(mode="full"):
         else:
             st.caption("Seleziona un’infrastruttura per aggiornare i dati.")
     metrics = map_kpis(network, visible, observations, last)
-    in_period = [o for o in observations if o.infrastructure_id in lookup and o.gas_day
-                 and first <= o.gas_day <= last and o.value is not None]
-    if in_period:
-        data_status.caption(f"ENTSOG · acquisito {local_time(max(o.retrieved_at for o in in_period))} · copertura parziale")
-    else:
-        data_status.caption("Nessun dato operativo per questi filtri e questo periodo.")
+    status = kpi_status(metrics,snapshots,last,now,current_day=_last_completed(now),failures=saved.get("failures",()))
+    with data_status.container():
+        st.caption(f"{status['status']} · ENTSOG · giorno gas {data_it(last)}"+
+                   (f" · copia più vecchia {_age(status['age'])}" if status["age"] is not None else ""))
     with summary:
         items = [("Infrastrutture",metrics["mapped"],"", "Nei livelli selezionati",0)]
         if metrics["mapped_points"]:
             items.append(("Punti con dati",metrics["valid_points"],"",f"Su {metrics['mapped_points']} punti ENTSOG",0))
-        if metrics["mapped_entry_points"]:
-            items.extend([("Ingressi di frontiera",metrics["entry_flow_gwh_d"],"GWh/d",f"{metrics['valid_entry_points']}/{metrics['mapped_entry_points']} ingressi coperti",1),
-                ("Utilizzo capacità",metrics["utilization_pct"],"%",f"{metrics['comparable_points']} ingressi confrontabili",1)])
+        if metrics["entry_flow_gwh_d"] is not None:
+            items.append(("Ingressi di frontiera",metrics["entry_flow_gwh_d"],"GWh/d",f"{metrics['valid_entry_points']}/{metrics['mapped_entry_points']} ingressi coperti",1))
+        if metrics["utilization_pct"] is not None:
+            items.append(("Utilizzo capacità",metrics["utilization_pct"],"%",f"{metrics['comparable_points']} ingressi confrontabili",1))
         kpi_grid(items)
         if metrics["mapped_points"]:
             st.caption(f"Giorno gas: {data_it(last)} · flussi aggregati dei soli ingressi di frontiera; GNL separato.")
@@ -439,11 +500,11 @@ def panel(mode="full"):
         if identifier:
             _detail(network,lookup[identifier],observations,snapshots,direction,events,first,last,saved)
     with st.expander("Copertura e fonti"):
+        _source_status(status,last)
         st.dataframe([{"Livello":CATEGORIES[c],"Mappate":metrics["categories"][c]} for c in CATEGORIES],hide_index=True)
         relevant = [s for s in snapshots if s.first <= last and s.last >= first
                     and any(o.infrastructure_id in lookup for o in s.records)]
         if relevant:
-            st.caption("Dati operativi: ENTSOG TP Transport Data · acquisizione più recente "+local_time(max(s.acquired for s in relevant)))
             st.caption(f"{sum(s.partial for s in relevant)} risposte con copertura parziale. Le revisioni e gli intervalli restano nel dettaglio e nell’export.")
         st.caption("Cataloghi: ENTSOG e GIE acquisiti il 22/11/2026. Un punto pubblicante o un impianto nel catalogo non certificano disponibilità istantanea.")
         queried = [s for s in interruption_sets if s["first"] <= last and s["last"] >= first
