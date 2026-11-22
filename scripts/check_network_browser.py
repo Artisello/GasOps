@@ -79,6 +79,9 @@ def main():
             page.mouse.move(x-20,y,steps=6)
             page.mouse.move(x,y,steps=6)
             expect(page.locator(".deck-tooltip")).to_contain_text(label,timeout=15000)
+            tip = page.locator(".deck-tooltip").bounding_box()
+            assert tip["x"] >= box["x"] and tip["x"]+tip["width"] <= box["x"]+box["width"],"Tooltip clipped horizontally"
+            assert tip["y"] >= box["y"] and tip["y"]+tip["height"] <= box["y"]+box["height"],"Tooltip clipped vertically"
             page.wait_for_timeout(500)
             page.mouse.click(x,y,delay=120)
             expect(page.locator(".st-key-network_home_detail h3")).to_have_text(label,timeout=15000)
