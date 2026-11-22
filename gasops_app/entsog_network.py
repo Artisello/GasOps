@@ -2,8 +2,6 @@
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
-import csv
-import io
 import json
 import re
 
@@ -125,7 +123,7 @@ def parse_network(payload, point, first, last, acquired, *, cached=False, failed
         if any(label):
             labels.add(label)
         key=(day,item["indicator"])
-        group=groups.setdefault(key,{"values":set(),"status":set(),"naive":False,"last_updates":set()})
+        group=groups.setdefault(key,{"values":set(),"status":set(),"naive":False,"last_updates":set(),"revisions":[]})
         amount=_amount(item)
         group["values"].add(amount)
         status=str(item.get("flowStatus") or "non indicato")[:80]
@@ -134,6 +132,11 @@ def parse_network(payload, point, first, last, acquired, *, cached=False, failed
         stamp=item.get("lastUpdateDateTime",item.get("lastUpdateDate"))
         if stamp:
             group["last_updates"].add(str(stamp)[:80])
+        revision={"value":str(amount/SCALE) if amount is not None else None,"observed_at":str(stamp) if stamp else None,
+            "source_id":str(item.get("id")) if item.get("id") else None,"publication_status":status,
+            "quality_status":"valid" if amount is not None else "N/A",
+            "source_period_from":item["periodFrom"],"source_period_to":item["periodTo"]}
+        if revision not in group["revisions"]:group["revisions"].append(revision)
     records=[]
     for i in range((last-first).days+1):
         day=first+timedelta(days=i)
@@ -146,6 +149,9 @@ def parse_network(payload, point, first, last, acquired, *, cached=False, failed
                             "value_gwh_d":value/SCALE if value is not None else None,
                             "quality":status,"flow_status":" | ".join(sorted(group["status"])) if group else "",
                             "source_updates":" | ".join(sorted(group["last_updates"])) if group else "",
+                            "retrieved_at":acquired.isoformat(),
+                            "source_ids":tuple(dict.fromkeys(r["source_id"] for r in group["revisions"] if r["source_id"])) if group else (),
+                            "revisions":tuple(group["revisions"]) if group else (),
                             "timestamp_assumed":bool(group and group["naive"])})
     if not any(r["value_kwh_d"] is not None for r in records):
         raise SourceSchemaError("Nessuna osservazione numerica valida nel periodo.")
@@ -185,16 +191,51 @@ def load_network(store,point,first,last,*,now=None):
             raise SourceUnavailable(" · ".join(diagnostics)) from None
         # Every result has the same fully validated point and period; merge
         # disjoint indicators. Keep missing cells from the original grid.
-        reference=valid[0][1]
-        mapped={(row["gas_day"],row["indicator"]):row for indicators,result in valid
-                for row in result.rows if row["indicator"] in indicators}
-        return replace(reference,rows=tuple(mapped.get((row["gas_day"],row["indicator"]),row)
-                                           for row in reference.rows),
-                       labels=tuple(sorted({label for _,result in valid for label in result.labels})),
-                       acquired=min(result.acquired for _,result in valid),
-                       cached=any(result.cached for _,result in valid),
-                       failed=any(result.failed for _,result in valid),
-                       metadata_warning=True,diagnostic=tuple(diagnostics))
+        return combine_results(valid,diagnostic=diagnostics)
+
+
+def combine_results(parts, *, diagnostic=()):
+    """Same-point disjoint indicator responses, including already cached parts."""
+    reference=parts[0][1]
+    if any((r.point,r.first,r.last)!=(reference.point,reference.first,reference.last) for _,r in parts):
+        raise ValueError("Estrazioni ENTSOG non confrontabili")
+    mapped={(row["gas_day"],row["indicator"]):row for indicators,result in sorted(parts,key=lambda p:p[1].acquired)
+            for row in result.rows if row["indicator"] in indicators}
+    return replace(reference,rows=tuple(mapped.get((row["gas_day"],row["indicator"]),row) for row in reference.rows),
+        labels=tuple(sorted({label for _,result in parts for label in result.labels})),
+        acquired=min(result.acquired for _,result in parts),cached=any(result.cached for _,result in parts),
+        failed=any(result.failed for _,result in parts),metadata_warning=True,diagnostic=tuple(diagnostic))
+
+
+def as_snapshot(result, network):
+    """Project the existing desk result into the map's Observation/Snapshot model.
+
+    Older desk results retain publication strings but not original record IDs.
+    Their official point key remains the source locator, never a geographic ID.
+    """
+    from .italian_network import Observation, verified_bindings
+    from .italian_network_sources import Snapshot, timestamp
+    check_point(result.point)
+    binding=next((b for b in verified_bindings(network) if b.point_direction==result.point),None)
+    records=[]
+    for row in result.rows:
+        day=date.fromisoformat(row["gas_day"])
+        if row["indicator"] not in INDICATORS or not result.first<=day<=result.last:
+            raise SourceSchemaError("Riga ENTSOG fuori estrazione")
+        updates=tuple(filter(None,str(row.get("source_updates") or "").split(" | ")))
+        published=timestamp(updates[0]).isoformat() if len(updates)==1 else None
+        quality={"valido":"valid","conflitto":"conflict","assente":"missing","N/A":"N/A"}.get(row["quality"],"unaligned")
+        if row.get("timestamp_assumed"):quality="unaligned"
+        start,stop=_start(day),_start(day+timedelta(days=1))
+        amount=row.get("value_gwh_d")
+        value=Decimal(str(amount)) if amount is not None else None
+        ids=row.get("source_ids",())
+        records.append(Observation(binding.infrastructure_id if binding else "",result.point,row["indicator"],value,
+            "GWh/d",start,stop,day,timestamp(row["retrieved_at"]) if row.get("retrieved_at") else result.acquired,published,"ENTSOG TP Transport Data",SOURCE,
+            row.get("source_id") or (ids[0] if len(ids)==1 else result.point),quality,row.get("flow_status") or "Non indicato",
+            tuple(row.get("revisions",())),source_period_from=start.isoformat(),source_period_to=stop.isoformat()))
+    return Snapshot(result.point,tuple(records),result.first,result.last,result.acquired,
+                    result.cached,result.failed,result.metadata_warning or len(result.labels)!=1 or not all(result.labels[0]),tuple(result.diagnostic))
 
 
 def daily_metrics(result):
@@ -218,18 +259,18 @@ def daily_metrics(result):
 
 
 def export_csv(result):
-    out=io.StringIO()
+    from .operational_sources import attributed_csv
+    import pandas as pd
     fields=("point_direction","gas_day","indicator","value_kwh_d","value_gwh_d","quality",
-            "flow_status","source_updates","timestamp_assumed","extracted_at","source")
-    writer=csv.DictWriter(out,fieldnames=fields,lineterminator="\n")
-    writer.writeheader()
-    # Defend spreadsheet consumers against formula-like external status strings.
-    def safe(text):
-        return "'"+text if text.lstrip().startswith(("=","+","-","@")) else text
+            "flow_status","source_updates","timestamp_assumed","extracted_at","source","retrieved_at","source_ids","revisions")
+    rows=[]
     for row in result.rows:
-        writer.writerow({**row,"flow_status":safe(row["flow_status"]),"source_updates":safe(row["source_updates"]),
-                         "point_direction":result.point,"extracted_at":result.acquired.isoformat(),"source":result.credit})
-    return out.getvalue()
+        rows.append({**{field:row.get(field) for field in fields},"point_direction":result.point,
+            "extracted_at":result.acquired.isoformat(),"source":result.credit,
+            "retrieved_at":row.get("retrieved_at") or result.acquired.isoformat(),
+            "source_ids":json.dumps(row.get("source_ids",()),ensure_ascii=False),
+            "revisions":json.dumps(row.get("revisions",()),ensure_ascii=False,default=str)})
+    return attributed_csv({"frame":pd.DataFrame(rows,columns=fields)},per_row_source=True)
 
 
 def load_programmes(store,point,first,last,*,now=None,refresh=False):

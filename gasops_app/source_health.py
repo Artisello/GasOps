@@ -12,6 +12,9 @@ from .entsog import SOURCE as ENTSOG_SOURCE
 # Diagnostic presentation windows, not supplier SLAs.
 DAYS=14
 TOL=D("0.000001")
+STATE_LABELS={"Live":"Live · acquisizione recente","Cached":"Cached · copia recente",
+    "Historical":"Historical · storico","Partial":"Partial · parziale","Stale":"Stale · da aggiornare",
+    "Unavailable":"Non disponibile"}
 
 
 def finite(x):
@@ -39,11 +42,12 @@ def months(end,n=6):
 
 
 def row(label,scope,kind,values,expected,now,*,acquired=None,failed=False,review=False,
-        age_limit=None,forecast=False,note="",attempt=None,period_limit=None,latest_override=None):
+        age_limit=None,forecast=False,note="",attempt=None,period_limit=None,latest_override=None,counts=None):
     valid={d:v for d,v in values.items() if finite(v) and (period_limit is None or d<=period_limit)}
     latest=latest_override if latest_override is not None else max(valid,default=None)
     count=sum(d in valid for d in expected)
     expected_count=len(expected)
+    if counts is not None:count,expected_count=counts
     age=(now.astimezone(ROME).date()-latest).days if latest else None
     at=stamp(acquired) if acquired is not None else None
     last_attempt=None
@@ -65,6 +69,65 @@ def row(label,scope,kind,values,expected,now,*,acquired=None,failed=False,review
     return {"source":label,"scope":scope,"kind":kind,"status":status,"latest":latest.isoformat() if latest else None,
             "valid":count,"expected":expected_count,"acquired":at.isoformat() if at else None,
             "attempt":last_attempt.isoformat() if last_attempt else None,"note":note}
+
+
+def observation_health(frame,first,last,now):
+    """The same diagnostic for the Explorer and the Source Health Monitor.
+
+    Calendar coverage applies only to daily series. Source intervals are counted
+    as records, without inventing daily observations or event-free days.
+    """
+    from .gas_data import LABELS, _stamp
+    if frame.empty:return row("Dati gas","Selezione","Non disponibile",{},dates(last,(last-first).days+1),now)
+    valid=frame.loc[frame.usable]
+    interval=frame.time_basis.iloc[0]=="source_interval"
+    values={r.gas_day:float(r.value) for _,r in valid.iterrows() if r.gas_day is not None}
+    periods=[r.period_from.astimezone(ROME).date() for _,r in valid.iterrows() if r.period_from is not None]
+    acquisitions=[_stamp(v) for v in frame.retrieved_at if _stamp(v)]
+    comparison_dates=[_stamp(v) for v in frame.d1_retrieved_at if _stamp(v)]
+    oldest=min((*acquisitions,*comparison_dates),default=None)
+    newest=max(acquisitions,default=None)
+    published=[_stamp(v) for v in frame.observed_at if _stamp(v)]
+    failed=bool(frame.failed.any())
+    confirmed=frame.publication_status.map(lambda s:str(s).casefold() in ("confirmed","final","definitive","c","pubblicato"))
+    review=bool(frame.partial.any() or (~confirmed).any() or (~frame.usable.astype(bool)).any()
+        or frame.quality_status.isin(("review","conflict","invalid_unit","incompatible_interval")).any())
+    expected=dates(last,(last-first).days+1)
+    label=frame.provider.iloc[0]+" · "+frame.entity_label.iloc[0]+" · "+LABELS.get(frame.indicator.iloc[0],frame.indicator.iloc[0])
+    item=row(label,str(frame.scope.iloc[0] or frame.point_direction.iloc[0] or "Singolo impianto"),
+        "Intervalli fonte" if interval else "Osservato",values,expected,now,acquired=newest,failed=failed,review=review,
+        counts=(len(valid),len(frame)) if interval else None,latest_override=max(periods,default=None) if interval else None,
+        note="Copertura dei record, non dei giorni senza eventi" if interval else "Giorni gas distinti; nessuna interpolazione")
+    ttl=timedelta(hours=12 if frame.provider.iloc[0]=="ENTSOG" else 24)
+    age=now-oldest if oldest else None
+    stale=failed or age is not None and age>ttl
+    historical=last<(closed_gas_day(now) if frame.provider.iloc[0]=="ENTSOG" else now.astimezone(ROME).date()-timedelta(days=1))
+    partial=review or item["valid"]<item["expected"] or frame.cached.isna().any()
+    state=("Stale" if stale else "Partial" if partial else "Historical" if historical else
+           "Cached" if all(v is True for v in frame.cached) else "Live")
+    if valid.empty and not stale and not partial:state="Unavailable"
+    status=("Aggiornamento fallito · ultimo dato" if failed else "Da aggiornare") if stale else item["status"]
+    return {**item,"status":status,"state":state,"historical":historical,"cached":all(v is True for v in frame.cached),
+        "failed":failed,"partial":bool(partial),"cache_age_hours":round(age.total_seconds()/3600,2) if age else 0 if oldest else None,
+        "oldest_acquired":oldest.isoformat() if oldest else None,
+        "published_at":max(published).isoformat() if published else None,
+        "coverage_basis":"record" if interval else "giorni gas",
+        "refresh_error":"Aggiornamento non riuscito; ultima copia valida" if failed else None,
+        "revision_rows":int((frame.revision_count>1).sum()),"source_url":frame.source_url.iloc[0]}
+
+
+def gas_health(frame,first,last,now):
+    if frame.empty:return []
+    from .gas_data import select
+    rows=[]
+    for key,group in frame.groupby(["provider","entity_key","indicator","unit","time_basis"],sort=False):
+        visible=select(group,key[0],(key[1],),key[2],key[3],key[4],first,last)
+        if visible.empty:
+            label=group.provider.iloc[0]+" · "+group.entity_label.iloc[0]+" · "+str(group.indicator.iloc[0])
+            rows.append({**row(label,str(group.scope.iloc[0] or group.point_direction.iloc[0] or "Singolo impianto"),
+                "Osservato",{},dates(last,(last-first).days+1),now),"state":"Historical"})
+        else:rows.append(observation_health(visible,first,last,now))
+    return rows
 
 
 def _values(frame,field):
@@ -180,7 +243,7 @@ def _acer(state,now):
                period_limit=now.astimezone(ROME).date(),note="Ultime 14 righe ricevute, non calendario atteso della fonte")
 
 
-def session_health(state,now,*,inspections=None):
+def session_health(state,now,*,inspections=None,network=None,snapshots=(),gas_rows=None,interruptions=()):
     if inspections is None:inspections={}
     # The availability of a source is not its configured/connected status.
     adapters=[
@@ -200,6 +263,18 @@ def session_health(state,now,*,inspections=None):
         except (ValueError,KeyError,AttributeError,TypeError,OverflowError,ArithmeticError,IndexError):
             rows.append({**row(name,scope,"Non verificato",{},[],now),"status":"Schema da verificare",
                          "note":"Formato sessione non riconosciuto; nessun valore presunto"})
+    if network is not None or gas_rows is not None:
+        from .gas_data import collect
+        first,last=dates(closed_gas_day(now))[0],closed_gas_day(now)
+        try:
+            frame=gas_rows if gas_rows is not None else collect(network,snapshots,state,now,first=first,last=last,interruptions=interruptions)
+            rows.extend(gas_health(frame.loc[frame.provider=="ENTSOG"],first,last,now))
+            gie=frame.loc[(frame.provider!="ENTSOG")&~((frame.scope=="IT")&frame.infrastructure_id.isna())]
+            end=now.astimezone(ROME).date()-timedelta(days=1)
+            rows.extend(gas_health(gie,dates(end)[0],end,now))
+        except (ValueError,KeyError,AttributeError,TypeError,ArithmeticError):
+            rows.append({**row("Dati gas · mappa e Explorer","Punti verificati","Non verificato",{},[],now),
+                         "status":"Schema da verificare","note":"Nessuna misura presunta"})
     return rows
 
 

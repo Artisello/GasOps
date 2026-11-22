@@ -8,6 +8,8 @@ Demo indipendente delle potenzialità per Balancing, Settlement e Operations. La
 
 La stessa mappa offre quattro letture: **SYSTEM, FLOW, ATTENTION e INFRASTRUCTURE**. Le 69 centrali elettriche sono visibili dalla prima apertura. La scheda condivisa espone dati fisici/commerciali, storico a 30 giorni quando disponibile, eventi verificati e provenienza. Cambiare lettura mantiene la selezione e non interroga le API.
 
+**Security of Supply → Esplora dati**: confronto delle osservazioni ENTSOG e GIE già disponibili, con serie temporali, D-1, revisioni, tabella e CSV dalla stessa selezione. Accesso diretto dalla scheda Fonti della mappa e diagnostica condivisa con Source Health. Nessun caricamento o fetch al cambio filtro. [Funzioni e limiti del Data Explorer](docs/GAS_DATA_EXPLORER.md).
+
 **Demo live:** https://snamigor.streamlit.app/
 
 I.G.O.R. è un prototipo indipendente, non ufficiale Snam. Gli identificatori tecnici e le configurazioni di deployment restano invariati per compatibilità.

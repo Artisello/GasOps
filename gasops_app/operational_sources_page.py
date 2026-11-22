@@ -30,10 +30,14 @@ def operational_context():
     """Standalone view; only the selected platform is loaded."""
     title=st.empty()
     key=configured_key()
-    selected=st.radio("Sezione",["AGSI+","ALSI","IIP","Jarvis","MASE","ENTSOG","MAP"],horizontal=True,key="operational_platform",
+    selected=st.radio("Sezione",["AGSI+","ALSI","IIP","Jarvis","MASE","ENTSOG","MAP","EXPLORER"],horizontal=True,key="operational_platform",
                       label_visibility="collapsed",
-                      format_func={"AGSI+":"Scorte","ALSI":"Gas liquefatto","IIP":"Avvisi di mercato","Jarvis":"Rete Snam","MASE":"Produzione","ENTSOG":"Interconnessioni","MAP":"Mappa della rete"}.__getitem__)
-    title.title("Rete gas italiana" if selected=="MAP" else "Stoccaggi e forniture")
+                      format_func={"AGSI+":"Scorte","ALSI":"Gas liquefatto","IIP":"Avvisi di mercato","Jarvis":"Rete Snam","MASE":"Produzione","ENTSOG":"Interconnessioni","MAP":"Mappa della rete","EXPLORER":"Esplora dati"}.__getitem__)
+    title.title("Gas Data Explorer" if selected=="EXPLORER" else "Rete gas italiana" if selected=="MAP" else "Stoccaggi e forniture")
+    if selected=="EXPLORER":
+        from .gas_data_page import panel
+        panel()
+        return
     if selected=="MAP":
         from .italian_network_page import panel
         panel()

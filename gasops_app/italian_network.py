@@ -1,5 +1,5 @@
 """Italian infrastructure identities, geography and observations are separate records."""
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -216,11 +216,31 @@ def merge_observations(snapshots):
     records appear fresh. Revisions from one response stay in the observation.
     """
     records = []
+    releases = {}
     for snapshot in sorted(snapshots, key=lambda s: s.acquired):
+        release = (snapshot.point_direction,snapshot.first,snapshot.last,snapshot.acquired)
+        previous = releases.get(release)
+        incoming = snapshot.records
+        if previous is not None and previous != incoming:
+            # Same acquisition/window is not an ordering of source revisions.
+            # Withhold contradictory cells, including a tied response's holes.
+            key = lambda o:(o.indicator,o.period_from,o.period_to)
+            left,right = {key(o):o for o in previous},{key(o):o for o in incoming}
+            combined = []
+            for cell in sorted(left.keys()|right.keys()):
+                a,b = left.get(cell),right.get(cell)
+                row = b or a
+                if a is None or b is None or a.value != b.value:
+                    versions = tuple({"value":str(o.value) if o.value is not None else None,
+                        "observed_at":o.observed_at,"source_id":o.source_id} for o in (a,b) if o is not None)
+                    row = replace(row,value=None,quality_status="conflict",revisions=(*row.revisions,*versions))
+                combined.append(row)
+            incoming = tuple(combined)
+        releases[release] = incoming
         start, stop = _start(snapshot.first), _start(snapshot.last + timedelta(days=1))
         records = [o for o in records if not (o.point_direction == snapshot.point_direction
                    and o.period_from < stop and o.period_to > start)]
-        records.extend(snapshot.records)
+        records.extend(incoming)
     return tuple(records)
 
 

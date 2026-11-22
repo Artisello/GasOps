@@ -1,43 +1,60 @@
 """Compact quality overview of loaded data, no new API calls."""
-import csv,io
+import pandas as pd
 import streamlit as st
 from .models import utc_now
 from .source_health import session_health,compare_srg
+from .operational_sources import attributed_csv
 from .visuals import kpi_grid,info
 
 def _csv(rows):
-    f=io.StringIO();w=csv.DictWriter(f,fieldnames=list(rows[0]),lineterminator="\n")
-    w.writeheader();w.writerows(rows);return f.getvalue()
+    return attributed_csv({"frame":pd.DataFrame(rows)},per_row_source=True)
 
-def panel():
-    now=utc_now()
-    st.subheader("Qualità e affidabilità dei dati")
-    st.caption("Controllo della sessione · distinto dal report del monitor automatico")
-    rows=session_health(st.session_state,now)
+def render_rows(rows,*,key="source_health",filterable=True,kpis=True,download=True):
     good=sum(r["status"]=="Copertura verificata" for r in rows)
     absent=sum(r["status"].startswith("Non disponibile") or r["status"]=="Disattivato" for r in rows)
     review=len(rows)-good-absent
-    kpi_grid([("Copertura verificata",good,"","Serie / misure, non provider",0,""),
+    if kpis:kpi_grid([("Copertura verificata",good,"","Serie / misure, non provider",0,""),
               ("Da verificare",review,"","Cache, lacune, metadati",0,""),
               ("Non disponibili",absent,"","Incluse misure disattivate",0,"")])
     view=st.radio("Serie mostrate",["Tutte","Da verificare","Non disponibili","Verificate"],
-                  horizontal=True,key="source_health_filter",label_visibility="collapsed")
+                  horizontal=True,key=key+"_filter",label_visibility="collapsed") if filterable else "Tutte"
     def group(r):
         if r["status"]=="Copertura verificata":return "Verificate"
         if r["status"].startswith("Non disponibile") or r["status"]=="Disattivato":return "Non disponibili"
         return "Da verificare"
     visible=[r for r in rows if view=="Tutte" or group(r)==view]
-    st.caption(f"{len(visible)}/{len(rows)} serie · stato riferito ai controlli della sessione")
+    if filterable:st.caption(f"{len(visible)}/{len(rows)} serie · stato riferito ai controlli della sessione")
     if visible:
-        st.dataframe([{"Serie":r["source"],"Stato":r["status"],"Ultimo periodo":r["latest"],
+        enriched=any("state" in r for r in visible)
+        st.dataframe([{"Serie":r["source"],"Qualità":r["status"],"Ultimo periodo valido":r["latest"],
                        "Copertura":f'{r["valid"]}/{r["expected"]}' if r["expected"] else "—",
                        "Perimetro":r["scope"],"Tipo":r["kind"],"Acquisito":r["acquired"],
-                       "Ultimo tentativo":r["attempt"]} for r in visible],hide_index=True,width="stretch",
+                       "Ultimo tentativo":r["attempt"],**({"Stato fonte":r.get("state"),
+                        "Età copia più vecchia · h":r.get("cache_age_hours"),"Pubblicazione più recente":r.get("published_at"),
+                        "Errore aggiornamento":r.get("refresh_error"),"Righe con revisioni":r.get("revision_rows"),
+                        "Base copertura":r.get("coverage_basis")} if enriched else {})} for r in visible],hide_index=True,width="stretch",
                      column_config={"Serie":st.column_config.TextColumn(width="medium"),
-                                    "Stato":st.column_config.TextColumn(width="medium")})
+                                    "Qualità":st.column_config.TextColumn(width="medium")})
     else:st.caption("Nessuna serie per questo filtro.")
-    if rows:
-        st.download_button("Esporta controllo qualità completo",_csv(rows),"igor-qualita-fonti.csv","text/csv",key="source_health_export",help="Include tutte le serie, indipendentemente dal filtro.")
+    if rows and download:
+        st.download_button("Esporta controllo qualità completo",_csv(rows),"igor-qualita-fonti.csv","text/csv",key=key+"_export",help="Include tutte le serie, indipendentemente dal filtro.")
+
+
+def panel():
+    now=utc_now()
+    st.subheader("Qualità e affidabilità dei dati")
+    st.caption("Controllo della sessione · distinto dal report del monitor automatico")
+    try:
+        from .italian_network_page import assets,bundled_interruptions
+        from .gas_data import collect
+        from .session import database
+        network,_,snapshots=assets()
+        frame=collect(network,snapshots,st.session_state,now,store=database(),interruptions=(bundled_interruptions(),))
+        rows=session_health(st.session_state,now,gas_rows=frame)
+    except (OSError,ValueError,KeyError):
+        rows=session_health(st.session_state,now)
+        st.caption("Dati della mappa non disponibili per il controllo.")
+    render_rows(rows)
     with st.expander("Coerenza tra acquisizioni · ENTSOG"):
         st.caption("Stesso aggregato termoelettrico SRG, stesso giorno gas: serie mercato vs contesto Terna. Non confronto gas/elettricità e non fonte indipendente.")
         try:paired=compare_srg(st.session_state,now)

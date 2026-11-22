@@ -436,4 +436,5 @@ def build_status(network, snapshots, state, now, *, gas_day=None, interruptions=
         tuple(sorted({m.source_id for m in used})), "unavailable" if not used else "stale" if any(m.freshness == "stale" for m in used) else
         "partial" if coverage.valid < coverage.expected else "observed", coverage, imports, storage, lng, demand, forecast,
         events, tuple(sorted(set(flags))), components, tuple(sorted(findings, key=lambda f: (f.category == "quality", f.id))),
-        tuple(session_health(state, now, inspections=inspections)), event_coverage, int((stop-start).total_seconds()/3600))
+        tuple(session_health(state,now,inspections=inspections,network=network,snapshots=snapshots,interruptions=interruptions)),
+        event_coverage,int((stop-start).total_seconds()/3600))
