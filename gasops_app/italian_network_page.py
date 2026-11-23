@@ -35,6 +35,7 @@ FILTER_KEYS = ("net_layers", "net_operators", "net_regions", "net_statuses", "ne
 SELECTED = "italian_network_selected_v1"
 FOCUS = "italian_network_focus_v1"
 READING = "italian_network_reading_v1"
+MODE_LABELS = {"SYSTEM":"Sistema","FLOW":"Flussi","ATTENTION":"Attenzione","INFRASTRUCTURE":"Infrastrutture"}
 MODE_HINTS = {"SYSTEM":"Categorie e disponibilità dei dati.",
     "FLOW":"Flussi dei punti verificati · gasdotti solo come contesto geografico.",
     "ATTENTION":"Eventi pubblicati, indicatori calcolati e qualità dei dati.",
@@ -97,9 +98,10 @@ def _mode_selector(layout):
     st.session_state[READING] = current
     key = "net_reading_"+layout
     st.session_state[key] = current
-    st.radio("Lettura della mappa",READING_MODES,key=key,horizontal=True,label_visibility="collapsed",
-             on_change=_reading_selection,args=(key,))
-    st.caption(MODE_HINTS[current])
+    with st.container(key="net_mode_"+layout):
+        st.radio("Lettura della mappa",READING_MODES,key=key,horizontal=True,label_visibility="collapsed",
+                 format_func=MODE_LABELS.__getitem__,on_change=_reading_selection,args=(key,))
+        st.caption(MODE_HINTS[current])
     return current
 
 
@@ -126,7 +128,7 @@ def _reset_view(mode):
 def render_map(network, boundary, visible, identifier, *, mode, observations, day, direction="entry", events=(), show_labels=True,
                reading_mode="SYSTEM", intelligence=None, findings=(), scenario_ids=()):
     """Native selection callback runs before the single Streamlit rerun."""
-    key = f"italian_network_{mode}_deck_{st.session_state.get('net_map_epoch',0)}_{st.session_state.get('net_view_epoch_'+mode,0)}"
+    key = f"italian_network_{mode}_deck_v2_{st.session_state.get('net_map_epoch',0)}_{st.session_state.get('net_view_epoch_'+mode,0)}"
     description = "Mappa del sistema gas italiano. Gasdotti storici schematici e impianti; seleziona con il mouse o usa la ricerca infrastruttura per leggere gli stessi dettagli."
     # Native alt was added after our minimum supported Streamlit version.
     accessible = {"alt":description} if "alt" in signature(st.pydeck_chart).parameters else {}
@@ -183,9 +185,9 @@ def _source_status(status, day, *, expanded=False):
                    "Copertura parziale o non certificata. N/A e conflitti esclusi; capacità confrontate sullo stesso giorno gas.")
 
 
-def _operational_summary(network, item, info):
+def _operational_summary(network, item, info, *, compact=False):
     """Same sections and evidence in the overview and the full point card."""
-    st.caption("STATO")
+    if not compact:st.caption("STATO")
     if not info.get("binding"):
         st.caption(item.status)
         if item.category == "pipeline":
@@ -202,17 +204,20 @@ def _operational_summary(network, item, info):
         st.caption("Copia "+_age(status["age"])+(" · da aggiornare" if info["stale"] else ""))
     values, publications = info["values"], info["publications"]
     flow = values.get("Physical Flow")
-    if flow is not None:
-        st.caption("DATI FISICI")
+    if flow is not None and not compact:st.caption("DATI FISICI")
     if flow is not None:
         delta = info["change_gwh_d"]
-        st.metric("Ultimo flusso pubblicato",numero(flow,1)+" GWh/d",
+        flow_col,util_col=st.columns([1.3,1]) if compact else (st,None)
+        flow_col.metric("Ultimo flusso pubblicato",numero(flow,1)+" GWh/d",
                   delta=(f"{numero(delta,1)} GWh/d vs D-1" if delta is not None else None),delta_color="off")
+        if compact and info["utilization_pct"] is not None:
+            util_col.metric("Utilizzo capacità",numero(info["utilization_pct"],1)+"%",
+                help="Flusso / capacità tecnica firm, con unità e intervalli confrontabili sul giorno gas.")
         row = publications["Physical Flow"][0]
         st.caption(_period_label(row))
     elif not values:
         st.caption("Nessun dato operativo confrontabile sul giorno selezionato.")
-    if info["utilization_pct"] is not None:
+    if info["utilization_pct"] is not None and not compact:
         st.caption(f"Utilizzo capacità: {numero(info['utilization_pct'],1)}% · intervalli confrontabili")
     for heading,names in (("DATI COMMERCIALI",("Nomination","Renomination","Allocation","Firm Technical","Firm Booked","Firm Available")),):
         measures = []
@@ -227,9 +232,13 @@ def _operational_summary(network, item, info):
                 detail += " · intervallo fonte, escluso dai confronti sul giorno"
             measures.append((LABELS[name],row.value,row.unit,detail,1))
         if measures:
-            if heading:
-                st.caption(heading)
-            kpi_grid(measures)
+            if compact:
+                with st.expander("Capacità e dati commerciali"):
+                    st.dataframe([{"Indicatore":label,"Valore":numero(value,1),"Unità":unit,"Periodo e validità":period}
+                        for label,value,unit,period,*_ in measures],hide_index=True,width="stretch")
+            else:
+                if heading:st.caption(heading)
+                kpi_grid(measures)
 
 
 def _period_label(row):
@@ -292,7 +301,7 @@ def overview_panel():
         event_ids = {e["infrastructure_id"] for e in status.active_events}
         finding_ids = {f.infrastructure_id for f in status.attention if f.category not in ("quality","event") and f.infrastructure_id}
         visible = reading_infrastructure(perimeter,reading,intelligence,selected=identifier,event_ids=event_ids,finding_ids=finding_ids)
-        map_col, detail = st.columns([1,1.3],gap="small")
+        map_col, detail = st.columns([1,1.15],gap="medium")
         with map_col:
             render_map(network,boundary,visible,identifier,mode="overview",observations=observations,day=day,direction=direction,
                 reading_mode=reading,intelligence=intelligence,events=event_ids if reading == "ATTENTION" else (),findings=finding_ids)
@@ -309,8 +318,8 @@ def overview_panel():
                 st.selectbox("Infrastruttura",[i.id for i in sorted(network.infrastructure,key=lambda i:i.name)],
                     key="net_overview_infrastructure",format_func=lambda key:_infrastructure_label(all_items[key]),
                     on_change=_widget_selection,args=("net_overview_infrastructure",))
-    system.balance(status)
-    system.attention(status,network,_open_full)
+    system.balance(status,compact=True)
+    system.attention(status,network,_open_full,compact=True)
     st.button("Esplora la rete",icon=":material/arrow_forward:",key="net_overview_open",
               width="stretch",on_click=_open_full,args=(identifier,first,day,direction))
 
@@ -490,7 +499,7 @@ def _point_events(item, info, events, attention):
 
 
 def _detail(network, item, observations, snapshots, direction, events, first, last, saved, *, mode="full", info=None, attention=()):
-    st.caption("IDENTITÀ")
+    if mode!="overview":st.caption("IDENTITÀ")
     st.subheader(display_name(item.name))
     st.caption(" · ".join(filter(None,[CATEGORIES[item.category],item.operator,*item.regions])))
     info = info if info is not None else point_intelligence(network,item.id,observations,last,utc_now(),
@@ -499,7 +508,7 @@ def _detail(network, item, observations, snapshots, direction, events, first, la
     data_tab, history_tab, events_tab, sources_tab = st.tabs(["Dati","Storico","Eventi","Fonti"])
     with data_tab:
         with st.container(key="network_home_point_data" if mode == "overview" else "network_point_data"):
-            _operational_summary(network,item,info)
+            _operational_summary(network,item,info,compact=mode=="overview")
             _gie_detail(saved,item.id,network,first,last,mode=mode)
             from .italian_network import security_entries
             if any(b.infrastructure_id==item.id for b in security_entries(network)):

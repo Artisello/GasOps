@@ -92,7 +92,7 @@ def test_pipeline_mouse_targets_are_wider_without_changing_source_geometry():
     layers={l["id"]:l for l in spec["layers"]}
     target=layers["pipeline-hit-targets"]
     assert target["pickable"] and target["lineWidthUnits"] == "pixels"
-    assert target["lineWidthMinPixels"] == target["lineWidthMaxPixels"] == 12
+    assert target["lineWidthMinPixels"] == target["lineWidthMaxPixels"] == 18
     assert target["getLineColor"][3] == 1
     assert target["data"] == layers["historical-links"]["data"]
     assert not layers["historical-links"]["pickable"]
@@ -169,7 +169,8 @@ def test_overview_exposes_same_operational_history_and_keeps_missing_values_miss
     assert "Nomination" in app.selectbox(key="net_overview_indicator").options or "Nomina" in app.selectbox(key="net_overview_indicator").options
     app.selectbox(key="net_overview_indicator").set_value("Nomination").run()
     assert not app.exception and len(app.get("plotly_chart")) == 1
-    assert any("Capacità tecnica" in h.proto.body and "Rinomina" in h.proto.body for h in app.get("html"))
+    commercial=next(d.value for d in app.dataframe if "Periodo e validità" in d.value.columns)
+    assert "Capacità tecnica firm" in set(commercial.Indicatore) and "Rinomina" in set(commercial.Indicatore)
     app.session_state[view.SELECTED]="INET_PL_5"
     app.run()
     assert not app.exception and not app.get("plotly_chart")

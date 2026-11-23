@@ -40,17 +40,15 @@ def header(status):
             st.number_input("Utilizzo capacità · %", min_value=1, max_value=200, value=90, key="system_capacity_pct")
             st.number_input("Scarto dalla mediana · %", min_value=1, max_value=1000, value=30, key="system_deviation_pct")
             st.number_input("Giorni minimi della baseline", min_value=3, max_value=28, value=14, key="system_baseline_min_days")
-        latest = data_it(status.latest_observed_gas_day) if status.latest_observed_gas_day else "N/A"
-        st.caption(f"Ultimo giorno osservato: {latest} · ultimo giorno concluso: {data_it(status.last_completed_gas_day)}")
+            latest = data_it(status.latest_observed_gas_day) if status.latest_observed_gas_day else "N/A"
+            st.caption(f"Ultimo giorno osservato: {latest} · ultimo giorno concluso: {data_it(status.last_completed_gas_day)}")
     demand = status.demand_forecast if status.demand_actual.value is None and status.demand_forecast.value is not None else status.demand_actual
     cards = []
     for label, m in (("Ingressi stimati dalla fonte" if status.entry_flow_observed.status == "estimated" else "Ingressi osservati", status.entry_flow_observed), ("Send-out GNL", status.lng_sendout),
                      ("Giacenza stoccaggi", status.storage_level),
                      ("Prelievi SRG" if demand is status.demand_actual else "Prelievi SRG · previsione", demand)):
         detail = f"{m.source} · {data_it(m.gas_day)} · {m.coverage.valid}/{m.coverage.expected}"
-        if m.value is None:
-            detail += f" · N/A ({m.unit})"
-        elif m.status == "estimated":
+        if m.status == "estimated":
             detail += " · Stimato"
         if m.freshness == "stale":
             detail += " · ultima copia valida"
@@ -63,10 +61,13 @@ def _remember_day():
     st.session_state[SELECTED_DAY] = st.session_state[DAY_KEY]
 
 
-def balance(status):
-    with st.container(key="system_daily_balance"):
-        st.subheader("Bilancio giornaliero")
-        st.caption(f"{status.source_coverage.valid}/{status.source_coverage.expected} componenti · {data_it(status.gas_day)}")
+def balance(status, *, compact=False):
+    coverage=f"{status.source_coverage.valid}/{status.source_coverage.expected} componenti"
+    layout=st.expander("Bilancio giornaliero · "+coverage) if compact else st.container(key="system_daily_balance")
+    with layout:
+        if not compact:
+            st.subheader("Bilancio giornaliero")
+            st.caption(coverage+" · "+data_it(status.gas_day))
         for side, label in (("supply", "Afflussi"), ("outflow", "Domanda e uscite")):
             cells = []
             for component in status.components:
@@ -99,9 +100,10 @@ def balance(status):
             st.download_button("Esporta stato e provenienza", json.dumps(asdict(status), ensure_ascii=False, indent=2,
                 default=lambda v:v.isoformat() if hasattr(v,"isoformat") else str(v)),
                 "igor-system-status.json", "application/json", key="system_status_export")
+    if compact:st.caption(status.balance_message)
 
 
-def attention(status, network, open_point):
+def attention(status, network, open_point, *, compact=False):
     with st.container(key="system_operational_attention"):
         st.subheader("Attenzione operativa")
         st.caption("Indicatori di attenzione calcolati da I.G.O.R.")
@@ -126,9 +128,22 @@ def attention(status, network, open_point):
                 action.button("Apri punto", key="system_attention_"+f.id, width="stretch",
                     help=names[f.infrastructure_id], on_click=open_point,
                     args=(f.infrastructure_id, status.gas_day, status.gas_day, f.direction))
-        for f in status.attention[:5]:
+        findings=[f for f in status.attention if f.category!="quality"] if compact else status.attention
+        for f in findings[:5]:
             row(f)
-        if len(status.attention) > 5:
-            with st.expander(f"Altri {len(status.attention)-5} indicatori"):
-                for f in status.attention[5:]:
+        if len(findings) > 5:
+            with st.expander(f"Altri {len(findings)-5} indicatori"):
+                for f in findings[5:]:
                     row(f)
+        quality=[f for f in status.attention if f.category=="quality"] if compact else []
+        if quality:
+            with st.expander(f"Qualità delle fonti · {len(quality)} segnalazioni"):
+                st.dataframe([{"Segnalazione":f.description,"Fonte":f.source_id,"Regola":f.rule,
+                    "Valore":numero(f.observed_value,1) if f.observed_value is not None else None,
+                    "Soglia":numero(f.threshold,1) if f.threshold is not None else None,"Unità":f.unit,
+                    "Pubblicato":local_time(f.observed_at),"Acquisito":local_time(f.retrieved_at),
+                    "Riferimenti":", ".join(f.evidence_ids),"ID":f.id} for f in quality],hide_index=True,width="stretch")
+                for f in quality:
+                    if f.infrastructure_id in names:
+                        st.button("Apri "+names[f.infrastructure_id],key="system_attention_"+f.id,
+                            on_click=open_point,args=(f.infrastructure_id,status.gas_day,status.gas_day,f.direction))

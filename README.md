@@ -6,7 +6,7 @@ Demo indipendente delle potenzialità per Balancing, Settlement e Operations. La
 
 **Panoramica → Mappa italiana**: mappa interattiva in apertura sia Demo sia Workbench, con KPI pubblici e accesso alla stessa infrastruttura in **Security of Supply → Mappa della rete**. La vista completa offre 456 elementi geografici italiani, estratto ENTSOG reale per 11 ingressi, filtri e dettagli consultabili anche offline. Aggiornamento mirato su richiesta; geografie storiche e copertura parziale esplicite. [Fonti, licenze e limiti](docs/ITALIAN_GAS_NETWORK_MAP.md).
 
-La stessa mappa offre quattro letture: **SYSTEM, FLOW, ATTENTION e INFRASTRUCTURE**. Le 69 centrali elettriche sono visibili dalla prima apertura. La scheda condivisa espone dati fisici/commerciali, storico a 30 giorni quando disponibile, eventi verificati e provenienza. Cambiare lettura mantiene la selezione e non interroga le API.
+La stessa mappa offre quattro letture: **Sistema, Flussi, Attenzione e Infrastrutture**. Le 69 centrali elettriche sono visibili dalla prima apertura. Punti e gasdotti hanno aree di click ampliate, separate dai simboli visibili. La Panoramica privilegia flusso e utilizzo; dettagli commerciali, bilancio e qualità restano apribili. La scheda condivisa mantiene storico, eventi e provenienza. Cambiare lettura conserva la selezione e non interroga le API.
 
 **Security of Supply → Esplora dati**: confronto delle osservazioni ENTSOG e GIE già disponibili, con serie temporali, D-1, revisioni, tabella e CSV dalla stessa selezione. Accesso diretto dalla scheda Fonti della mappa e diagnostica condivisa con Source Health. Nessun caricamento o fetch al cambio filtro. [Funzioni e limiti del Data Explorer](docs/GAS_DATA_EXPLORER.md).
 
