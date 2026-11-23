@@ -197,3 +197,13 @@ def test_map_and_explorer_agree_on_recently_retrieved_historical_flow():
     assert map_status["data_status"]==health["data_status"]=="Historical"
     assert map_status["retrieved_at"]==health["retrieved_at"]==NOW.isoformat()
     assert health["cache_age"]==0
+
+
+def test_observation_age_allowance_does_not_extend_cache_freshness():
+    from gasops_app.source_health import row
+    day=date(2026,11,22)
+    health=row("GIE · AGSI+","Italia","Osservato",{day:10},[day],NOW,
+        acquired=NOW-timedelta(hours=30),period_limit=day,
+        age_limit=timedelta(days=3),cache_ttl=timedelta(hours=24))
+    assert health["data_status"]=="Stale" and health["cache_age"]==30*3600
+    assert not health["historical"]

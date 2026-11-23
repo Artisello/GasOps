@@ -44,7 +44,8 @@ def months(end,n=6):
 
 
 def row(label,scope,kind,values,expected,now,*,acquired=None,failed=False,review=False,
-        age_limit=None,forecast=False,note="",attempt=None,period_limit=None,latest_override=None,counts=None):
+        age_limit=None,forecast=False,note="",attempt=None,period_limit=None,latest_override=None,counts=None,
+        cache_ttl=timedelta(hours=12)):
     valid={d:v for d,v in values.items() if finite(v) and (period_limit is None or d<=period_limit)}
     latest=latest_override if latest_override is not None else max(valid,default=None)
     count=sum(d in valid for d in expected)
@@ -70,7 +71,7 @@ def row(label,scope,kind,values,expected,now,*,acquired=None,failed=False,review
     else:status="Copertura verificata"
     temporal=temporal_evidence(now=now,gas_day=latest,retrieved_at=at,current_day=period_limit,
         valid=count,expected=expected_count,failed=failed,partial=review or count<expected_count,
-        ttl=age_limit or timedelta(hours=12))
+        ttl=cache_ttl)
     return {**temporal,"source":label,"scope":scope,"kind":kind,"status":status,"latest":latest.isoformat() if latest else None,
             "valid":count,"expected":expected_count,"acquired":at.isoformat() if at else None,
             "attempt":last_attempt.isoformat() if last_attempt else None,"note":note}
@@ -199,6 +200,7 @@ def _weather(state,now,kind):
     vals=_values(clean,"hdd")
     return row(label,"Milano/Roma/Napoli","Previsione" if forecast else "Storico",vals,expected,now,
                acquired=item["acquired"],failed=item["failed"],forecast=forecast,
+               cache_ttl=timedelta(hours=6 if forecast else 24),
                age_limit=timedelta(hours=12) if forecast else timedelta(days=10),note="Temperatura e HDD entrambi presenti",
                period_limit=expected[-1])
 
@@ -218,6 +220,7 @@ def _inventory(state,now,platform,field,name):
         vals=_values(f.set_index("gas_day"),field)
         if "review" in f:review=bool(f.loc[f.gas_day.isin(expected),"review"].any())
     return row(name,"Italia","Osservato",vals,expected,now,acquired=r["acquired"] if r else None,
+               cache_ttl=timedelta(hours=24),
                failed=bool(saved.get("error") or (r and r["failed"])),review=review,
                age_limit=timedelta(days=3),attempt=attempt,period_limit=end,note="14 date pubblicabili; perimetro IT")
 
