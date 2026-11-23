@@ -2,6 +2,9 @@
 All joined series use an explicit [06:00,06:00) gas-day label convention.
 """
 from datetime import date, datetime, timedelta, timezone
+from contextlib import contextmanager
+from contextvars import ContextVar
+from time import monotonic
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 import csv
@@ -26,6 +29,17 @@ TOKEN="https://api.terna.it/public-api/access-token"
 GEN="https://api.terna.it/generation/v2.0/actual-generation"
 LOAD="https://api.terna.it/load/v2.0/total-load"
 SOURCES=("Thermal","Wind","Photovoltaic","Hydro","Geothermal")
+_TOKEN_BATCH=ContextVar("terna_token_batch",default=None)
+
+
+@contextmanager
+def token_batch():
+    """Reuse credentials only inside one explicit acquisition, never in UI/cache."""
+    marker=_TOKEN_BATCH.set({})
+    try:
+        yield
+    finally:
+        _TOKEN_BATCH.reset(marker)
 MAX_BYTES=2_000_000
 UTC=timezone.utc
 METRICS={"demand":"TWh","production_for_consumption":"TWh","net_imports":"TWh",
@@ -96,6 +110,8 @@ def _json_request(method,url,*,data=None,params=None,headers=None):
         with requests.request(method,url,data=data,params=params,headers=headers,
                               timeout=(5,25),allow_redirects=False,stream=True) as response:
             if response.status_code!=200:
+                if response.status_code==401 and _TOKEN_BATCH.get() is not None:
+                    _TOKEN_BATCH.get().clear()
                 raise SourceUnavailable(f"Terna: HTTP {response.status_code}.")
             body=bytearray()
             for c in response.iter_content(16384):
@@ -113,11 +129,19 @@ def _json_request(method,url,*,data=None,params=None,headers=None):
 def get_token(client,secret):
     if not client or not secret:
         raise SourceUnavailable("Credenziali Terna non configurate.")
+    cache=_TOKEN_BATCH.get()
+    key=(client,secret)
+    if cache is not None and key in cache and cache[key][1]>monotonic():
+        return cache[key][0]
+    started=monotonic()
     payload=_json_request("POST",TOKEN,data={"client_id":client,"client_secret":secret,
                           "grant_type":"client_credentials"},headers={"Accept":"application/json"})
     token=payload.get("access_token")
     if not isinstance(token,str) or not token or len(token)>4096 or any(c.isspace() for c in token):
         raise SourceUnavailable("Terna: token non valido.")
+    lifetime=payload.get("expires_in")
+    if cache is not None and isinstance(lifetime,(int,float)) and not isinstance(lifetime,bool) and math.isfinite(lifetime) and lifetime>15:
+        cache[key]=(token,started+min(lifetime,300)-15)
     return token
 
 

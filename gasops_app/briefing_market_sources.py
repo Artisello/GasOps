@@ -4,6 +4,7 @@ Only fixed public adapters are consulted. No uploads, participant records,
 private PDFs, credential fields or raw API bodies enter this context.
 """
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from datetime import date, datetime, timedelta
 from math import isfinite
 
@@ -204,7 +205,7 @@ def collect_market_sources(store,selected,now,state,*,terna=(),clock=utc_now,onl
             attempted[name]=now
     cache["attempted"]=attempted
     with ThreadPoolExecutor(max_workers=4) as pool:
-        futures={name:pool.submit(fn) for name,fn in tasks.items()}
+        futures={name:pool.submit(copy_context().run,fn) for name,fn in tasks.items()}
         for name,future in futures.items():
             try:
                 value=future.result()

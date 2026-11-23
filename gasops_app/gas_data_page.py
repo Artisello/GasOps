@@ -135,7 +135,7 @@ def panel():
     if len(latest)==1:
         r=latest.iloc[0]
         st.metric(LABELS[indicator]+" · "+data_it(last),numero(r.value,2)+" "+unit,
-            delta=numero(r.delta_d1,2)+" "+unit+" vs D-1" if r.delta_d1 is not None else None,delta_color="off")
+            delta=numero(r.delta_d1,2)+" "+("p.p." if unit=="%" else unit)+" vs D-1" if r.delta_d1 is not None else None,delta_color="off")
         if r.delta_d1 is None:st.caption("D-1 non disponibile: nessun confronto con una data precedente sostitutiva.")
     columns=["gas_day","entity_label","indicator","value","unit","value_d1","delta_d1","quality_status",
              "revision_count","publication_status","period_from","period_to","observed_at","retrieved_at",
@@ -145,6 +145,7 @@ def panel():
         st.dataframe(visible[columns],hide_index=True,width="stretch",key="gas_explorer_table",
             column_config={"value":st.column_config.NumberColumn("Valore"),"entity_label":"Punto / infrastruttura",
                 "gas_day":"Giorno fonte","quality_status":"Qualità","observed_at":"Pubblicato",
+                "delta_d1":"Δ D-1 (p.p.)" if unit=="%" else "Δ D-1 ("+unit+")",
                 "retrieved_at":"Acquisito","revisions":st.column_config.TextColumn("Revisioni · JSON")})
     if view=="Tabella":table()
     else:

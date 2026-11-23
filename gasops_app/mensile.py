@@ -1,6 +1,7 @@
 """Prezzo mensile ARERA e unione con il bilancio Eurostat per mese civile."""
 
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -122,8 +123,8 @@ def combine(balance: Bundle, prices: Prices) -> Bundle:
 
 def load_monthly(store: Store, *, refresh: bool = False) -> tuple[Bundle, str | None]:
     with ThreadPoolExecutor(max_workers=2) as pool:
-        balances = pool.submit(eurostat.load, store, refresh=refresh)
-        prices = pool.submit(load_arera, store, refresh=refresh)
+        balances = pool.submit(copy_context().run,eurostat.load, store, refresh=refresh)
+        prices = pool.submit(copy_context().run,load_arera, store, refresh=refresh)
         balance = balances.result()
         try:
             return combine(balance, prices.result()), None

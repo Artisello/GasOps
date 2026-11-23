@@ -1,6 +1,7 @@
 """Independent, dated public indicators; no acquisition until requested."""
 from datetime import date,datetime,timedelta
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 
 import pandas as pd
 import streamlit as st
@@ -58,7 +59,7 @@ def acquire_indicators(store,key,now,*,refresh=False):
         tasks["lng"]=lambda:supply_snapshot(load_alsi(store,key,"IT",now=now,refresh=refresh),now,"ALSI")
     out={}
     with ThreadPoolExecutor(max_workers=3) as pool:
-        jobs={name:pool.submit(task) for name,task in tasks.items()}
+        jobs={name:pool.submit(copy_context().run,task) for name,task in tasks.items()}
         for name,future in jobs.items():
             try:
                 out[name]=future.result()

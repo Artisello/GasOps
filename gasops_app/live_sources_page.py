@@ -21,8 +21,8 @@ def controls(prefix):
             client,secret=credentials(st.secrets)
         except (ValueError,KeyError,FileNotFoundError):
             client,secret=credentials()
-        options=["monthly","daily","acer"]+(["weather"] if enabled(state) else [])
-        if gie:options+=["agsi","alsi"]
+        options=["monthly","daily","acer","network"]+(["weather"] if enabled(state) else [])
+        if gie:options+=["agsi","alsi","iip"]
         if client and secret:options+=["terna","terna_forward","terna_capacity","terna_industry"]
         selected=st.multiselect("Fonti",options,default=["monthly"]+(["terna","terna_forward","terna_capacity","terna_industry"] if "terna" in options else [])+(["weather"] if "weather" in options else []),format_func=LABELS.__getitem__,key=prefix+"_live_sources")
         if any(k.startswith("terna") for k in selected):

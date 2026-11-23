@@ -1,5 +1,6 @@
 """Bounded, attributed public context for a briefing, not a balance calculation."""
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from datetime import datetime, timedelta
 import math
 
@@ -113,7 +114,7 @@ def collect(store, context, now, *, key="", include_gie=False, include_weather=F
             tasks["Open-Meteo"]=weather_task
     if tasks:
         with ThreadPoolExecutor(max_workers=4) as pool:
-            futures={name:pool.submit(task) for name,task in tasks.items()}
+            futures={name:pool.submit(copy_context().run,task) for name,task in tasks.items()}
             for name,future in futures.items():
                 try:
                     out[name]=future.result()

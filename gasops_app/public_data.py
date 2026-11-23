@@ -105,6 +105,10 @@ def retrieve(
             else:
                 reason = "dati assenti o schema non valido"
             LOG.warning("%s: tentativo %s fallito (%s)", name, attempt + 1, reason)
+            if isinstance(error,requests.HTTPError) and error.response is not None and error.response.status_code in (400,401,403,404,405,410,422,429):
+                # Repeating the same rejected request cannot repair credentials,
+                # parameters or a quota. Keep the valid cache and allow recovery.
+                break
             continue
         store.cache(key, now.isoformat(), text)
         return result
