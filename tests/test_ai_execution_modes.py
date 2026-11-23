@@ -8,7 +8,7 @@ from gasops_app.supervisor import ModelUnavailable
 import pytest
 
 
-def test_configured_ai_is_default_and_local_choice_persists(monkeypatch,tmp_path):
+def test_configured_ai_requires_explicit_activation_and_local_choice_persists(monkeypatch,tmp_path):
     config=LLMConfig("fixture-local","http://localhost:11434/v1")
     monkeypatch.setattr(session,"_configuration",lambda:config)
     monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
@@ -20,8 +20,8 @@ def test_configured_ai_is_default_and_local_choice_persists(monkeypatch,tmp_path
     app.session_state["selected_source"]=session.DEMO
     app.run()
     assert not app.exception
-    assert app.selectbox(key="execution_mode").value=="fixture-local"
-    assert not app.chat_input(key="assistant_question").disabled
+    assert app.selectbox(key="execution_mode").value=="Deterministic"
+    assert app.chat_input(key="assistant_question").disabled
     app.selectbox(key="execution_mode").set_value("Deterministic").run()
     assert not app.exception and app.chat_input(key="assistant_question").disabled
     app.run()

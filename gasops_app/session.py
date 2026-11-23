@@ -19,12 +19,12 @@ from .supervisor import ModelUnavailable
 from .mensile import load_monthly
 from .entsog import load as load_daily
 from .models import Agent, Kind, Run, utc_now
-from .public_data import SourceUnavailable
+from .public_data import SourceUnavailable, cached_only
 from .regulatory import Library, read_local_pdfs
 from .store import Store
+from .access import document_directory, private_access, require_private
 from .visuals import chip, info, kind_tag, local_time, steps
 from .workflow import DAILY_BRIEFING, run_workflow, plan
-from .country_analysis import requested_country, country_report, direct_market_question
 from .market import demand_trend_question
 from .assistant_sources import requested_sources, add_price_source, complete_requirements, MARKET
 
@@ -58,11 +58,30 @@ def source_notices(warning: str | None) -> tuple[str, str]:
     return warning.strip(), " ".join(found)
 
 
+class SessionStore(Store):
+    """Public source cache is shared; persisted private records are protected."""
+    def save(self, run):
+        require_private()
+        return super().save(run)
+
+    def recent(self, limit=20):
+        require_private()
+        return super().recent(limit)
+
+    def reviewed(self, run_id):
+        require_private()
+        return super().reviewed(run_id)
+
+    def acknowledge(self, run_id, finding_id):
+        require_private()
+        return super().acknowledge(run_id, finding_id)
+
+
 def store(state_dir: str) -> Store:
     # Store owns no persistent connection. Recreate the lightweight wrapper so
     # Streamlit hot reload cannot reuse instances of an older Store class.
     # SQLite state and request counters remain on disk; schema is idempotent.
-    return Store(Path(state_dir) / "state.sqlite3")
+    return SessionStore(Path(state_dir) / "state.sqlite3")
 
 
 def database() -> Store:
@@ -85,7 +104,7 @@ def indexed_library(documents: tuple[tuple[str, bytes], ...]) -> Library:
 
 
 def library() -> Library:
-    path = Path(os.environ.get("GASOPS_PDF_DIR") or ROOT / "data" / "regulatory")
+    path, public = document_directory(ROOT)
     uploads = st.session_state.get("pdf_uploads", ())
     with st.spinner("Indicizzazione dei documenti…", show_time=False):
         local = read_local_pdfs(path)
@@ -93,7 +112,7 @@ def library() -> Library:
         # Never include session uploads in its keys, arguments or cached results.
         if uploads:
             return Library((*local, *uploads))
-        return indexed_library(local)
+        return indexed_library(local) if public else Library(local)
 
 
 def assumptions() -> Assumptions:
@@ -179,7 +198,7 @@ def sidebar() -> None:
         pass
     modes=["Deterministic",config.model] if config else ["Deterministic"]
     # A configured model is the initial mode; an operator can still switch to local calculations.
-    st.selectbox("Modalità di analisi",modes,index=1 if config else 0,
+    st.selectbox("Modalità di analisi",modes,index=0,
                  format_func=lambda value:"Calcoli senza AI" if value=="Deterministic" else value,key="execution_mode")
     ai_controls()
     with st.expander("Fonti bollettino",expanded=False):
@@ -206,7 +225,7 @@ def reasoner() -> CompatibleReasoner | None:
         config = _configuration()
     except ValueError:
         return None
-    if config and st.session_state.get("execution_mode",config.model)==config.model:
+    if config and st.session_state.get("execution_mode","Deterministic")==config.model:
         return CompatibleReasoner(config,reserve=None if config.local else _reserve_remote_request)
     return None
 
@@ -332,10 +351,10 @@ def source_filters(page: str, *, lookback: bool = True) -> Selection:
             else:
                 forget_source(st.session_state,name)
                 if name == DAILY:
-                    with st.spinner("Caricamento ENTSOG…"):
+                    with cached_only(not refresh), st.spinner("Caricamento ENTSOG…"):
                         bundle, warning = load_daily(database(), refresh=refresh)
                 else:
-                    with st.spinner("Caricamento Eurostat e ARERA…"):
+                    with cached_only(not refresh), st.spinner("Caricamento Eurostat e ARERA…"):
                         bundle, warning = load_monthly(database(), refresh=refresh)
                 remember_source(st.session_state,name,bundle,warning,utc_now())
             visible_warning, note = source_notices(warning)
@@ -381,6 +400,14 @@ def preview(fingerprint: str, source_json: str, model: ModelChoice, today: str, 
 
 def preview_market(selection: Selection) -> MarketContext:
     bundle = selection.bundle
+    if private_access():
+        key=(bundle.fingerprint,bundle.origin.model_dump_json(),selection.model,
+             utc_now().astimezone(ROME).date())
+        prior=st.session_state.get("private_preview_v1")
+        if prior is None or prior[0]!=key:
+            prior=(key,MarketContext(bundle,selection.model,utc_now()))
+            st.session_state["private_preview_v1"]=prior
+        return prior[1]
     return preview(bundle.fingerprint, bundle.origin.model_dump_json(), selection.model,
                    utc_now().astimezone(ROME).date().isoformat(), bundle)
 
@@ -410,6 +437,7 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
            ai_policy: str = "selected") -> Run | None:
     if selection.bundle is None:
         return None
+    from .country_analysis import requested_country, country_report, direct_market_question
     if ai_policy not in ("selected","required","off"):
         raise ValueError("Modalità di analisi non valida.")
     model = None if ai_policy == "off" else reasoner()
@@ -491,11 +519,11 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
         st.session_state["last_briefing"] = report
     # UI runs are session-only. Even an explicit caller must opt in on an
     # operator-controlled private deployment before writing a shared history.
-    if persist and os.getenv("GASOPS_PRIVATE_RUN_HISTORY") == "1":
+    if persist and os.getenv("GASOPS_PRIVATE_RUN_HISTORY") == "1" and private_access():
         try:
             database().save(report)
         except (OSError, RuntimeError, sqlite3.Error):
-            LOG.exception("Could not persist GasOps run")
+            LOG.warning("Could not persist GasOps run (storage failure)")
             st.warning("Esecuzione disponibile in questa sessione. Salvataggio nello storico locale non riuscito.")
     if not compact:
         for warning in report.warnings:

@@ -14,6 +14,8 @@ from .operational_sources_page import configured_key
 from .session import database
 from .supply_view import finite,inventory_snapshot
 from .visuals import kpi_grid
+from .freshness import temporal_evidence,label as freshness_label
+from .gas_calendar import closed_gas_day
 
 STATE="overview_public_indicators_v1"
 
@@ -28,7 +30,7 @@ def price_snapshot(prices,now):
     month=pd.Timestamp(period)
     local=now.astimezone(ROME)
     age=(local.year-month.year)*12+local.month-month.month
-    return {"value":val,"period":period_text(month,"monthly"),
+    return {"value":val,"period":period_text(month,"monthly"),"observation_day":month.date().isoformat(),
             "stale":prices.source.refresh_failed or age>2 or age<0,
             "acquired":prices.source.retrieved_at}
 
@@ -96,6 +98,12 @@ def current_rows(snapshot,now,*,gie_enabled):
             detail+=" · Stimato dalla fonte"
         if name=="storage" and item.get("change") is not None:
             detail+=" · "+numero(item["change"],1,signed=True)+" p.p. in 7 gg"
+        day=item.get("gas_day") or item.get("observation_day")
+        if day:
+            temporal=temporal_evidence(now=now,gas_day=day,current_day=closed_gas_day(now),
+                retrieved_at=item["acquired"],valid=1,expected=1,partial=bool(item.get("quality_review")),
+                ttl=timedelta(hours=12 if name=="price" else 24))
+            detail+=" · "+freshness_label(temporal)
         rows.append((label,item["value"],unit,detail,decimals,""))
     return rows
 
@@ -198,3 +206,6 @@ def panel(context=None, *, briefing=None):
         with st.expander("Fonti e significato degli indicatori"):
             st.markdown(" · ".join(links))
             st.caption("CMEM,m: riferimento mensile, non spot. Riempimento: giacenza fisica, non capacità commerciale. Send-out: gas da GNL immesso in rete.")
+            st.dataframe([{"Indicatore":name,"Periodo":item.get("period"),"Acquisito":item.get("acquired"),
+                "Pubblicato":None,"Limiti":"Pubblicazione originale non disponibile; periodi distinti"}
+                for name,item in snapshots.items() if not item.get("error")],hide_index=True,width="stretch")

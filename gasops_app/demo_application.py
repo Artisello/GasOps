@@ -1,17 +1,15 @@
 """Ready entry points without removing any of the application's feature routes."""
 import streamlit as st
 
-from . import session
 
 
 def prepare(route):
+    from . import session
     state=st.session_state
     if "selected_source" not in state:
         state["selected_source"]=session.ARCHIVE
     if "execution_mode" not in state:
-        try:config=session._configuration()
-        except ValueError:config=None
-        state["execution_mode"]=config.model if config else "Deterministic"
+        state["execution_mode"]="Deterministic"
     if route=="balancing":
         state.setdefault("balancing_view","Cockpit")
         state.setdefault("daily_desk_data_mode","Esempio guidato")
@@ -26,25 +24,13 @@ def prepare(route):
 
 
 def _prepare_assistant():
-    """Only public JRC inputs; never include visitor PDFs or imported records."""
-    from .assistant_page import HISTORY,SELECTED
+    """Prepare controls only. Reports and AI calls require an explicit action."""
+    from .assistant_page import HISTORY
     if st.session_state.get("demo_assistant_prepared_v1"):return
     st.session_state["demo_assistant_prepared_v1"]=True
     if st.session_state.get(HISTORY):return
-    from .agents import Assumptions,MarketContext
-    from .models import utc_now
-    from .regulatory import Library
-    from .workflow import run_workflow
-    model=session.reasoner()
-    bundle=session.archive()
-    question="Come è cambiata la domanda di gas e qual è la previsione sui dati storici JRC?"
-    with st.spinner("Preparazione dell’analisi pubblica…"):
-        report=run_workflow(MarketContext(bundle,session.assumptions().model,utc_now()),
-                            Library(include_notes=False),Assumptions(),question,
-                            reasoner=model,planned_only=True)
-    st.session_state[HISTORY]=[report]
-    st.session_state[SELECTED]=report.id
-    st.session_state.setdefault("assistant_view","Assistente operativo" if model else "Report locali")
+    st.session_state.setdefault(HISTORY,[])
+    st.session_state.setdefault("assistant_view","Report locali")
 
 
 def risk():

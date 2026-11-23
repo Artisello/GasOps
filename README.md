@@ -16,6 +16,10 @@ La stessa mappa offre quattro letture: **Sistema, Flussi, Attenzione e Infrastru
 
 **Demo live:** https://snamigor.streamlit.app/
 
+**Profili e caricamento.** La demo usa il profilo server `public_demo`; `GASOPS_APP_MODE=workbench` continua a scegliere il layout senza concedere accessi privati. `private_workbench` richiede identità OIDC verificata da Streamlit, issuer e subject autorizzati sul server e scadenza valida. In mancanza, l'accesso resta chiuso. `test` non concede privilegi. Configurazione e controlli pendenti: [production readiness](docs/PRODUCTION_READINESS.md).
+
+La navigazione carica solo i moduli della vista richiesta. Modelli statistici, indice PDF e archivio remoto vengono caricati quando servono. L'assistente parte in modalità locale senza generare report; AI, acquisizioni e indicizzazione dei PDF pubblici richiedono un'azione esplicita. Cache, storico e dati mancanti mantengono il proprio significato e periodo.
+
 I.G.O.R. è un prototipo indipendente, non ufficiale Snam. Gli identificatori tecnici e le configurazioni di deployment restano invariati per compatibilità.
 
 ## Stato di rilascio

@@ -8,6 +8,8 @@ import streamlit as st
 from .italiano import data_it, numero
 from .system_status import StatusPolicy
 from .visuals import chip, kpi_grid, local_time
+from .freshness import measure_evidence, label as freshness_label
+from .models import utc_now
 
 DAY_KEY = "system_status_gas_day"
 SELECTED_DAY = "system_status_selected_gas_day"
@@ -89,7 +91,8 @@ def balance(status, *, compact=False):
             st.caption("La copertura conta componenti disponibili, comprese quelle osservate solo in parte. Non misura una quota del bilancio fisico. Gli ingressi escludono il GNL; i prelievi SRG sono distinti dalle importazioni. Nessuna somma tra aggregati sovrapposti.")
             st.dataframe([{"Componente":c.label, "Valore":str(c.measure.value) if c.measure.value is not None else None,
                 "Unità":c.measure.unit, "Giorno gas":c.measure.gas_day, "Fonte":c.measure.source_id,
-                "Stato":KINDS[c.measure.status], "Copertura":f"{c.measure.coverage.valid}/{c.measure.coverage.expected}",
+                "Stato":KINDS[c.measure.status], "Freschezza":freshness_label(measure_evidence(c.measure,utc_now())),
+                "Copertura":f"{c.measure.coverage.valid}/{c.measure.coverage.expected}",
                 "Pubblicato":local_time(c.measure.observed_at), "Acquisito":local_time(c.measure.retrieved_at),
                 "Perimetro":c.measure.scope, "Note":" · ".join(c.measure.warnings)} for c in status.components],
                 hide_index=True, width="stretch")

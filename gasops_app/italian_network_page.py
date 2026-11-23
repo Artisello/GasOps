@@ -166,8 +166,8 @@ def _age(value):
 
 
 def _source_status(status, day, *, expanded=False):
-    style = {"Storico":"historical","Aggiornato":"ok","Parziale":"review","Non disponibile":""}[status["status"]]
-    st.html('<div class="gas-map-status">'+chip(status["status"],style)+f'<span>ENTSOG · giorno gas {escape(data_it(day))}</span></div>')
+    from .freshness import label,style
+    st.html('<div class="gas-map-status">'+chip(label(status),style(status))+f'<span>ENTSOG · giorno gas {escape(data_it(day))}</span></div>')
     if status["oldest"]:
         st.caption(f"Copia più vecchia: {_age(status['age'])}"+(" · acquisizioni diverse" if status["oldest"] != status["newest"] else ""))
     if status["failed"]:
@@ -197,8 +197,8 @@ def _operational_summary(network, item, info, *, compact=False):
         return
     binding, day = info["binding"], info["day"]
     status = info["status"]
-    style = {"Storico":"historical","Aggiornato":"ok","Parziale":"review","Non disponibile":""}[status["status"]]
-    st.html('<div class="gas-map-status">'+chip(status["status"],style)+
+    from .freshness import label,style
+    st.html('<div class="gas-map-status">'+chip(label(status),style(status))+
         '<span>ENTSOG · '+("Ingresso" if binding.direction == "entry" else "Uscita")+' · '+escape(data_it(day))+'</span></div>')
     if status["age"] is not None:
         st.caption("Copia "+_age(status["age"])+(" · da aggiornare" if info["stale"] else ""))

@@ -24,13 +24,16 @@ def test_shared_repository_index_reused_and_changed_file_reindexed(monkeypatch,t
     original=desk.build
     calls=[]
     def counted(inputs):
-        calls.append(len(inputs))
+        if inputs:calls.append(len(inputs))
         return original(inputs)
     monkeypatch.setattr(desk,"build",counted)
     script="from gasops_app.document_page import document_page\ndocument_page()"
     try:
         first=AppTest.from_string(script).run()
         second=AppTest.from_string(script).run()
+        assert calls==[]  # Navigation only reads the cheap public manifest.
+        first.button(key="document_local_open").click().run()
+        second.button(key="document_local_open").click().run()
         assert not first.exception and not second.exception
         assert calls==[1]
         first.radio(key="desk_mode").set_value("Riferimenti salvati").run()

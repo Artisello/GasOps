@@ -1,6 +1,8 @@
 """Download con validazione, cache SQLite e fallback all'ultima copia verificata."""
 
 from collections.abc import Callable
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timedelta
 import logging
 import json
@@ -13,6 +15,7 @@ from .store import Store
 
 T = TypeVar("T")
 LOG = logging.getLogger(__name__)
+_NETWORK_ALLOWED = ContextVar("gasops_network_allowed", default=True)
 VALIDATION_ERRORS = (ValueError, TypeError, KeyError, IndexError, OverflowError)
 
 
@@ -22,6 +25,16 @@ class SourceSchemaError(ValueError):
 
 class SourceUnavailable(RuntimeError):
     """La fonte non ha restituito dati validi e la cache non è utilizzabile."""
+
+
+@contextmanager
+def cached_only(enabled=True):
+    """Request-local read policy; never changes another visitor's acquisition."""
+    token = _NETWORK_ALLOWED.set(_NETWORK_ALLOWED.get() and not enabled)
+    try:
+        yield
+    finally:
+        _NETWORK_ALLOWED.reset(token)
 
 
 def retrieve(
@@ -45,10 +58,20 @@ def retrieve(
     if existing and not refresh:
         try:
             cached_at = datetime.fromisoformat(existing[0])
-            if now - cached_at < ttl:
+            if timedelta(0) <= now - cached_at < ttl:
                 return parse(existing[1], cached_at, cached=True)
         except VALIDATION_ERRORS:
             LOG.warning("Cache non valida per %s", name)
+
+    if not _NETWORK_ALLOWED.get():
+        if existing:
+            try:
+                at = datetime.fromisoformat(existing[0])
+                if at.utcoffset() is not None and at <= now:
+                    return parse(existing[1], at, cached=True)
+            except VALIDATION_ERRORS:
+                pass
+        raise SourceUnavailable(name + ": nessuna copia valida. Usa Aggiorna dati per consultare la fonte.")
 
     reason = "nessun dato verificato"
     for attempt in range(attempts):

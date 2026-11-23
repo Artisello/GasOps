@@ -7,7 +7,6 @@ import re
 
 import numpy as np
 import pymupdf
-from sklearn.feature_extraction.text import TfidfVectorizer
 
 from .models import Citation, Finding
 
@@ -202,12 +201,14 @@ class Library:
                 self.documents[pdf.title] = pdf
                 passages.extend(extracted)
         self.passages = passages
-        self.index = TfidfVectorizer(
-            ngram_range=(1, 2), strip_accents="unicode", sublinear_tf=True, max_features=45000,
-            token_pattern=r"(?u)\b[\w-]{2,}\b",
-        )
+        self.index = None
         self.matrix = None
         if passages:
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            self.index = TfidfVectorizer(
+                ngram_range=(1, 2), strip_accents="unicode", sublinear_tf=True, max_features=45000,
+                token_pattern=r"(?u)\b[\w-]{2,}\b",
+            )
             try:
                 self.matrix = self.index.fit_transform([f"{p.search} {p.citation.evidence}" for p in passages])
             except ValueError as error:

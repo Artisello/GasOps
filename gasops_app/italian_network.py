@@ -279,9 +279,11 @@ def evidence_status(records, day, now, *, complete=False, failed=False, current_
     A recent refresh of another indicator/day cannot freshen these records.
     Cache expiry follows the operational adapter's 12-hour TTL.
     """
+    from .freshness import temporal_evidence
     records = tuple(records)
     if not records:
-        return {"status":"Non disponibile","oldest":None,"newest":None,"age":None,
+        return {**temporal_evidence(now=now,gas_day=day,current_day=current_day,failed=failed),
+                "status":"Non disponibile","oldest":None,"newest":None,"age":None,
                 "published_oldest":None,"published_newest":None,"failed":failed,"complete":False}
     oldest=min(o.retrieved_at for o in records)
     newest=max(o.retrieved_at for o in records)
@@ -296,7 +298,12 @@ def evidence_status(records, day, now, *, complete=False, failed=False, current_
     confirmed=all(o.publication_status.casefold() in ("confirmed","final","definitive") for o in records)
     future = newest > now or (current_day is not None and day > current_day)
     status="Storico" if historical else "Aggiornato" if complete and confirmed and not failed and not future else "Parziale"
-    return {"status":status,"oldest":oldest,"newest":newest,"age":max(timedelta(0),now-oldest),
+    temporal=temporal_evidence(now=now,gas_day=day,current_day=current_day,valid=len(records),expected=len(records),
+        period_from=min(o.period_from for o in records),period_to=max(o.period_to for o in records),
+        published_at=max(publications) if publications else None,retrieved_at=oldest,
+        failed=failed,partial=not complete or not confirmed or future,
+        publication_status="Confirmed" if confirmed else "Non confermato")
+    return {**temporal,"status":status,"oldest":oldest,"newest":newest,"age":max(timedelta(0),now-oldest),
             "published_oldest":min(publications) if publications else None,
             "published_newest":max(publications) if publications else None,"failed":failed,"complete":complete}
 

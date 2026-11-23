@@ -1,7 +1,7 @@
 """Streamlit entry point for the I.G.O.R. desktop dashboard."""
 
 from pathlib import Path
-import os
+from importlib import import_module
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -30,20 +30,26 @@ def demo_home():
 
 def application(demo=True):
     """One reachable application tree, with ready examples in the default view."""
-    from gasops_app import dashboard, session, workbench, operations_page, risk_page, operational_sources_page, bso_kpi_page
+    from gasops_app.access import guard_application
+    guard_application()
     from gasops_app.navigation import sidebar_navigation
     from gasops_app import demo_application
 
+    def lazy(module, function):
+        def render():
+            getattr(import_module("gasops_app." + module), function)()
+        return render
+
     pages = [
-        st.Page(demo_home if demo else dashboard.overview, title="Panoramica", icon=":material/home:", default=True),
-        st.Page(dashboard.market, title="Mercato e previsioni", icon=":material/monitoring:", url_path="market"),
-        st.Page(operational_sources_page.operational_context, title="Security of Supply", icon=":material/shield:", url_path="security-of-supply"),
-        st.Page(workbench.balancing, title="Bilanciamento", icon=":material/balance:", url_path="balancing"),
-        st.Page(operations_page.operations_ledger, title="Fatture e garanzie", icon=":material/receipt_long:", url_path="ledger"),
-        st.Page(demo_application.risk if demo else risk_page.risk_page, title="Simulazione rischi", icon=":material/query_stats:", url_path="risk"),
-        st.Page(demo_application.regulatory if demo else workbench.regulatory, title="Norme e documenti", icon=":material/menu_book:", url_path="regulatory"),
-        st.Page(workbench.operations, title="Assistente AI", icon=":material/hub:", url_path="operations"),
-        st.Page(bso_kpi_page.page, title="KPI operativi", icon=":material/monitoring:", url_path="kpi"),
+        st.Page(demo_home if demo else lazy("dashboard", "overview"), title="Panoramica", icon=":material/home:", default=True),
+        st.Page(lazy("dashboard", "market"), title="Mercato e previsioni", icon=":material/monitoring:", url_path="market"),
+        st.Page(lazy("operational_sources_page", "operational_context"), title="Security of Supply", icon=":material/shield:", url_path="security-of-supply"),
+        st.Page(lazy("workbench", "balancing"), title="Bilanciamento", icon=":material/balance:", url_path="balancing"),
+        st.Page(lazy("operations_page", "operations_ledger"), title="Fatture e garanzie", icon=":material/receipt_long:", url_path="ledger"),
+        st.Page(demo_application.risk if demo else lazy("risk_page", "risk_page"), title="Simulazione rischi", icon=":material/query_stats:", url_path="risk"),
+        st.Page(demo_application.regulatory if demo else lazy("workbench", "regulatory"), title="Norme e documenti", icon=":material/menu_book:", url_path="regulatory"),
+        st.Page(lazy("workbench", "operations"), title="Assistente AI", icon=":material/hub:", url_path="operations"),
+        st.Page(lazy("bso_kpi_page", "page"), title="KPI operativi", icon=":material/monitoring:", url_path="kpi"),
     ]
     if demo:
         pages.extend([
@@ -60,6 +66,7 @@ def application(demo=True):
         """)
         sidebar_navigation(pages, current)
         if not demo:
+            from gasops_app import session
             st.html('<div class="gas-nav-group gas-nav-settings">Analisi</div>')
             session.sidebar()
         else:
@@ -70,4 +77,5 @@ def application(demo=True):
     current.run()
 
 
-application(demo=os.environ.get("GASOPS_APP_MODE", "demo").strip().lower() != "workbench")
+from gasops_app.access import demo_layout
+application(demo=demo_layout())
