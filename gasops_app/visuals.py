@@ -158,9 +158,9 @@ def _line(name: str, x, y, color: str, unit: str, grain: str, dash: str = "solid
                       xhoverformat="%d/%m/%Y" if grain == "daily" else "%m/%Y")
 
 
-def demand_chart(data: pd.DataFrame, projection: Forecast, grain: str, *, height: int = 330, compact: bool = False) -> go.Figure:
+def demand_chart(data: pd.DataFrame, projection: Forecast | None, grain: str, *, height: int = 330, compact: bool = False) -> go.Figure:
     fig = go.Figure()
-    future = projection.points
+    future = projection.points if projection is not None else ()
     if future:
         dates = pd.to_datetime([p.period for p in future])
         lower = [p.lower_80 for p in future]

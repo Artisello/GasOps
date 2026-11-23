@@ -43,10 +43,10 @@ def test_system_status_has_four_kpis_nine_components_and_keeps_demo_separate(off
     assert len(app.get("deck_gl_json_chart")) == 1
     assert not any(b.key == "net_refresh" for b in app.button)
     if mode == "demo":
-        assert any("Casi BSO · simulazioni" == s.value for s in app.subheader)
+        assert any("Prova con un esempio" == s.value for s in app.subheader)
         assert any("separati dai dati pubblici" in c.value for c in app.caption)
     else:
-        assert not any("Casi BSO · simulazioni" == s.value for s in app.subheader)
+        assert not any("Prova con un esempio" == s.value for s in app.subheader)
 
 
 def test_finding_opens_verified_point_with_same_day_and_preserves_evidence(offline, monkeypatch):

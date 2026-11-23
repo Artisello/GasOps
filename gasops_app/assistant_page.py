@@ -217,10 +217,12 @@ def ai_configured() -> bool:
 
 
 def assistant_page():
+    from .workspace import picker
     header("Assistente AI","")
     modes=["Assistente operativo","Analista dati","Report locali"]
     default=0 if reasoner() or ai_configured() else 2
-    view=st.radio("Modalità assistente",modes,index=default,horizontal=True,key="assistant_view",label_visibility="collapsed")
+    view=picker("Modalità assistente",modes,index=default,key="assistant_view",
+                labels={"Assistente operativo":"Chiedi all’AI","Analista dati":"Esplora i dati","Report locali":"Report senza AI"})
     if view=="Analista dati":
         from .data_analyst_page import panel
         panel()

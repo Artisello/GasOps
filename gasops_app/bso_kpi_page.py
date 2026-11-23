@@ -173,11 +173,12 @@ def _settlement(demo,now):
 
 
 def page():
-    from .workspace import apply_intent, guide
+    from .workspace import apply_intent, guide, picker
     apply_intent("kpi")
     st.title("KPI operativi")
-    st.caption("Balancing · Settlement · Operations")
-    view=st.radio("Vista KPI",["Panoramica","Registro operativo","Monitoraggio fonti","Executive demo","Centro operativo"],horizontal=True,label_visibility="collapsed",key="bso_view")
+    st.caption("Attività, scadenze e risultati da controllare.")
+    view=picker("Vista KPI",["Panoramica","Registro operativo","Monitoraggio fonti","Executive demo","Centro operativo"],key="bso_view",
+                labels={"Panoramica":"In sintesi","Registro operativo":"Attività e scadenze","Executive demo":"Esempio completo"})
     if view=="Centro operativo":
         from .agentic_operations_page import panel
         panel()

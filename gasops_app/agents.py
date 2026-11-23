@@ -63,9 +63,16 @@ class MarketContext:
         return market_facts(self.inspection.usable, self.bundle.origin.grain)
 
     @cached_property
+    def _selected_projection(self) -> Forecast | None:
+        if self.model == AUTOMATIC:
+            return None
+        return forecast(self.inspection.usable["demand_gwh"],self.bundle.origin.grain,self.model)
+
+    @cached_property
     def projections(self) -> dict[ModelName, Forecast]:
         series = self.inspection.usable["demand_gwh"]
-        return {model: forecast(series, self.bundle.origin.grain, model) for model in MODELS}
+        return {model: self._selected_projection if model == self.model else
+                forecast(series, self.bundle.origin.grain, model) for model in MODELS}
 
     @cached_property
     def forecast_scores(self) -> dict[ModelName, Score]:
@@ -73,6 +80,8 @@ class MarketContext:
 
     @cached_property
     def projection(self) -> Forecast:
+        if self._selected_projection is not None and self._selected_projection.points:
+            return self._selected_projection
         return choose(self.projections, self.forecast_scores, self.model)
 
 

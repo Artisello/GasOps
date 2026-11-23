@@ -20,6 +20,8 @@ La stessa mappa offre quattro letture: **Sistema, Flussi, Attenzione e Infrastru
 
 La navigazione carica solo i moduli della vista richiesta. Modelli statistici, indice PDF e archivio remoto vengono caricati quando servono. L'assistente parte in modalità locale senza generare report; AI, acquisizioni e indicizzazione dei PDF pubblici richiedono un'azione esplicita. Cache, storico e dati mancanti mantengono il proprio significato e periodo.
 
+**Navigazione semplice.** Selettori uniformi con nomi brevi, controlli da 44 px e disposizione su due colonne su telefono. Le schede della Panoramica aprono direttamente gli esempi. Nel mercato compaiono subito i consumi osservati: **Calcola previsione** avvia la stima, poi riutilizzata nella sessione. Un modello scelto esplicitamente evita gli altri calcoli finché non servono confronto o ripiego. Metodi, unità, fonti e formule restano gli stessi.
+
 I.G.O.R. è un prototipo indipendente, non ufficiale Snam. Gli identificatori tecnici e le configurazioni di deployment restano invariati per compatibilità.
 
 ## Stato di rilascio

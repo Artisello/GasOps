@@ -25,7 +25,7 @@ def test_ready_examples_can_explore_every_view_offline_without_changing_imports(
     app.session_state["settlement_desk_csv_v1"] = deepcopy(imported)
     app.run()
     assert not app.exception and app.title[0].value == "BSO, in sintesi"
-    assert app.radio(key=NAV).options == list(VIEWS)
+    assert app.radio(key=NAV).options == ["In sintesi","Bilanciamento","Rettifiche","Attività e scadenze","Previsioni","Sviluppi"]
     # Direct, non-sequential exploration; results need no run/model/data controls.
     for view in ("Previsioni", "Settlement", "Sviluppi", "Balancing", "Operations", "In sintesi"):
         app.radio(key=NAV).set_value(view).run()

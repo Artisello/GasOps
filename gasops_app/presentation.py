@@ -15,6 +15,12 @@ VIEWS = ("In sintesi", "Balancing", "Settlement", "Operations", "Previsioni", "S
 NAV = "demo_view"
 
 
+def _open_example(view):
+    from .demo_application import examples
+    st.session_state[NAV]=view
+    st.switch_page(st.Page(examples,title="Esempi BSO",icon=":material/auto_awesome:",url_path="demo"))
+
+
 def _heading(title, kind="Dati simulati", period="18 nov 2026 · 14:00 CET"):
     st.html('<div class="demo-section-meta">' + chip(kind, "historical" if "pubblic" in kind else "synthetic")
             + f'<span>{escape(period)}</span></div>')
@@ -56,7 +62,7 @@ def _overview(pack, *, network=True):
             st.title("I.G.O.R. — Sistema Gas Italiano")
         panel(mode="overview")
         st.divider()
-        st.subheader("Casi BSO · simulazioni")
+        st.subheader("Prova con un esempio")
         st.caption("Casi simulati separati dai dati pubblici della mappa")
     else:
         _heading("BSO, in sintesi", "Demo", "Casi simulati e dati pubblici storici")
@@ -76,6 +82,9 @@ def _overview(pack, *, network=True):
                 st.html(f'<div class="demo-card {tone}"><h2>{escape(label)}</h2>'
                         f'<div class="demo-number">{escape(value)} <small>{escape(unit)}</small></div>'
                         f'<span class="demo-card-detail">{escape(detail)}</span></div>')
+                action={"Balancing":"Esplora il bilanciamento","Settlement":"Esplora la rettifica","Operations":"Esplora le scadenze"}[view]
+                st.button(action,key="demo_example_"+view.lower(),on_click=_open_example,args=(view,),
+                          icon=":material/arrow_forward:",width="stretch")
     left, right = st.columns([1.5, 1])
     with left, st.container(border=True):
         st.subheader("SAS · giornata simulata")
@@ -264,11 +273,13 @@ def home():
 
 
 def page():
+    from .workspace import picker
     st.html('<div class="demo-masthead"><div class="gas-brand"><div class="gas-mark" aria-hidden="true">'
             '<span></span><span></span><span></span></div><div><strong>I.G.O.R.</strong>'
             '</div></div><span class="demo-masthead-note">Demo · sola lettura</span></div>')
     with st.container(key="demo_navigation"):
-        view = st.radio("Esplora le potenzialità", VIEWS, key=NAV, horizontal=True, label_visibility="collapsed")
+        view = picker("Esplora le potenzialità", VIEWS, key=NAV,
+                      labels={"Balancing":"Bilanciamento","Settlement":"Rettifiche","Operations":"Attività e scadenze"})
     pack = cases()
     with st.container(key="demo_content"):
         {"In sintesi": lambda: _overview(pack,network=False), "Balancing": lambda: _balancing(pack),

@@ -17,7 +17,7 @@ def test_sidebar_navigation_home_unique_and_current_route(monkeypatch,active):
         keys.append(key)
         yield
     monkeypatch.setattr(navigation.st,"container",container)
-    monkeypatch.setattr(navigation.st,"page_link",lambda page:rendered.append(page.url_path))
+    monkeypatch.setattr(navigation.st,"page_link",lambda page,**kwargs:rendered.append(page.url_path))
     monkeypatch.setattr(navigation.st,"html",headings.append)
     navigation.sidebar_navigation(pages,pages[active])
     order=[0,3,4,8,1,2,5,6,7]

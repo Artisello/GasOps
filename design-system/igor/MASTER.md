@@ -32,7 +32,7 @@ Before merging, exercise all eleven routes, keyboard focus, tabs with long label
 ## Interaction and workflow: internal prototype
 - A direct, accurately labeled action is enough to import session-only public/synthetic data or refresh configured public sources. No repeated acknowledgement checkbox. Keep the brief data scope note, provider terms, temporal assumptions, parser/schema validation, quotas, and preservation of previous valid data.
 - Keep public/shared archive access control and confirmation before irreversible shared publication/removal; retain explicit consent to transmit PDF extracts and restricted evidence to external AI. The source code is public and the deployment may still be publicly reachable, so an internal-prototype UX does not make it private.
-- Start with a usable public JRC assistant report. Use the configured, active model within existing quotas; respect an explicitly selected local mode. The prepared example must never include visitor PDFs or imported records. Public-source refresh stays explicit; no implicit demo substitution. Show upload panels open only when needed; show document search before the expanded file inventory. Prefer concise labels and contextual help.
+- Prepare the assistant controls in local mode; a report or remote model requires an explicit action. Respect the user's selected mode. Examples must never include visitor PDFs or imported records. Public-source refresh stays explicit; no implicit demo substitution. Show upload panels open only when needed; show document search before the expanded file inventory. Prefer concise labels and contextual help.
 - Tests: one-click refresh (no calls on page render or selection), empty selection disabled, direct valid import, invalid import preserves previous state, local assistant default without configured AI.
 
 ## Primary CTA contrast
@@ -64,3 +64,11 @@ Use short functional titles, compact metric cards and one main chart or queue. R
 ## Non-color chart cues
 
 Use diagonal hatching as well as color for negative forecast residuals (observed minus predicted) and deficit bins (supply minus demand below zero). Zero and positive values remain unhatched. Retain signs, labels, hover text, histogram frequencies, units and existing chart scales. A negative forecast residual denotes overprediction, not a regulatory finding. Keep the current palette, native controls and eleven-route navigation; the earlier PR #88 theme and layout proposals have been superseded by the current design.
+
+## Simple workspaces and immediate observations
+
+Use the shared native `workspace.picker` for mutually exclusive page sections: one muted surface, short Italian labels, selected teal state and visible keyboard focus. Keep internal keys, values and URLs stable. At narrow widths use two columns; controls remain at least 44 px tall. Navigation hints explain the purpose in plain language; sidebar labels expand less familiar English/acronyms. No new fonts, frontend dependencies or decorative animation.
+
+Market opening renders observed data without fitting a model. The single “Calcola previsione” action enables the estimate for the current data/model/source metadata/day; changing those inputs requires another action. Reading prices, weather or data does not fit models. Explicit comparison enables the already available estimates. A valid manually chosen model is fitted alone and reused by later comparisons; an unavailable choice keeps the existing all-model fallback. Automatic selection and all numerical methods are unchanged.
+
+Overview example cards open the exact existing demo view in one click and preserve imported evidence. Fixtures remain labelled; source/missing/stale states and the single map are retained. Browser acceptance waits for Streamlit to finish the page before testing native WebGL gestures, so early streaming frames are not mistaken for the completed UI.
