@@ -55,8 +55,10 @@ def test_each_point_layer_uses_literal_pixels_and_hard_size_limits(category):
     spec=json.loads(deck(network,boundary,visible,selected,{selected}).to_json())
     layers={r["id"]:r for r in spec["layers"]}
     markers=layers["infrastructure-points"]
-    assert markers["radiusUnits"] == "pixels" and markers["radiusMaxPixels"] == 7
+    assert markers["radiusUnits"] == "pixels" and markers["radiusMaxPixels"] == 14
+    assert markers["getRadius"] == "@@=hit_radius"
     assert all(2.5 <= r["radius"] <= 6 for r in markers["data"])
+    assert all(r["hit_radius"] > r["radius"] for r in markers["data"])
     assert layers["selected-point"]["iconSizeUnits"] == "pixels"
     assert layers["selected-point"]["iconSizeMaxPixels"] == 22
     assert layers["event-rings"]["iconSizeUnits"] == "pixels"
@@ -86,7 +88,7 @@ def test_category_symbols_are_local_small_and_share_one_point_picking_layer():
     assert symbols["iconSizeUnits"] == "pixels" and symbols["iconSizeMaxPixels"] == 18
     assert not symbols["pickable"] and layers["infrastructure-points"]["pickable"]
     assert {r["properties"]["category"] for r in symbols["data"]["features"]} == {"entry","lng","storage","compressor","power","node"}
-    assert all(6 <= r["properties"]["icon_size"] <= 16 for r in symbols["data"]["features"])
+    assert all(6 <= r["properties"]["icon_size"] <= 18 for r in symbols["data"]["features"])
     # Geographic city annotations were explicitly removed; only network labels remain.
     ids={i.id for i in network.infrastructure}
     assert {r["properties"]["infra_id"] for r in layers["point-labels"]["data"]["features"]} <= ids

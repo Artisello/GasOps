@@ -160,13 +160,19 @@ div[data-testid="stVerticalBlockBorderWrapper"] {border-color:var(--gas-border);
 .gas-map-legend span {display:inline-flex;align-items:center;gap:.3rem;white-space:nowrap;}
 .gas-map-legend b {font-size:1rem;font-weight:600;line-height:1;}
 .gas-map-legend img {display:inline-block;width:14px;height:14px;object-fit:contain;flex-shrink:0;}
-.stApp [class*="st-key-net_reading_"] [role="radiogroup"] {gap:.2rem;}
-.stApp [class*="st-key-net_reading_"] [role="radiogroup"] label {padding:0 .6rem;border:1px solid transparent;border-radius:6px;min-height:2.25rem;}
-.stApp [class*="st-key-net_reading_"] [role="radiogroup"] label:has(input:checked) {background:var(--gas-selected);border-color:#39645e;}
-.stApp [class*="st-key-net_reading_"] [role="radiogroup"] label:has(input:checked) p {color:var(--gas-teal);font-weight:600;}
-@media(max-width:640px) {
- .stApp [class*="st-key-net_reading_"] [role="radiogroup"] label {min-height:2.75rem;}
-}
+.stApp [class*="st-key-net_mode_"] {padding:.3rem .4rem;border:1px solid var(--gas-border);border-radius:10px;background:#111c29;gap:.25rem;}
+.stApp [class*="st-key-net_mode_"] [data-testid="stElementContainer"]:has(>[data-testid="stRadio"]) {width:100%!important;}
+.stApp [class*="st-key-net_mode_"] [data-testid="stRadio"] {width:100%;}
+.stApp [class*="st-key-net_mode_"] [role="radiogroup"] {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.25rem;width:100%;}
+.stApp [class*="st-key-net_mode_"] [role="radiogroup"]>div {min-width:0;width:100%;}
+.stApp [class*="st-key-net_mode_"] :is(label[data-baseweb="radio"],label[data-testid="stRadioOption"]) {display:flex;width:100%;margin:0!important;padding:.45rem .65rem;border:1px solid transparent;border-radius:7px;min-height:2.75rem;align-items:center;box-sizing:border-box;}
+.stApp [class*="st-key-net_mode_"] [role="radiogroup"] label p {font-size:.84rem;line-height:1.3;}
+.stApp [class*="st-key-net_mode_"] [role="radiogroup"] label:not(:has(input:checked)):hover {background:var(--gas-panel-hover);}
+.stApp [class*="st-key-net_mode_"] label:has(input:checked) {background:var(--gas-selected);border-color:#39645e;}
+.stApp [class*="st-key-net_mode_"] label:has(input:checked) p {color:var(--gas-teal);font-weight:600;}
+.stApp [class*="st-key-net_mode_"] label:has(input:focus-visible) {outline:2px solid var(--gas-blue);outline-offset:1px;}
+.stApp [class*="st-key-net_mode_"] [data-testid="stCaptionContainer"] {margin:0;padding:0 .25rem;font-size:.75rem;}
+@media(max-width:640px) {.stApp [class*="st-key-net_mode_"] [role="radiogroup"] {grid-template-columns:repeat(2,minmax(0,1fr));}}
 .st-key-system_status_header [data-testid="stCaptionContainer"] {margin-bottom:0;}
 .st-key-system_status_header {gap:.35rem;}
 .st-key-system_status_kpis .gas-kpi-grid {grid-template-columns:repeat(4,minmax(0,1fr));gap:.6rem;}

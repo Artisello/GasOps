@@ -10,6 +10,8 @@ from .italian_network import CATEGORIES, COLORS, applicable
 from .italiano import numero, data_it
 
 RADII = {"entry":6, "lng":6, "storage":4.5, "compressor":4, "production":4, "power":3.5, "node":2.5}
+HIT_RADII = {"entry":14,"lng":14,"storage":11,"compressor":10,"production":10,"power":10,"node":7}
+PICK_PRIORITY = {"node":0,"power":1,"production":1,"compressor":2,"storage":3,"entry":4,"lng":4}
 LOCAL_STYLE = {"version":8,"sources":{},"layers":[{"id":"sea","type":"background",
                "paint":{"background-color":"#0b1726"}}]}
 # A local style URL also works with Streamlit versions that replace map_style=None
@@ -24,7 +26,7 @@ SYMBOLS = {
     "production":'<path d="M12 1 23 9 19 22H5L1 9Z"/>',
     "power":'<path d="M14 1 3 14H10L8 23 22 9H14Z"/>',
     "node":'<circle cx="12" cy="12" r="7"/>'}
-ICON_SIZES = {"entry":16,"lng":16,"storage":14,"compressor":12,"production":12,"power":11,"node":6}
+ICON_SIZES = {"entry":18,"lng":18,"storage":15,"compressor":13,"production":13,"power":13,"node":6}
 _ATLAS_SYMBOLS = {**SYMBOLS,**{c+"-outline":f'<g fill="none" stroke="white" stroke-width="1.8">{s}</g>' for c,s in SYMBOLS.items()},
     "ring":'<circle cx="12" cy="12" r="10" fill="none" stroke="white" stroke-width="2"/>',
     "finding":'<path d="M12 2 22 12 12 22 2 12Z" fill="none" stroke="white" stroke-width="1.7"/>',
@@ -141,7 +143,7 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
                     text.append(f"Utilizzo: {numero(info['utilization_pct'],1)}%")
                 if info.get("change_gwh_d") is not None:
                     text.append(f"Δ D-1: {numero(info['change_gwh_d'],1)} GWh/d")
-                tooltip["safe_value"] = "<br/>".join(escape(t) for t in text)
+                tooltip["safe_value"] = "\n".join(escape(t) for t in text)
         label_style = {"label_size":14 if item.id == selected else 12,
                        "label_color":[192,255,234] if item.id == selected else [226,237,247],
                        "label_background":[20,54,51,245] if item.id == selected else [13,24,36,235],
@@ -164,7 +166,7 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
         row = {**tooltip, "position":geometry["coordinates"], "color":COLORS[item.category],
                "category":item.category,"icon":item.category+("-outline" if intelligence is not None
                    and reading_mode != "INFRASTRUCTURE" and not info.get("available") else ""),"icon_size":ICON_SIZES[item.category],
-               "radius":RADII[item.category],
+               "radius":RADII[item.category],"hit_radius":HIT_RADII[item.category],
                "active":True,"border":[26,42,58]}
         points.append(row)
         if item.id == selected or show_labels and (item.category in ("entry", "lng") or len(point_categories) == 1):
@@ -181,23 +183,23 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
             if info.get("binding") and (info.get("stale") or not info.get("flow_available")):
                 quality.append(row)
     layers = [pdk.Layer("GeoJsonLayer", boundary, id="italy-outline", pickable=False,
-        filled=True, stroked=True, get_fill_color=[34,56,70,255], get_line_color=[109,140,158,230],
+        filled=True, stroked=True, get_fill_color=[24,40,55,255], get_line_color=[109,140,158,230],
         line_width_min_pixels=1.2,
         # Explicit sublayer colors keep Streamlit's native selection tint from
         # dimming the background or the rest of the network.
-        _sub_layer_props={"polygons-fill":{"getFillColor":[34,56,70,255]},
+        _sub_layer_props={"polygons-fill":{"getFillColor":[24,40,55,255]},
                           "polygons-stroke":{"getColor":[109,140,158,230]}})]
     if lines:
-        # Keep the visible stroke fine while giving the mouse a 12 px target.
+        # Visible strokes stay thin; only the invisible picking corridor widens.
         # Alpha 1 remains pickable without a visible corridor across the map.
         layers.append(pdk.Layer("GeoJsonLayer", {"type":"FeatureCollection", "features":lines},
             id="pipeline-hit-targets", pickable=True, auto_highlight=True, highlight_color=[101,223,191,75],
-            filled=False, get_line_color=[91,139,181,1], get_line_width=12,
-            line_width_units=pdk.types.String("pixels"), line_width_min_pixels=12, line_width_max_pixels=12,
+            filled=False, get_line_color=[91,139,181,1], get_line_width=18,
+            line_width_units=pdk.types.String("pixels"), line_width_min_pixels=18, line_width_max_pixels=18,
             _sub_layer_props={"linestrings":{"getColor":[91,139,181,1]}}))
         layers.append(pdk.Layer("GeoJsonLayer", {"type":"FeatureCollection", "features":lines},
             id="historical-links", pickable=False, filled=False,
-            get_line_color="properties.color", line_width_min_pixels=1.4,
+            get_line_color="properties.color", line_width_min_pixels=1.1,
             _sub_layer_props={"linestrings":{"getColor":[*COLORS["pipeline"],255]}}))
     if highlight:
         layers.append(pdk.Layer("GeoJsonLayer", {"type":"FeatureCollection", "features":highlight},
@@ -215,17 +217,20 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
                 point_type=pdk.types.String("icon"),icon_atlas=pdk.types.String(ICON_ATLAS),icon_mapping=ICON_MAPPING,
                 get_icon=pdk.types.String("ring"),get_icon_color=[245,250,255,255],get_icon_size=22,
                 icon_size_units=pdk.types.String("pixels"),icon_size_min_pixels=22,icon_size_max_pixels=22))
-        targets = points
+        # Stable category priority puts key entry/LNG targets above minor nodes.
+        # The order does not change with selection, mode or filters.
+        pick_order=sorted((i for i in network.infrastructure if lookup[i.id].geometry["type"]=="Point"),
+                          key=lambda i:(PICK_PRIORITY[i.category],i.id))
+        targets = sorted(points,key=lambda r:(PICK_PRIORITY[r["category"]],r["infra_id"]))
         if stable_picking:
             # Native selection stores array indices. Keep their identity stable
             # when a reading/filter hides rows; radius 0 draws/picks nothing.
             by_id = {r["infra_id"]:r for r in points}
             targets = [by_id.get(i.id,{"infra_id":i.id,"position":lookup[i.id].geometry["coordinates"],
-                "category":i.category,"radius":0,"active":False}) for i in network.infrastructure
-                if lookup[i.id].geometry["type"] == "Point"]
+                "category":i.category,"radius":0,"hit_radius":0,"active":False}) for i in pick_order]
         layers.append(pdk.Layer("ScatterplotLayer", targets, id="infrastructure-points", pickable=True,
-            auto_highlight=True, get_position="position", get_fill_color=[20,34,49,1], get_radius="radius",
-            radius_units=pdk.types.String("pixels"), radius_min_pixels=0 if stable_picking else 2.5, radius_max_pixels=7,
+            auto_highlight=True, highlight_color=[230,245,255,60],get_position="position", get_fill_color=[20,34,49,1], get_radius="hit_radius",
+            radius_units=pdk.types.String("pixels"), radius_min_pixels=0, radius_max_pixels=14,
             stroked=False, get_line_color="border", get_line_width=1,
             line_width_units=pdk.types.String("pixels"), line_width_min_pixels=1, line_width_max_pixels=1.5))
         # Keep one picking identity per point; the symbols are presentation only.
@@ -248,7 +253,7 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
     if labels:
         labels.sort(key=lambda r:-r["label_priority"])
         arranged = label_layout(labels,zoom=camera["zoom"],width=viewport_width,
-            height=498 if mode == "overview" else 648,longitude=camera["longitude"],latitude=camera["latitude"])
+            height=498 if mode in ("overview","scenario") else 648,longitude=camera["longitude"],latitude=camera["latitude"])
         if stable_picking:
             by_id = {r["infra_id"]:r for r in arranged}
             arranged = [by_id.get(i.id,{"infra_id":i.id,"position":label_anchor(lookup[i.id].geometry),"label":"",
@@ -267,4 +272,4 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
         map_provider=None, **({} if NATIVE_BASEMAP_OMISSION else {"map_style":LOCAL_STYLE_URL}),
         tooltip={"html":"<b>{safe_name}</b><br/>{safe_type}<br/>{safe_status}<br/>{safe_value}",
                  "style":{"backgroundColor":"#142231", "color":"#eef5fc", "fontSize":"12px",
-                          "pointerEvents":"none","maxWidth":"240px"}})
+                          "pointerEvents":"none","maxWidth":"240px","whiteSpace":"pre-line"}})

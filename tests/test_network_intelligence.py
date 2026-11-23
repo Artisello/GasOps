@@ -238,6 +238,7 @@ def test_native_pick_indices_keep_their_identity_when_modes_filter_markers(asset
         labels = layers["point-labels"]["data"]["features"]
         indexes.append(([p["infra_id"] for p in points],[r["properties"]["infra_id"] for r in labels]))
         assert all(p["radius"] == 0 for p in points if not p["active"])
+        assert all(p["hit_radius"] == 0 for p in points if not p["active"])
         assert layers["infrastructure-points"]["radiusMinPixels"] == 0
         assert all(r["properties"]["label_size"] == 0 for r in labels if not r["properties"]["label"])
     assert all(index == indexes[0] for index in indexes)
@@ -248,7 +249,10 @@ def test_overview_has_real_d30_gaps_and_same_sections_as_full_card(offline):
     assert not app.exception
     assert [t.label for t in app.tabs] == ["Dati","Storico","Eventi","Fonti"]
     captions = {c.value for c in app.caption}
-    assert {"IDENTITÀ","STATO","DATI FISICI","DATI COMMERCIALI","TREND · D-30","EVENTI","DATI E PROVENIENZA"} <= captions
+    assert {"TREND · D-30","EVENTI","DATI E PROVENIENZA"} <= captions
+    assert any(e.label=="Capacità e dati commerciali" for e in app.expander)
+    commercial=next(d.value for d in app.dataframe if "Periodo e validità" in d.value.columns)
+    assert "Nomina" in set(commercial.Indicatore) and "Capacità tecnica firm" in set(commercial.Indicatore)
     figure = json.loads(app.get("plotly_chart")[0].proto.spec)
     assert len(figure["data"][0]["x"]) == 30
     assert sum(y is not None for y in figure["data"][0]["y"]) == 7
