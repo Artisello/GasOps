@@ -100,10 +100,14 @@ def current_rows(snapshot,now,*,gie_enabled):
             detail+=" · "+numero(item["change"],1,signed=True)+" p.p. in 7 gg"
         day=item.get("gas_day") or item.get("observation_day")
         if day:
-            temporal=temporal_evidence(now=now,gas_day=day,current_day=closed_gas_day(now),
+            reference=(now.astimezone(ROME).date().replace(day=1)-timedelta(days=1)).replace(day=1) if name=="price" else closed_gas_day(now)
+            temporal=temporal_evidence(now=now,gas_day=day,current_day=reference,
                 retrieved_at=item["acquired"],valid=1,expected=1,partial=bool(item.get("quality_review")),
                 ttl=timedelta(hours=12 if name=="price" else 24))
-            detail+=" · "+freshness_label(temporal)
+            if item["stale"] or old or gas_day_old:
+                temporal["data_status"]="Stale"
+            extra=freshness_label(temporal)
+            if extra not in detail:detail+=" · "+extra
         rows.append((label,item["value"],unit,detail,decimals,""))
     return rows
 

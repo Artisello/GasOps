@@ -207,3 +207,12 @@ def test_observation_age_allowance_does_not_extend_cache_freshness():
         age_limit=timedelta(days=3),cache_ttl=timedelta(hours=24))
     assert health["data_status"]=="Stale" and health["cache_age"]==30*3600
     assert not health["historical"]
+
+
+def test_overview_never_labels_retained_failed_indicator_as_current():
+    from gasops_app.overview_indicators import current_rows
+    price={"value":42,"period":"ottobre 2026","observation_day":"2026-10-01","acquired":NOW,"stale":False}
+    current=current_rows({"price":price},NOW,gie_enabled=False)[0][3]
+    assert "Validato per il periodo" in current and "Storico" not in current
+    failed=current_rows({"price":{**price,"stale":True}},NOW,gie_enabled=False)[0][3]
+    assert failed.count("Da aggiornare")==1 and "Validato per il periodo" not in failed
