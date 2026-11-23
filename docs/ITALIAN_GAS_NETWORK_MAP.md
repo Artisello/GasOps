@@ -1,5 +1,7 @@
 # Rete gas italiana
 
+La scheda **Fonti → Esplora questi dati** apre il [Data Explorer unificato](GAS_DATA_EXPLORER.md) sul punto/direzione e periodo selezionati, mantenendo la selezione della mappa. Il monitor qualità riusa le stesse diagnostiche delle osservazioni.
+
 Vista **Security of Supply → Mappa della rete**. Nella demo è la vista iniziale di questa sezione; tutte le altre viste restano accessibili. Titolo: **Rete gas italiana**. La mappa è informativa, con dati pubblici e provenienza verificabile; non controlla infrastrutture.
 
 La **Panoramica Demo e Workbench** apre con **I.G.O.R. — Sistema Gas Italiano**, i quattro KPI pubblici del [System Status](SYSTEM_STATUS.md) e una mappa alta **500 px**. Su desktop il dettaglio, la ricerca e le schede sono a destra. Sotto 1100 px la mappa precede il pannello, senza scorrimento orizzontale. La vista completa ripartisce lo spazio tra mappa e dettaglio, mantenendo i 650 px di altezza. `italian_network_page.panel(mode="overview")` riusa asset, modello e rendering della vista `mode="full"`. I casi BSO simulati e la scrivania Workbench restano sotto il bilancio e l’attenzione operativa, con etichette separate.

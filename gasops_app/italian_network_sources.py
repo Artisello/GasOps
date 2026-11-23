@@ -159,6 +159,24 @@ def coalesce_records(records):
     return tuple(combined)
 
 
+def parse_point_page(text, binding, first, last, acquired, *, offset=0, cached=False, failed=False):
+    """The HTTP loader and the offline explorer validate the same cache page."""
+    payload = json.loads(text)
+    items = payload.get("operationalData",payload.get("operationaldatas"))
+    meta = payload.get("meta",{})
+    if not isinstance(items,list) or len(items)>200 or integer(meta.get("offset",offset))!=offset:
+        raise SourceSchemaError("Pagina operativa ENTSOG non valida")
+    if integer(meta.get("count",len(items)))!=len(items):
+        raise SourceSchemaError("Conteggio pagina ENTSOG incoerente")
+    total = integer(meta["total"]) if meta.get("total") is not None else None
+    if total is not None and total<offset+len(items):
+        raise SourceSchemaError("Totale ENTSOG incoerente")
+    if not items and offset==0:
+        raise SourceSchemaError("Nessuna pubblicazione restituita")
+    return {"records":parse_observations(items,binding,first,last,acquired),"count":len(items),
+            "total":total,"acquired":acquired,"cached":cached,"failed":failed}
+
+
 def load_point(store, binding, first, last, *, refresh=False, now=None):
     now = now or utc_now()
     params = query_params(binding.point_direction, first, last)
@@ -169,20 +187,7 @@ def load_point(store, binding, first, last, *, refresh=False, now=None):
     for page in range(3):
         offset = page * 200
         def parse(text, when, *, cached=False, failed=False):
-            payload = json.loads(text)
-            items = payload.get("operationalData", payload.get("operationaldatas"))
-            meta = payload.get("meta", {})
-            if not isinstance(items, list) or len(items) > 200 or integer(meta.get("offset", offset)) != offset:
-                raise SourceSchemaError("Pagina operativa ENTSOG non valida")
-            if integer(meta.get("count", len(items))) != len(items):
-                raise SourceSchemaError("Conteggio pagina ENTSOG incoerente")
-            total = integer(meta["total"]) if meta.get("total") is not None else None
-            if total is not None and total < offset + len(items):
-                raise SourceSchemaError("Totale ENTSOG incoerente")
-            if not items and offset == 0:
-                raise SourceSchemaError("Nessuna pubblicazione restituita")
-            return {"records": parse_observations(items, binding, first, last, when), "count": len(items),
-                    "total": total, "acquired": when, "cached": cached, "failed": failed}
+            return parse_point_page(text,binding,first,last,when,offset=offset,cached=cached,failed=failed)
         try:
             result = retrieve(store, key=f"italian-map-ops-v1:{binding.point_direction}:{first}:{last}:{offset}",
                 name="ENTSOG · infrastruttura selezionata", url=URL, parse=parse,

@@ -41,9 +41,22 @@ def attribution(platform):
     return {"source": GIE_CREDIT[platform], "source_url": GIE_LINKS[platform]}
 
 
-def attributed_csv(result):
-    return result["frame"].assign(**attribution(result["platform"]),
-                                  retrieved_at=result["acquired"].isoformat()).to_csv(index=False)
+def attributed_csv(result, *, per_row_source=False, max_rows=10000, max_bytes=5_000_000):
+    """Shared CSV writer; normalized rows already carry their own provenance."""
+    frame = result["frame"].copy()
+    if len(frame)>max_rows:
+        raise ValueError("Esportazione troppo grande: riduci il periodo o i punti")
+    if not per_row_source:
+        frame = frame.assign(**attribution(result["platform"]),retrieved_at=result["acquired"].isoformat())
+    def safe(value):
+        if pd.isna(value):return None
+        if isinstance(value,str) and value.lstrip().startswith(("=","+","-","@")):
+            return "'"+value
+        return value.isoformat() if isinstance(value,(date,datetime)) else value
+    output = frame.apply(lambda column:column.map(safe)).to_csv(index=False,lineterminator="\n")
+    if len(output.encode("utf-8"))>max_bytes:
+        raise ValueError("Esportazione troppo grande: riduci il periodo o i punti")
+    return output
 
 JARVIS_SOURCE = "https://jarvis.snam.it/public-data?lang=it"
 GME_SOURCE = "https://gme.mercatoelettrico.org/it-it/Home/Esiti/Gas/PrezzoSbilanciamento/Esiti/PrezzoSbilanciamento"
@@ -145,10 +158,12 @@ def load_agsi(store,api_key,scope="IT",*,now=None,refresh=False):
     params.update({"country":scope} if scope!="EU" else {"type":"eu"})
     def parse(text,acquired,**kwargs):
         return parse_agsi(text,acquired,scope=scope,**kwargs)
-    return retrieve(store,key="agsi-public-v2-"+scope,name="GIE AGSI+",url=AGSI_URL,
+    result=retrieve(store,key="agsi-public-v2-"+scope,name="GIE AGSI+",url=AGSI_URL,
                     parse=parse,ttl=timedelta(hours=24),params=params,
                     attempts=1,headers={"x-key":api_key.strip(),"Accept":"application/json"},
                     timeout=(5,20),diagnostics=True,refresh=refresh)
+    return result if result.get("cached") or result.get("failed") else {
+        **result,"first":date.fromisoformat(params["from"]),"last":date.fromisoformat(params["to"])}
 
 
 def jarvis_template():
@@ -253,10 +268,12 @@ def load_alsi(store,api_key,scope="IT",*,now=None,refresh=False):
     params.update({"country":"IT"} if scope=="IT" else {"type":"eu"})
     def parse(text,acquired,**kwargs):
         return parse_alsi(text,acquired,scope=scope,**kwargs)
-    return retrieve(store,key="alsi-public-v2-"+scope,name=GIE_CREDIT["ALSI"],url=ALSI_SOURCE+"api",
+    result=retrieve(store,key="alsi-public-v2-"+scope,name=GIE_CREDIT["ALSI"],url=ALSI_SOURCE+"api",
                     parse=parse,ttl=timedelta(hours=24),params=params,
                     attempts=1,headers={"x-key":api_key.strip(),"Accept":"application/json"},
                     timeout=(5,20),diagnostics=True,refresh=refresh)
+    return result if result.get("cached") or result.get("failed") else {
+        **result,"first":date.fromisoformat(params["from"]),"last":date.fromisoformat(params["to"])}
 
 
 IIP_PAGE_SIZE = 20

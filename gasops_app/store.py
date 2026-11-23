@@ -63,6 +63,15 @@ class Store:
         with closing(self._connect()) as db:
             return db.execute("SELECT fetched_at, payload FROM source_cache WHERE name=?", (name,)).fetchone()
 
+    def cached_entries(self, prefix: str, *, limit: int = 24):
+        """Bounded metadata lookup; never read an entire provider history."""
+        if not prefix or not 1 <= limit <= 100:
+            raise ValueError("Limite della cache non valido")
+        with closing(self._connect()) as db:
+            return db.execute("""SELECT name, fetched_at, length(CAST(payload AS BLOB))
+                FROM source_cache WHERE substr(name,1,?)=?
+                ORDER BY fetched_at DESC, name LIMIT ?""",(len(prefix),prefix,limit)).fetchall()
+
     def cache(self, name: str, fetched_at: str, payload: str) -> None:
         with closing(self._connect()) as db, db:
             db.execute("""INSERT INTO source_cache VALUES (?, ?, ?)

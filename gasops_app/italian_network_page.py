@@ -501,6 +501,18 @@ def _detail(network, item, observations, snapshots, direction, events, first, la
     with events_tab:
         _point_events(item,info,events,attention)
     with sources_tab:
+        from .gas_data_page import open_explorer
+        can_explore = any(o.value is not None or o.quality_status == "conflict" for o in info.get("records",()))
+        for b in network.bindings_for(item.id):
+            if b.provider not in ("AGSI+","ALSI") or b.mapping_confidence != "confirmed":
+                continue
+            result = saved.get("facilities",{}).get((b.provider,b.external_id),{})
+            frame = result.get("frame",pd.DataFrame())
+            field = "stock_twh" if b.provider == "AGSI+" else "sendout_gwh_d"
+            can_explore |= field in frame and frame[field].notna().any()
+        st.button("Esplora questi dati",key="net_data_explorer_"+mode,on_click=open_explorer,
+                  args=(item.id,direction,first,last),kwargs={"navigate":mode=="overview"},
+                  disabled=not can_explore,help="Disponibile per punti con osservazioni consultabili.")
         if binding:
             _source_status(info["status"],last)
         _point_provenance(network,item,observations,snapshots,binding,last-timedelta(days=29),last)
