@@ -28,13 +28,14 @@ def test_all_connected_adapters_are_used_and_failure_preserves_prior_results(mon
     called=[]
     def refresh(state,store,now,available,**kwargs):
         called.extend(available)
-        state[STATUS]={"attempted":now,"sources":{}}
+        from gasops_app.live_sources import refresh as acquire
+        acquire(state,store,now,["iip"],gie=kwargs["gie"],clock=lambda:now)
         return True
     monkeypatch.setattr(page,"refresh",refresh)
     def iip(*a,**k):
         called.append("iip")
         raise ValueError("upstream failure")
-    monkeypatch.setattr("gasops_app.operational_sources.load_iip",iip)
+    monkeypatch.setattr("gasops_app.live_sources.load_iip",iip)
     class Reasoner:
         def __init__(self,*a,**k):pass
         def probe(self):called.append("ai");return True
@@ -43,14 +44,14 @@ def test_all_connected_adapters_are_used_and_failure_preserves_prior_results(mon
         def __init__(self,*a):pass
         def list_keys(self):called.append("documents");return []
     monkeypatch.setattr("gasops_app.document_archive.Archive",Archive)
-    config={"available":["monthly","daily","acer","agsi","alsi","terna","terna_forward","terna_capacity","terna_industry","weather"],
+    config={"available":["monthly","daily","acer","agsi","alsi","iip","terna","terna_forward","terna_capacity","terna_industry","weather"],
             "gie":"fixture-key","terna":("id","secret"),"ai":SimpleNamespace(local=True),"documents":object()}
     prior={"messages":[{"id":"previous"}]}
     state={"gie_iip":{"result":prior}}
     assert page.refresh_all(state,None,config,NOW)
     assert called==[*config["available"],"iip","ai","documents"]
     assert state["gie_iip"]["result"]==prior
-    assert state[page.EXTRA]["iip"]["status"]=="Da verificare"
+    assert state[STATUS]["sources"]["iip"]["status"]=="Da aggiornare"
     assert state[page.EXTRA]["ai"]["status"]=="Verificata"
     assert state[page.EXTRA]["documents"]["status"]=="Verificata"
     assert not page.refresh_all(state,None,config,NOW+timedelta(seconds=1))

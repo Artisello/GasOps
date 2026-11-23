@@ -302,6 +302,7 @@ def _inventory_panel(platform,loader,key):
     with st.expander("Dati giornalieri e download"):
         headers={"gas_day":"Giorno gas","status":"Stato","stock_twh":"Giacenza (TWh)","capacity_twh":"Capacità (TWh)",
                  "fill_pct":"Riempimento (%)","withdrawal_gwh_d":"Erogazione (GWh/d)","injection_gwh_d":"Iniezione (GWh/d)",
+                 "injection_capacity_gwh_d":"Capacità di iniezione (GWh/d)","withdrawal_capacity_gwh_d":"Capacità di erogazione (GWh/d)",
                  "inventory_1000m3_lng":"Inventario (10³ m³ LNG)","inventory_gwh":"Inventario (GWh)",
                  "dtmi_1000m3_lng":"DTMI (10³ m³ LNG)","sendout_gwh_d":"Send-out (GWh/d)",
                  "dtrs_gwh_d":"DTRS (GWh/d)","sendout_reference_pct":"Send-out / riferimento (%)","review":"Da verificare","source":"Fonte"}
@@ -337,7 +338,7 @@ def _iip_panel(key):
         reason=result.get("refresh_error") or st.session_state.get("gie_iip",{}).get("error")
         st.warning("Ultima acquisizione non recente o aggiornamento non riuscito."+((" "+str(reason)) if reason else "")+" Consulta il portale IIP.")
     if state=="Parziale":
-        st.warning(f"Prima pagina di {result['pages']}. Non tutti i risultati sono stati acquisiti.")
+        st.warning(f"Acquisite {result.get('pages_loaded',1)} pagine su {result['pages']}. Non tutti i risultati sono stati acquisiti.")
     elif state=="Non verificata":
         st.warning("Copertura della richiesta non verificata. Consulta il portale per l’elenco completo.")
     cards=st.columns(4)

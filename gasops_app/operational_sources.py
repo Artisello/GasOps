@@ -12,7 +12,7 @@ import pandas as pd
 
 from .data import ROME
 from .models import utc_now
-from .public_data import SourceSchemaError, retrieve
+from .public_data import SourceSchemaError, SourceUnavailable, retrieve
 
 AGSI_URL = "https://agsi.gie.eu/api"
 AGSI_SOURCE = "https://agsi.gie.eu/"
@@ -63,7 +63,8 @@ GME_SOURCE = "https://gme.mercatoelettrico.org/it-it/Home/Esiti/Gas/PrezzoSbilan
 GME_TERMS = "https://www.mercatoelettrico.org/Portals/0/Documents/it-IT/20261013CONDIZIONI_GENERALI_API.pdf"
 JARVIS_COLUMNS = ("gas_day","published_at","expected_withdrawal_gwh","sas_gwh","expected_linepack_gwh")
 STORAGE_COLUMNS = {"gasInStorage":"stock_twh","workingGasVolume":"capacity_twh","full":"fill_pct",
-                   "injection":"injection_gwh_d","withdrawal":"withdrawal_gwh_d"}
+                   "injection":"injection_gwh_d","withdrawal":"withdrawal_gwh_d",
+                   "injectionCapacity":"injection_capacity_gwh_d","withdrawalCapacity":"withdrawal_capacity_gwh_d"}
 
 
 def number(value, *, signed=False):
@@ -278,6 +279,7 @@ def load_alsi(store,api_key,scope="IT",*,now=None,refresh=False):
 
 IIP_PAGE_SIZE = 20
 IIP_MAX_PAGE_SIZE = 50  # Actual GIE meta.per_page observed in deployment.
+IIP_MAX_PAGES = 5
 
 
 def _page_count(value, field="last_page"):
@@ -288,7 +290,7 @@ def _page_count(value, field="last_page"):
     return int(value)
 
 
-def iip_pagination_diagnostic(payload, pages, record_count):
+def iip_pagination_diagnostic(payload, pages, record_count, *, page=1):
     """Metadata-only diagnostic, without message content, URLs or credentials."""
     # List known paging fields and safe structural names, never arbitrary
     # response values. Numeric values are limited to known paging fields.
@@ -310,7 +312,7 @@ def iip_pagination_diagnostic(payload, pages, record_count):
     safe_keys=[key for key in payload if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]{0,39}",key)
                and not any(x in normalized(key) for x in ("key","token","secret","password","auth","credential"))]
     details={"source":GIE_CREDIT["IIP"],"source_url":IIP_SOURCE,
-             "returned_records":record_count,"requested_page":1,"requested_size":IIP_PAGE_SIZE,
+             "returned_records":record_count,"requested_page":page,"requested_size":IIP_PAGE_SIZE,
              "recognized_last_page":pages,"top_level_fields":sorted(safe_keys)[:40],
              "numeric_pagination_fields":describe(payload),"nested_pagination_fields":{}}
     for key in safe_keys:
@@ -319,7 +321,7 @@ def iip_pagination_diagnostic(payload, pages, record_count):
     return details
 
 
-def parse_iip(text,acquired,*,cached=False,failed=False):
+def parse_iip(text,acquired,*,cached=False,failed=False,expected_page=1):
     """Keep original UMM records. Unknown pagination is explicitly unverified."""
     payload=_gie_payload(text)
     legacy_pages=_page_count(payload.get("last_page"))
@@ -334,8 +336,10 @@ def parse_iip(text,acquired,*,cached=False,failed=False):
     current=_page_count(meta.get("current_page"),"current_page")
     per_page=_page_count(meta.get("per_page"),"per_page")
     total=_page_count(meta.get("total"),"total")
-    if current is not None and current!=1:
-        raise SourceSchemaError("IIP: la pagina restituita non è la prima")
+    if current is not None and current!=expected_page:
+        raise SourceSchemaError("IIP: la pagina restituita non corrisponde alla richiesta")
+    if expected_page>1 and (pages is None or pages<expected_page):
+        raise SourceSchemaError("IIP: pagina oltre il totale dichiarato")
     if per_page is not None and not 1<=per_page<=IIP_MAX_PAGE_SIZE:
         raise SourceSchemaError("IIP: dimensione della pagina fuori dal limite supportato (50)")
     if "data" not in payload:
@@ -382,13 +386,13 @@ def parse_iip(text,acquired,*,cached=False,failed=False):
             expected=(total+per_page-1)//per_page
             if pages!=expected and not (total==0 and pages==1):
                 raise SourceSchemaError("IIP: totale e numero di pagine incoerenti")
-            if len(messages)!=min(total,per_page):
-                raise SourceSchemaError("IIP: conteggio della prima pagina incoerente")
-    verified=(nested_pages is not None and current==1 and per_page is not None and total is not None)
+            if len(messages)!=min(max(0,total-(expected_page-1)*per_page),per_page):
+                raise SourceSchemaError("IIP: conteggio della pagina incoerente")
+    verified=(nested_pages is not None and current==expected_page and per_page is not None and total is not None)
     return {"messages":messages,"record_keys":record_keys,"pages":pages,
             "reported_total":total,"server_page_size":per_page,"pagination_verified":verified,
             "partial":pages is None or pages>1,"acquired":acquired,"cached":cached,"failed":failed,
-            "pagination_diagnostic":iip_pagination_diagnostic(payload,pages,len(messages)),
+            "pagination_diagnostic":iip_pagination_diagnostic(payload,pages,len(messages),page=expected_page),
             "platform":"IIP",**attribution("IIP")}
 
 
@@ -397,15 +401,52 @@ def load_iip(store,api_key,*,now=None,refresh=False):
         raise ValueError("Chiave IIP non valida.")
     now=now or utc_now()
     today=now.astimezone(ROME).date()
-    # Bounded active messages intersecting the requested period. First page
-    # only: no claim of complete event coverage or available capacity.
+    # Follow verified page metadata only; cap requests and preserve a valid
+    # partial result when the publisher changes or a subsequent page fails.
     params={"from":today.isoformat(),"to":(today+timedelta(days=7)).isoformat(),
             "status":"active","size":IIP_PAGE_SIZE,"page":1}
     result=retrieve(store,key="iip-active-v2-"+today.isoformat(),name=GIE_CREDIT["IIP"],
                     url=IIP_SOURCE+"api",parse=parse_iip,ttl=timedelta(hours=2),
                     params=params,attempts=1,headers={"x-key":api_key.strip(),"Accept":"application/json"},
                     timeout=(5,20),diagnostics=True,refresh=refresh,max_bytes=2_000_000)
-    return {**result,"request_from":params["from"],"request_to":params["to"]}
+    parts=[result]
+    failure=False
+    verified=result.get("pagination_verified",False)
+    if verified and not result.get("failed"):
+        for page in range(2,min(result["pages"],IIP_MAX_PAGES)+1):
+            def parse(text,acquired,**kwargs):
+                return parse_iip(text,acquired,expected_page=page,**kwargs)
+            try:
+                part=retrieve(store,key=f"iip-active-v3-{today}-page-{page}",name=GIE_CREDIT["IIP"],
+                    url=IIP_SOURCE+"api",parse=parse,ttl=timedelta(hours=2),
+                    params={**params,"page":page},attempts=1,
+                    headers={"x-key":api_key.strip(),"Accept":"application/json"},
+                    timeout=(5,20),diagnostics=True,refresh=refresh,max_bytes=2_000_000)
+                if not part.get("pagination_verified") or any(part[k]!=result[k] for k in ("pages","reported_total","server_page_size")):
+                    verified=False
+                    break
+                parts.append(part)
+                if part.get("failed"):break
+            except (ValueError,SourceUnavailable):
+                failure=True
+                break
+    messages=[]
+    seen=set()
+    for part in parts:
+        for message in part["messages"]:
+            identity=json.dumps(message,sort_keys=True,separators=(",",":"))
+            if identity not in seen:
+                messages.append(message)
+                seen.add(identity)
+    complete=verified and len(parts)==max(1,result["pages"]) and len(messages)==result["reported_total"]
+    return {**result,"messages":messages,"record_keys":result["record_keys"] if len(parts)==1 else None,
+        "acquired":min(p["acquired"] for p in parts),"cached":any(p.get("cached") for p in parts),
+        "failed":failure or any(p.get("failed") for p in parts),"partial":not complete,
+        "pagination_verified":verified,"pagination_complete":complete,"pages_loaded":len(parts),
+        "limit_reached":bool(result["pages"] and result["pages"]>IIP_MAX_PAGES),
+        "pagination_diagnostic":{**result["pagination_diagnostic"],"returned_records":len(messages),
+            "loaded_pages":len(parts),"complete":complete},
+        "request_from":params["from"],"request_to":params["to"]}
 
 
 def attributed_iip_json(result):
@@ -414,5 +455,7 @@ def attributed_iip_json(result):
                        "reported_total":result.get("reported_total"),"server_page_size":result.get("server_page_size"),
                        "request_from":result.get("request_from"),"request_to":result.get("request_to"),
                        "pagination_verified":result.get("pagination_verified",False),
+                       "pagination_complete":result.get("pagination_complete",False),
+                       "pages_loaded":result.get("pages_loaded",1),"limit_reached":result.get("limit_reached",False),
                        "record_keys":result.get("record_keys"),"pagination_diagnostic":result.get("pagination_diagnostic"),
                        "messages":result["messages"]},ensure_ascii=False,indent=2,allow_nan=False)

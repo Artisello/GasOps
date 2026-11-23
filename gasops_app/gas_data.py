@@ -23,9 +23,23 @@ MAX_DAYS=92
 MAX_ROWS=10000
 MAX_EXPORT_ROWS=5000
 MAX_CACHE_BYTES=8_000_000
-MAX_CACHE_ENTRIES=24
+MAX_CACHE_ENTRIES=96
 LABELS={**NAMES,"Storage inventory":"Giacenza stoccaggi","LNG send-out":"Send-out GNL",
         "Interruptions":"Capacità interrotta pubblicata"}
+GIE_INDICATORS={
+    "AGSI+":(("stock_twh","Storage inventory","TWh","Giacenza stoccaggi"),
+        ("capacity_twh","Storage working capacity","TWh","Capacità di stoccaggio"),
+        ("fill_pct","Storage filling","%","Riempimento pubblicato"),
+        ("injection_gwh_d","Storage injection","GWh/d","Iniezioni stoccaggi"),
+        ("withdrawal_gwh_d","Storage withdrawal","GWh/d","Erogazioni stoccaggi"),
+        ("injection_capacity_gwh_d","Storage injection capacity","GWh/d","Capacità di iniezione"),
+        ("withdrawal_capacity_gwh_d","Storage withdrawal capacity","GWh/d","Capacità di erogazione")),
+    "ALSI":(("sendout_gwh_d","LNG send-out","GWh/d","Send-out GNL"),
+        ("inventory_gwh","LNG energy inventory","GWh","Giacenza GNL · energia"),
+        ("inventory_1000m3_lng","LNG liquid inventory","10³ m³ LNG","Giacenza GNL · volume liquido"),
+        ("dtmi_1000m3_lng","LNG maximum inventory","10³ m³ LNG","Giacenza massima dichiarata GNL"),
+        ("dtrs_gwh_d","LNG reference send-out","GWh/d","Send-out di riferimento dichiarato"))}
+LABELS.update({indicator:label for specs in GIE_INDICATORS.values() for _,indicator,_,label in specs})
 MAP_STATE="italian_network_data_v1"
 DESK_STATE="entsog_network_result_v1"
 FIELDS=("provider","infrastructure_id","point_direction","indicator","value","unit","gas_day",
@@ -76,7 +90,7 @@ def cached_sources(store,network,now,first,last):
     entries=[]
     for prefix in prefixes:entries.extend(store.cached_entries(prefix,limit=MAX_CACHE_ENTRIES))
     if len(entries)>MAX_CACHE_ENTRIES:
-        notices.append("Lettura limitata alle 24 estrazioni più recenti; lo storico completo resta nelle viste originali.")
+        notices.append(f"Lettura limitata alle {MAX_CACHE_ENTRIES} estrazioni più recenti; lo storico completo resta nelle viste originali.")
     for key,at,size in sorted(entries,key=lambda r:r[1],reverse=True)[:MAX_CACHE_ENTRIES]:
         acquired=_stamp(at)
         if acquired is None or acquired>now:continue
@@ -156,8 +170,8 @@ def _inventory_rows(items,network,now,first,last):
         acquired=_stamp(result.get("acquired"))
         frame=result.get("frame")
         if acquired is None or acquired>now or not isinstance(frame,pd.DataFrame) or result.get("scope")!=scope:continue
-        field,indicator,unit=("stock_twh","Storage inventory","TWh") if provider=="AGSI+" else ("sendout_gwh_d","LNG send-out","GWh/d")
-        if field not in frame or "gas_day" not in frame:continue
+        specs=[spec for spec in GIE_INDICATORS.get(provider,()) if spec[0] in frame]
+        if not specs or "gas_day" not in frame:continue
         entity=provider+":"+str(identifier or scope)
         label=lookup[identifier].name if identifier else {"IT":"Italia","EU":"Unione europea","DE":"Germania"}.get(scope,scope)+" · aggregato GIE"
         a=_day(result.get("first")) or min((_day(d) for d in frame.gas_day if _day(d)),default=first)
@@ -166,16 +180,17 @@ def _inventory_rows(items,network,now,first,last):
         for _,r in frame.iterrows():
             day=_day(r.gas_day)
             if day is None or not first<=day<=last:continue
-            value=Decimal(str(r[field])) if finite(r[field]) and r.get("status")!="N" else None
-            review=bool(r.get("review",False))
-            output.append(_base(provider=provider,infrastructure_id=identifier,entity_key=entity,entity_label=label,
-                scope=scope,indicator=indicator,value=value,unit=unit,gas_day=day,retrieved_at=acquired,
-                source_id=scope,source=result.get("source"),source_url=result.get("source_url"),
-                quality_status="review" if review else "valid" if value is not None else "N/A",
-                publication_status=r.get("status") or "Non indicato",cached=result.get("cached"),
-                failed=bool(failed or result.get("failed")),partial=bool(result.get("partial")),
-                time_basis="publisher_day",usable=value is not None,query_first=a,query_last=z,
-                note="Giorno pubblicato dalla fonte; orari e data di pubblicazione non forniti."))
+            for field,indicator,unit,_ in specs:
+                value=Decimal(str(r[field])) if finite(r[field]) and r.get("status")!="N" else None
+                review=bool(r.get("review",False))
+                output.append(_base(provider=provider,infrastructure_id=identifier,entity_key=entity,entity_label=label,
+                    scope=scope,indicator=indicator,value=value,unit=unit,gas_day=day,retrieved_at=acquired,
+                    source_id=scope,source=result.get("source"),source_url=result.get("source_url"),
+                    quality_status="review" if review else "valid" if value is not None else "N/A",
+                    publication_status=r.get("status") or "Non indicato",cached=result.get("cached"),
+                    failed=bool(failed or result.get("failed")),partial=bool(result.get("partial")),
+                    time_basis="publisher_day",usable=value is not None,query_first=a,query_last=z,
+                    note="Giorno pubblicato dalla fonte; orari e data di pubblicazione non forniti."))
     return output
 
 
