@@ -217,10 +217,13 @@ def _scenario_panel() -> None:
 def balancing() -> None:
     from .workspace import apply_intent, guide
     apply_intent("balancing")
-    header("Bilanciamento", "Sistema gas · bilanci e rettifiche · simulazioni")
-    view=st.radio("Vista bilanciamento",["Scenario di mercato","Sbilanciamento del partecipante","Stato sistema","Controllo giornaliero"],
-                  index=2,horizontal=True,label_visibility="collapsed",key="balancing_view")
-    if view=="Scenario di mercato":
+    header("Bilanciamento", "Giorno gas · sistema e portafoglio")
+    view=st.radio("Vista bilanciamento",["Cockpit","Scenario di mercato","Sbilanciamento del partecipante","Stato sistema","Controllo giornaliero"],
+                  index=0,horizontal=True,label_visibility="collapsed",key="balancing_view")
+    if view=="Cockpit":
+        from .balancing_cockpit_page import panel
+        panel()
+    elif view=="Scenario di mercato":
         _scenario_panel()
     elif view=="Sbilanciamento del partecipante":
         _settlement_panel()

@@ -81,6 +81,8 @@ def test_every_feature_route_is_reachable_offline_and_preserves_imports(monkeypa
         assert app.session_state["settlement_desk_csv_v1"]["sha"]==saved["sha"]
         assert app.session_state["settlement_desk_csv_v1"]["rows"]==rows
         if path=="balancing":
+            assert app.radio(key="balancing_view").value=="Cockpit"
+            app.radio(key="balancing_view").set_value("Controllo giornaliero").run()
             assert app.radio(key="daily_desk_data_mode").value=="Esempio guidato"
         if path=="operations":
             assert app.session_state["assistant_history_v1"]

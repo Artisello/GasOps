@@ -13,7 +13,7 @@ def prepare(route):
         except ValueError:config=None
         state["execution_mode"]=config.model if config else "Deterministic"
     if route=="balancing":
-        state.setdefault("balancing_view","Controllo giornaliero")
+        state.setdefault("balancing_view","Cockpit")
         state.setdefault("daily_desk_data_mode","Esempio guidato")
         state.setdefault("daily_desk_filter","Rettifiche")
     elif route=="security-of-supply" and "operational_platform" not in state:

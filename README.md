@@ -10,6 +10,8 @@ La stessa mappa offre quattro letture: **SYSTEM, FLOW, ATTENTION e INFRASTRUCTUR
 
 **Security of Supply → Esplora dati**: confronto delle osservazioni ENTSOG e GIE già disponibili, con serie temporali, D-1, revisioni, tabella e CSV dalla stessa selezione. Accesso diretto dalla scheda Fonti della mappa e diagnostica condivisa con Source Health. Nessun caricamento o fetch al cambio filtro. [Funzioni e limiti del Data Explorer](docs/GAS_DATA_EXPLORER.md).
 
+**Bilanciamento → Cockpit**: giorno gas, confronto nomination/rinomina/allocazione/flusso, pubblicazioni, driver, eventi e qualità. Vista pubblica di sistema distinta dai portafogli importati e autorizzati. Posizione non calcolabile quando gli input non bastano; nessun saldo ufficiale inventato. I controlli di settlement e riconciliazione esistenti restano accessibili. [Metodo e limiti](docs/BALANCING_COCKPIT.md).
+
 **Demo live:** https://snamigor.streamlit.app/
 
 I.G.O.R. è un prototipo indipendente, non ufficiale Snam. Gli identificatori tecnici e le configurazioni di deployment restano invariati per compatibilità.
