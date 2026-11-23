@@ -44,6 +44,73 @@ def digest(b):
     return sha256(json.dumps(b,sort_keys=True,separators=(",",":"),allow_nan=False).encode()).hexdigest()
 
 
+def audit_rows(frame,day,now,*,batches=()):
+    """Audit real versions/acquisitions; acquisition never becomes publication."""
+    from decimal import Decimal,InvalidOperation
+    from .gas_data import _stamp
+    from .gas_calendar import gas_day_bounds
+    indicators=("Nomination","Renomination","Allocation","Physical Flow")
+    groups={}
+    def add(point,indicator,value,unit,start,stop,published,acquired,source_id,quality,version=""):
+        if unit!="GWh/d" or indicator not in indicators or not point:return
+        at,issued=_stamp(acquired),_stamp(published)
+        if at and at>now or issued and issued>now:return
+        try:amount=Decimal(str(value)) if value is not None else None
+        except InvalidOperation:amount=None
+        if amount is not None and (not amount.is_finite() or abs(amount)>Decimal("1e9")):amount=None
+        groups.setdefault((point,indicator,unit,start,stop),[]).append({
+            "source_id":source_id or point,"gas_day":day,"point_direction":point,"indicator":indicator,
+            "retrieved_at":at,"publication_timestamp":issued,"new_value":amount,"unit":unit,
+            "period_from":start,"period_to":stop,"quality_flag":quality,"version":version})
+    selected=frame.loc[(frame.provider=="ENTSOG")&(frame.gas_day==day)&frame.indicator.isin(indicators)]
+    for r in selected.itertuples():
+        versions=json.loads(r.revisions or "[]")
+        for v in versions:
+            add(r.point_direction,r.indicator,v.get("value"),r.unit,r.period_from,r.period_to,v.get("observed_at"),
+                v.get("retrieved_at") or r.retrieved_at,v.get("source_id") or r.source_id,
+                "conflict" if r.quality_status=="conflict" else v.get("quality_status") or r.quality_status)
+        if not versions:
+            add(r.point_direction,r.indicator,r.value,r.unit,r.period_from,r.period_to,r.observed_at,
+                r.retrieved_at,r.source_id,r.quality_status)
+    start,stop=gas_day_bounds(day)
+    for batch in merge([],batches,now):
+        for r in batch["rows"]:
+            if r["day"]==day.isoformat():
+                add(batch["point"],r["indicator"],r["gwh"],"GWh/d",start,stop,None,batch["acquired"],
+                    batch["point"],"unaligned" if r["assumed"] else "declared_vintage" if batch["complete"] else "partial",digest(batch))
+    output=[]
+    for group in groups.values():
+        distinct={}
+        for r in group:
+            key=(r["publication_timestamp"],None if r["publication_timestamp"] else r["retrieved_at"],r["new_value"])
+            if key in distinct:
+                old=distinct[key]
+                old["source_id"]=" | ".join(dict.fromkeys((old["source_id"],r["source_id"])))
+                if r["quality_flag"]=="conflict":old["quality_flag"]="conflict"
+            else:distinct[key]=dict(r)
+        rows=list(distinct.values())
+        published=all(r["publication_timestamp"] is not None for r in rows)
+        field="publication_timestamp" if published else "retrieved_at"
+        rows.sort(key=lambda r:(r[field] is None,r[field] or now))
+        previous=None
+        for r in rows:
+            tied=[x for x in rows if x[field]==r[field]]
+            conflict=len({x["new_value"] for x in tied})>1 or r["quality_flag"]=="conflict"
+            prior=previous if (not conflict and previous and previous[field] is not None and r[field] is not None
+                and previous[field]<r[field] and previous["quality_flag"] not in ("conflict","unaligned")
+                and r["quality_flag"]!="unaligned") else None
+            old=prior["new_value"] if prior else None
+            changed=old is not None and r["new_value"] is not None and old!=r["new_value"]
+            reason=("Conflitto: ordine delle versioni non dimostrato" if conflict else
+                "Revisione pubblicata" if changed and published else "Variazione tra acquisizioni" if changed else
+                "Ripubblicazione invariata" if prior and published else "Acquisizione invariata" if prior else "Prima versione disponibile")
+            output.append({**r,"old_value":old,"changed":changed,"reason":reason,
+                "quality_flag":"conflict" if conflict else r["quality_flag"],
+                "order_basis":"publication" if published else "acquisition"})
+            previous=None if conflict else r
+    return output
+
+
 def merge(old,new,now):
     out={}
     for b in [*old,*new]:

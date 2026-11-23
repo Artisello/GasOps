@@ -17,13 +17,17 @@ def _upload(kind,state,fields,parser):
     with st.form(state+"_form"):
         raw=st.file_uploader("Estratto CSV normalizzato",type="csv",key=state+"_file")
         st.caption("Solo dati pubblici o sintetici · ID fittizi.")
+        authorized=st.checkbox("Confermo di essere autorizzato a usare questo estratto",key=state+"_authorized")
         submit=st.form_submit_button("Importa e valida")
     if submit:
         if raw is None:
             st.warning("Seleziona un CSV.")
+        elif not authorized:
+            st.warning("Conferma l’autorizzazione d’uso dell’estratto.")
         else:
             try:
-                st.session_state[state]=parser(raw.getvalue())
+                st.session_state[state]={**parser(raw.getvalue()),"authorized":True,"origin":"user_upload",
+                                         "retrieved_at":utc_now().isoformat()}
                 st.success("Estratto acquisito · provenienza dichiarata.")
             except ValueError as exc:
                 st.error(str(exc)+" Registro precedente conservato.")

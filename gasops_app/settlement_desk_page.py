@@ -28,17 +28,21 @@ def _import_balances():
         st.warning("Non caricare dati aziendali riservati o identificativi reali sul prototipo pubblico.")
         with st.form("desk_upload"):
             f=st.file_uploader("CSV bilanci e versioni",type=["csv"],help="Ogni import aggiunge versioni al registro. Anni 2000–2100, UTF-8, virgola come separatore, decimali con punto, fino a 2 MiB.")
+            authorized=st.checkbox("Confermo di essere autorizzato a usare tutti i dati del registro",key="desk_authorized_import",
+                help="La conferma comprende il nuovo CSV e le versioni già importate nel registro della sessione.")
             submitted=st.form_submit_button("Importa e controlla",type="primary",width="stretch")
         if submitted:
             if f is None:
                 st.warning("Seleziona un CSV.")
+            elif not authorized:
+                st.warning("Conferma l’autorizzazione d’uso prima di importare il portafoglio.")
             elif f.size>MAX_BYTES:
                 st.warning("CSV superiore a 2 MiB.")
             else:
                 try:
                     raw=f.getvalue()
-                    merged=merge_csv(st.session_state.get(STATE),raw)
-                    st.session_state[STATE]={**merged,"name":f.name}
+                    merged=merge_csv(st.session_state.get(STATE),raw,acquired=utc_now())
+                    st.session_state[STATE]={**merged,"name":f.name,"authorized":True,"origin":"user_upload"}
                     notice=("success",f"Registro aggiornato: {merged['added']} nuove versioni, "
                             f"{merged['unchanged']} già presenti.")
                 except ValueError as exc:

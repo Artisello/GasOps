@@ -30,17 +30,20 @@ def test_never_memoize_failed_refresh():
 
 def test_balancing_inactive_panels_not_executed(monkeypatch):
     from streamlit.testing.v1 import AppTest
-    from gasops_app import workbench, operational_sources_page
+    from gasops_app import workbench, operational_sources_page, balancing_cockpit_page
     calls=[]
     def scenario():calls.append("scenario")
     def participant():calls.append("participant")
     monkeypatch.setattr(workbench,"_scenario_panel",scenario)
     monkeypatch.setattr(operational_sources_page,"_jarvis_panel",lambda **kw:calls.append("system"))
     monkeypatch.setattr(workbench,"_settlement_panel",participant)
+    monkeypatch.setattr(balancing_cockpit_page,"panel",lambda:calls.append("cockpit"))
     app=AppTest.from_string("from gasops_app.workbench import balancing\nbalancing()").run()
-    assert not app.exception and calls==["system"]
+    assert not app.exception and calls==["cockpit"]
     app.radio(key="balancing_view").set_value("Sbilanciamento del partecipante").run()
-    assert not app.exception and calls==["system","participant"]
+    assert not app.exception and calls==["cockpit","participant"]
+    app.radio(key="balancing_view").set_value("Stato sistema").run()
+    assert not app.exception and calls==["cockpit","participant","system"]
 
 
 def test_market_inactive_charts_not_executed(monkeypatch):

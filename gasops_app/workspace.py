@@ -10,7 +10,7 @@ from .visuals import chip
 
 INTENT = "bso_workspace_intent"
 INTENTS = {
-    "balancing": ("balancing", {"balancing_view": "Stato sistema"}),
+    "balancing": ("balancing", {"balancing_view": "Cockpit", "cockpit_context":"SYSTEM VIEW"}),
     "settlement": ("balancing", {"balancing_view": "Controllo giornaliero",
                                   "balancing_daily_mode": "Settlement e rettifiche",
                                   "daily_desk_data_mode": "Dati importati"}),
@@ -22,7 +22,7 @@ INTENTS = {
 }
 TASKS = (
     ("balancing", "Bilanciamento", "Sistema gas", "Segui le stime del sistema e confronta le pubblicazioni.",
-     "Pubblicazioni Jarvis in CSV", "SAS, prelievi attesi e variazioni tra versioni", "Apri il sistema gas"),
+     "Osservazioni pubbliche già disponibili", "Giorno gas, confronti per punto e revisioni", "Apri il sistema gas"),
     ("settlement", "Settlement", "Bilanci e rettifiche", "Controlla le giornate del mese e individua gli importi da verificare.",
      "Bilanci e prezzi di sbilanciamento in CSV", "Eccezioni, rettifiche e controllo esportabile", "Controlla i bilanci"),
     ("operations", "Operations", "Attività e scadenze", "Trova le attività in ritardo e quelle in scadenza.",

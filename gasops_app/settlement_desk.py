@@ -39,7 +39,7 @@ def archive_csv(rows):
     return csv_text(records, FIELDS)
 
 
-def merge_csv(previous, raw):
+def merge_csv(previous, raw, *, acquired=None):
     """Add immutable versions atomically. Identical rows in a later file are idempotent."""
     incoming = parse_csv(raw)
     existing = (previous or {}).get("rows", ())
@@ -66,8 +66,16 @@ def merge_csv(previous, raw):
     if len(hashes) > 100:
         raise ValueError("Limite di 100 estratti raggiunto. Esporta il registro prima di iniziare una nuova sessione.")
     rows = sorted(merged.values(), key=lambda row: (row.user, row.day, row.version))
-    return {"rows": rows, "sha": sha256(archive_csv(rows).encode()).hexdigest(),
+    result={"rows": rows, "sha": sha256(archive_csv(rows).encode()).hexdigest(),
             "hashes": hashes, "added": added, "unchanged": len(incoming) - added}
+    provenance=dict((previous or {}).get("version_provenance",{}))
+    if acquired is not None:
+        if not isinstance(acquired,datetime) or acquired.tzinfo is None:raise ValueError("Acquisizione senza fuso")
+        for row in incoming:
+            key=f"{row.user}|{row.day}|{row.version}"
+            provenance.setdefault(key,{"source_id":sha256(raw).hexdigest(),"retrieved_at":acquired.isoformat()})
+    if provenance:result["version_provenance"]=provenance
+    return result
 
 
 def parse_csv(raw):

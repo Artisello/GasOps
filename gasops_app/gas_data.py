@@ -179,8 +179,8 @@ def _inventory_rows(items,network,now,first,last):
     return output
 
 
-def collect(network,bundled,state,now,*,store=None,first=None,last=None,interruptions=()):
-    """Return one validated frame, bounded to the requested 92-day window."""
+def source_context(network,bundled,state,now,*,store=None,first=None,last=None,interruptions=()):
+    """Load existing evidence once for readers sharing the same bounded window."""
     first,last=_window(first,last,now)
     saved=state.get(MAP_STATE,{})
     cached,inventory,events,notices=cached_sources(store,network,now,first,last)
@@ -190,6 +190,28 @@ def collect(network,bundled,state,now,*,store=None,first=None,last=None,interrup
         try:snapshots.append(as_snapshot(desk,network))
         except (ValueError,TypeError,KeyError):notices.append("Estrazione ENTSOG della sessione non valida: esclusa.")
     snapshots=[s for s in snapshots if s.acquired<=now and s.first<=last and s.last>=first]
+    for provider in ("AGSI+","ALSI"):
+        for scope in ("IT","EU","DE"):
+            source=state.get(provider+"_"+scope,{})
+            if source.get("result"):inventory.append((provider,None,scope,source["result"],bool(source.get("error"))))
+    for (provider,eic),result in saved.get("facilities",{}).items():
+        bindings=[b for b in network.bindings if b.provider==provider and b.external_id==eic and b.mapping_confidence=="confirmed"]
+        if len(bindings)==1:
+            inventory.append((provider,bindings[0].infrastructure_id,eic,result,provider+":"+eic in saved.get("failures",())))
+    return {"snapshots":snapshots,"inventory":inventory,"interruptions":[*interruptions,*events,*saved.get("interruptions",{}).values()],
+            "notices":notices,"first":first,"last":last}
+
+
+def collect(network,bundled,state,now,*,store=None,first=None,last=None,interruptions=(),context=None):
+    """Return one validated frame, bounded to the requested 92-day window."""
+    first,last=_window(first,last,now)
+    saved=state.get(MAP_STATE,{})
+    loaded=context if context is not None else source_context(network,bundled,state,now,store=store,
+        first=first,last=last,interruptions=interruptions)
+    if loaded["first"]>first or loaded["last"]<last:raise ValueError("Contesto fuori periodo")
+    snapshots,inventory=loaded["snapshots"],loaded["inventory"]
+    notices=list(loaded["notices"])
+    desk=state.get(DESK_STATE)
     binding_by_point={b.point_direction:b for b in verified_bindings(network)}
     lookup={i.id:i for i in network.infrastructure}
     flags={}
@@ -239,16 +261,8 @@ def collect(network,bundled,state,now,*,store=None,first=None,last=None,interrup
             usable=usable,query_first=s.first,query_last=s.last,
             note="ID fonte: chiave punto; l’estrazione legacy non conserva gli ID originali." if o.source_id==o.point_direction else ""))
     # Parsed GIE frames: aggregate scopes remain distinct from single facilities.
-    for provider in ("AGSI+","ALSI"):
-        for scope in ("IT","EU","DE"):
-            source=state.get(provider+"_"+scope,{})
-            if source.get("result"):inventory.append((provider,None,scope,source["result"],bool(source.get("error"))))
-    for (provider,eic),result in saved.get("facilities",{}).items():
-        bindings=[b for b in network.bindings if b.provider==provider and b.external_id==eic and b.mapping_confidence=="confirmed"]
-        if len(bindings)==1:
-            inventory.append((provider,bindings[0].infrastructure_id,eic,result,provider+":"+eic in saved.get("failures",())))
     rows.extend(_inventory_rows(inventory,network,now,first,last))
-    for result in (*interruptions,*events,*saved.get("interruptions",{}).values()):
+    for result in loaded["interruptions"]:
         b=binding_by_point.get(result.get("point_direction"))
         if b is None or not _stamp(result.get("acquired")) or result["acquired"]>now:continue
         for r in result["records"]:

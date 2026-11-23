@@ -34,3 +34,18 @@ def daily_bars(frame,fields,unit):
     fig.update_layout(barmode="group",showlegend=len(fig.data)>1,hovermode="closest")
     fig.update_yaxes(zeroline=True,zerolinecolor=MUTED)
     return fig
+
+
+def point_indicators(row):
+    """Four distinct rates on one gas day; absent measures stay absent."""
+    fields=("Nomination","Renomination","Allocation","Physical Flow")
+    labels=("Nomina","Rinomina","Allocazione","Flusso fisico")
+    fig=go.Figure(go.Bar(y=labels,x=[float(row[k]) if row[k] is not None else None for k in fields],
+        orientation="h",marker_color=[BLUE,BLUE,TEAL,TEAL],
+        text=[numero(row[k],1) if row[k] is not None else None for k in fields],textposition="outside",cliponaxis=False,
+        hovertemplate="%{y}: %{text} GWh/d<extra></extra>"))
+    _frame(fig,"daily","GWh/d",235)
+    fig.update_layout(margin={"l":10,"r":55,"t":10,"b":35},showlegend=False,hovermode="closest")
+    fig.update_xaxes(type="linear",tickformat=",.0f",automargin=True)
+    fig.update_yaxes(title=None,side="left",autorange="reversed",automargin=True)
+    return fig
