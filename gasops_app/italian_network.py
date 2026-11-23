@@ -348,6 +348,66 @@ def verified_bindings(network, identifier=None):
         and (identifier is None or b.infrastructure_id == identifier))
 
 
+def security_entries(network):
+    """Only confirmed, unambiguous border-entry assets, shared with the map."""
+    categories={i.id:i.category for i in network.infrastructure}
+    return tuple(sorted((b for b in verified_bindings(network) if b.direction=="entry"
+        and b.external_id.startswith("ITP-") and categories.get(b.infrastructure_id)=="entry"),
+        key=lambda b:b.point_direction))
+
+
+def security_scenario_case(network, snapshots, status, now, *, day=None, demo=False, demand_basis="OBSERVED"):
+    """Project validated local evidence into finance.scenario; no fetch or calculation engine."""
+    from .finance import SecurityScenarioCase,StressDatum
+    entries=security_entries(network)
+    day=day or status.gas_day
+    start,stop=gas_day_bounds(day)
+    if demo:
+        values={b.point_direction:Decimal(120-10*n) for n,b in enumerate(entries)}
+        values.update(lng=Decimal(180),storage=Decimal(120),production=Decimal(30),
+                      demand=Decimal(850),exports=Decimal(20),injection=Decimal(10))
+        for b in entries:
+            values["technical:"+b.point_direction]=2*values[b.point_direction]
+            values["available:"+b.point_direction]=values[b.point_direction]
+        inputs=tuple(StressDatum(key=k,value=v,classification="ASSUMPTION",source_id="demo:"+k,
+            period_from=start,period_to=stop,quality="demo",scope="Demo sintetica · perimetro illustrativo") for k,v in values.items())
+        return SecurityScenarioCase(gas_day=day,reference_time=now,mode="DEMO",
+            entry_keys=tuple(b.point_direction for b in entries),inputs=inputs)
+    observations=validated_observations(network,merge_observations(snapshots),now,nonnegative=True)
+    inputs=[]
+    for b in entries:
+        relevant=[s for s in snapshots if s.point_direction==b.point_direction and s.acquired<=now and s.first<=day<=s.last]
+        latest=max((s.acquired for s in relevant),default=None)
+        partial=any(s.partial for s in relevant if s.acquired==latest)
+        for indicator,prefix in (("Physical Flow",""),("Firm Technical","technical:"),("Firm Available","available:")):
+            rows=applicable_observations(observations,b.point_direction,day,indicator)
+            if not rows:continue
+            o=max(rows,key=lambda o:o.retrieved_at)
+            inputs.append(StressDatum(key=prefix+b.point_direction,value=o.value,source_id=o.source_id,
+                source_url=o.source_url,period_from=o.period_from,period_to=o.period_to,observed_at=o.observed_at,
+                retrieved_at=o.retrieved_at,quality="stale" if now-o.retrieved_at>timedelta(hours=12) else o.quality_status,
+                complete=True,response_partial=partial,scope=b.expected_label+" · entry",evidence_ids=(o.source_id,),source_unit=o.source_unit))
+    components={c.id:c.measure for c in status.components}
+    if demand_basis not in ("OBSERVED","FORECAST"):raise ValueError("Base domanda non riconosciuta")
+    measures={"lng":status.lng_sendout,"storage":components["withdrawal"],"production":components["production"],
+              "demand":status.demand_actual if demand_basis=="OBSERVED" else status.demand_forecast,
+              "exports":components["exports"],"injection":components["injection"]}
+    for key,m in measures.items():
+        if m.value is None:continue
+        derived=m.source_id.startswith("ENTSOG:") and (key in ("lng","exports") or key=="demand" and demand_basis=="OBSERVED")
+        inputs.append(StressDatum(key=key,value=m.value,unit=m.unit,
+            classification="FORECAST" if key=="demand" and demand_basis=="FORECAST" or m.status=="estimated" else "MODEL OUTPUT" if derived else "OBSERVED",
+            source_id=m.source_id,source_url=m.source if m.source.startswith("https://") else
+                "https://alsi.gie.eu/" if m.source_id.startswith("GIE:ALSI") else
+                "https://agsi.gie.eu/" if m.source_id.startswith("GIE:AGSI") else "https://transparency.entsog.eu/",
+            period_from=start,period_to=stop,observed_at=m.observed_at,retrieved_at=m.retrieved_at,
+            quality="invalid" if "Valore da verificare" in m.warnings else m.freshness,
+            complete=m.gas_day==day and m.coverage.expected>0 and m.coverage.valid==m.coverage.expected,
+            scope=m.scope,evidence_ids=m.evidence_ids,derivation="Somma dei tre aggregati settoriali SRG validati" if derived and key=="demand" else
+                "Somma dei soli punti verificati del gruppo; aggregati alternativi esclusi" if derived else None))
+    return SecurityScenarioCase(gas_day=day,reference_time=now,entry_keys=tuple(b.point_direction for b in entries),inputs=tuple(inputs))
+
+
 def validated_observations(network, observations, now, *, nonnegative=False):
     """Shared map/balance eligibility, including historical snapshots and holes.
 

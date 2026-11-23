@@ -124,7 +124,7 @@ def _reset_view(mode):
 
 
 def render_map(network, boundary, visible, identifier, *, mode, observations, day, direction="entry", events=(), show_labels=True,
-               reading_mode="SYSTEM", intelligence=None, findings=()):
+               reading_mode="SYSTEM", intelligence=None, findings=(), scenario_ids=()):
     """Native selection callback runs before the single Streamlit rerun."""
     key = f"italian_network_{mode}_deck_{st.session_state.get('net_map_epoch',0)}_{st.session_state.get('net_view_epoch_'+mode,0)}"
     description = "Mappa del sistema gas italiano. Gasdotti storici schematici e impianti; seleziona con il mouse o usa la ricerca infrastruttura per leggere gli stessi dettagli."
@@ -137,8 +137,8 @@ def render_map(network, boundary, visible, identifier, *, mode, observations, da
         width = width if isinstance(width,(int,float)) and not isinstance(width,bool) and 200 <= width <= 4000 else 600
         st.pydeck_chart(deck(network,boundary,visible,identifier,events,observations=observations,
             day=day,direction=direction,show_labels=show_labels,mode=mode,viewport_width=width-2,
-            reading_mode=reading_mode,intelligence=intelligence,finding_ids=findings,stable_picking=True),key=key,
-            height=500 if mode == "overview" else 650,selection_mode="single-object",
+            reading_mode=reading_mode,intelligence=intelligence,finding_ids=findings,stable_picking=True,scenario_ids=scenario_ids),key=key,
+            height=500 if mode in ("overview","scenario") else 650,selection_mode="single-object",
             on_select=partial(_accept_pick,key,tuple(i.id for i in visible),mode,
                 point_directions=tuple((identifier,info["binding"].direction) for identifier,info in (intelligence or {}).items() if info.get("binding"))),**accessible)
         st.button("Vista Italia",key="net_view_reset_"+mode,on_click=_reset_view,args=(mode,),
@@ -246,6 +246,16 @@ def _open_full(identifier, first, last, direction=None):
     st.session_state["operational_platform"] = "MAP"
     from .operational_sources_page import operational_context
     st.switch_page(st.Page(operational_context,title="Security of Supply",icon=":material/shield:",url_path="security-of-supply"))
+
+
+def _open_stress(identifier,day):
+    from .workbench import balancing
+    closed=_last_completed(utc_now())
+    st.session_state.update(balancing_view="Scenario di mercato",scenario_model="Stress Test Italia",
+        sos_mode="Dati pubblici",sos_public_day=max(closed-timedelta(days=91),min(day,closed+timedelta(days=1))))
+    st.session_state[SELECTED]=identifier
+    st.session_state.pop("sos_seen_map",None)
+    st.switch_page(st.Page(balancing,title="Bilanciamento",icon=":material/balance:",url_path="balancing"))
 
 
 def overview_panel():
@@ -491,6 +501,10 @@ def _detail(network, item, observations, snapshots, direction, events, first, la
         with st.container(key="network_home_point_data" if mode == "overview" else "network_point_data"):
             _operational_summary(network,item,info)
             _gie_detail(saved,item.id,network,first,last,mode=mode)
+            from .italian_network import security_entries
+            if any(b.infrastructure_id==item.id for b in security_entries(network)):
+                st.button("Stress Test su questo ingresso",key="net_stress_"+mode,
+                    on_click=_open_stress,args=(item.id,last),width="stretch")
     with history_tab:
         st.caption("TREND · D-30")
         if binding:
