@@ -30,6 +30,13 @@ TASKS = (
 )
 
 
+def picker(label, options, *, key, labels=None, index=0):
+    """One native, keyboard-accessible navigation style; values stay stable."""
+    with st.container(key="workspace_nav_"+key):
+        return st.radio(label,options,key=key,index=index,horizontal=True,label_visibility="collapsed",
+                        format_func=(lambda value:labels.get(value,value)) if labels else str)
+
+
 def apply_intent(page):
     """Consume only a request for this page, before its widgets are created."""
     intent = st.session_state.get(INTENT)

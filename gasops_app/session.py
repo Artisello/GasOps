@@ -393,8 +393,9 @@ def source_filters(page: str, *, lookback: bool = True) -> Selection:
 @st.cache_resource(show_spinner=False, max_entries=8)
 def preview(fingerprint: str, source_json: str, model: ModelChoice, today: str, _bundle: Bundle) -> MarketContext:
     context = MarketContext(_bundle, model, utc_now())
-    # Prime the shared preview; workflow runs construct a fresh context.
-    _ = context.facts, context.projection
+    # Reading observations never fits models. A caller explicitly requests a
+    # projection; cached properties then reuse it on subsequent reruns.
+    _ = context.facts
     return context
 
 

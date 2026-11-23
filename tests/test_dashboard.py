@@ -308,7 +308,7 @@ def test_market_layout_and_no_weather_request_for_demo(monkeypatch,tmp_path):
     app.run()
     assert not app.exception
     assert any("**Simulazione**" in e.value for e in app.markdown)
-    assert app.radio(key="market_section").options==["Consumi e previsioni","Composizione e prezzi","Meteo","Modelli e dati"]
+    assert app.radio(key="market_section").options==["Andamento","Consumi e prezzi","Meteo","Dati e metodo"]
     assert app.radio(key="market_section").value=="Consumi e previsioni"
     assert any("Variazione dei consumi" in e.proto.body for e in app.get("html"))
     assert not any("Dati osservati e previsioni"==e.label for e in app.expander)
@@ -356,7 +356,7 @@ def test_balancing_page_simple_and_complete(monkeypatch,tmp_path):
     monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
     app=AppTest.from_string("from gasops_app.workbench import balancing\nbalancing()",default_timeout=30).run()
     assert not app.exception
-    assert app.radio(key="balancing_view").options==["Cockpit","Scenario di mercato","Sbilanciamento del partecipante","Stato sistema","Controllo giornaliero"]
+    assert app.radio(key="balancing_view").options==["Sistema e portafoglio","Scenari","Calcolo partecipante","Stato sistema","Bilanci e rettifiche"]
     assert app.radio(key="balancing_view").value=="Cockpit"
     assert not any("Saldo energetico" in e.proto.body for e in app.get("html"))
     app.radio(key="balancing_view").set_value("Sbilanciamento del partecipante").run()

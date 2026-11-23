@@ -341,6 +341,32 @@ div[data-testid="stVerticalBlockBorderWrapper"] {border-color:var(--gas-border);
 .stApp [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {gap:.35rem;}
 .gas-brand {padding-bottom:.55rem;}
 .gas-nav-group {margin-top:.45rem;}
+/* One quiet navigation surface across workspaces. Native radios keep their
+   semantics, labels, hit areas and keyboard behavior in both Streamlit UIs. */
+.stApp [class*="st-key-workspace_nav_"] {
+  background:#111c29;border:1px solid var(--gas-border);border-radius:12px;
+  padding:.35rem;margin-block:.15rem .35rem;
+}
+.stApp [class*="st-key-workspace_nav_"] [data-testid="stElementContainer"]:has(>[data-testid="stRadio"]),
+.stApp [class*="st-key-workspace_nav_"] [data-testid="stRadio"] {width:100%!important;}
+.stApp [class*="st-key-workspace_nav_"] [role="radiogroup"] {display:flex;flex-wrap:wrap;width:100%;gap:4px;}
+.stApp [class*="st-key-workspace_nav_"] [role="radiogroup"]>div {display:contents;}
+.stApp [class*="st-key-workspace_nav_"] :is(label[data-baseweb="radio"],label[data-testid="stRadioOption"]) {
+  flex:1 0 auto;min-width:0;min-height:44px;box-sizing:border-box;margin:0!important;
+  padding:.45rem .7rem;border:1px solid transparent;border-radius:8px;align-items:center;
+}
+.stApp [class*="st-key-workspace_nav_"] label p {font-size:.84rem;line-height:1.35;}
+.stApp [class*="st-key-workspace_nav_"] label:not(:has(input:checked)):hover {background:var(--gas-panel-hover);}
+.stApp [class*="st-key-workspace_nav_"] label:has(input:checked) {background:var(--gas-selected);border-color:#39645e;}
+.stApp [class*="st-key-workspace_nav_"] label:has(input:checked) p {color:var(--gas-teal);font-weight:650;}
+.stApp [class*="st-key-workspace_nav_"] label:has(input:focus-visible) {outline:2px solid var(--gas-blue);outline-offset:1px;}
+.stApp .st-key-market_forecast_action {border:1px solid var(--gas-border);border-radius:12px;padding:.6rem .8rem;}
+.stApp .st-key-market_forecast_action [data-testid="stCaptionContainer"] p {margin-bottom:0;}
+.stApp :is(.gas-number,.demo-number,[data-testid="stMetricValue"]) {font-variant-numeric:tabular-nums;}
+@media(max-width:640px) {
+ .stApp [class*="st-key-workspace_nav_"] [role="radiogroup"] {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));}
+ .stApp [class*="st-key-workspace_nav_"] :is(label[data-baseweb="radio"],label[data-testid="stRadioOption"]) {width:100%;}
+}
 @media(max-width:768px) {
  .stApp [data-testid="stRadio"] [role="radiogroup"] {column-gap:.5rem;}
  .stApp [data-testid="stRadio"] [role="radiogroup"] label {max-width:100%;}

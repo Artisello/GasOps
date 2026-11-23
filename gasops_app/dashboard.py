@@ -8,7 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from .agents import MarketContext
-from .data import FIELDS, period_text
+from .data import FIELDS, ROME, period_text
 from .forecast import AUTOMATIC, MODELS
 from .italiano import GRAVITA, MODALITA, MODELLI, data_it, numero
 from .models import AGENT_LABELS, Agent, Kind, Provider
@@ -18,6 +18,7 @@ from .regulatory import registered_case
 from .executive_briefing import management_readout, outlook_delta
 from .visuals import AMBER, BLUE, ROSE, TEAL, breakdown_chart, chip, demand_chart, error_chart, ai_readout
 from .visuals import forecast_readout, heading, header, info, kind_tag, kpi_grid, local_time, mini_chart, plot, rows, steps
+from .workspace import picker
 
 
 def _open_registered_finding(finding_id):
@@ -149,25 +150,26 @@ def _quality_panel(context: MarketContext) -> None:
                     st.caption(finding.detail)
 
 
-def _charts(context: MarketContext, horizon: int, page: str, height: int = 330, *, readout=True, compact=False) -> pd.DataFrame:
+def _charts(context: MarketContext, horizon: int, page: str, height: int = 330, *, readout=True, compact=False, include_forecast=True) -> pd.DataFrame:
     origin = context.bundle.origin
     data = context.inspection.usable.tail(horizon)
     title = ("Consumo interno e disponibilità" if origin.grain == "monthly" else
              "Consumi nazionali" if origin.archive else "Prelievi sulla rete SRG" if "distribution_gwh" in origin.fields else "Domanda e offerta")
-    projection = context.projection
+    projection = context.projection if include_forecast else None
+    points = projection.points if projection is not None else ()
     if compact and origin.grain=="monthly":title="Consumi e previsioni"
-    heading(title, kind_tag(Kind.FORECAST) if projection.points else "")
+    heading(title, kind_tag(Kind.FORECAST) if points else "")
     if not data["demand_gwh"].notna().any():
         st.info("Nessun consumo utilizzabile nel periodo selezionato.")
     else:
-        if projection.points and readout:
+        if points and readout:
             forecast_readout(projection.points[0], origin.grain, historical=origin.archive or any(f.id=="stale" for f in context.inspection.findings))
         chart=demand_chart(data, projection, origin.grain, height=height,compact=compact)
         plot(chart,key=f"{page}_demand")
         if compact and chart.layout.meta=="coincident_accounting":
             st.caption("Disponibilità contabile coincidente con i consumi nel periodo mostrato; dettaglio nel bilancio.")
         horizon_text = "14 giorni gas" if origin.grain == "daily" else "6 mesi"
-        if projection.points:
+        if points:
             model = MODELLI[projection.model]
             note = " · scelto dallo storico" if context.model == AUTOMATIC and projection.model in context.forecast_scores else ""
             st.caption(f"{model}{note} · orizzonte di {horizon_text}")
@@ -176,7 +178,7 @@ def _charts(context: MarketContext, horizon: int, page: str, height: int = 330, 
                 st.caption(f"Prima stima a {lead} giorni dall’ultima osservazione ({context.facts['label']}).")
             if context.model not in (AUTOMATIC, projection.model):
                 st.caption(f"Modello non disponibile per {MODELLI[context.model].lower()}.")
-        else:
+        elif include_forecast:
             st.caption("Serve una serie storica più lunga per generare una stima.")
     return data
 
@@ -596,11 +598,11 @@ def _model_comparison(context: MarketContext) -> None:
                 plot(error_chart(projection, context.bundle.origin.grain), "market_error")
 
 
-def _market_headlines(context: MarketContext, *, compact=False):
+def _market_headlines(context: MarketContext, *, compact=False, include_forecast=True):
     """A single comparable reading: observed period, change, and next model period."""
     origin=context.bundle.origin
     facts=context.facts
-    point=next(iter(context.projection.points),None)
+    point=next(iter(context.projection.points),None) if include_forecast else None
     unit="GWh/mese" if origin.grain=="monthly" else "GWh/giorno gas"
     label=("Prelievi sulla rete SRG" if origin.grain=="daily" and not origin.archive
            and origin.kind!=Kind.SYNTHETIC else "Gas consumato")
@@ -609,10 +611,11 @@ def _market_headlines(context: MarketContext, *, compact=False):
     next_label="Stima da dati non recenti" if stale else "Stima successiva" if origin.archive or origin.kind==Kind.SYNTHETIC else "Consumo previsto"
     cards=[
         (label,facts.get("demand_gwh"),unit,facts.get("label","Dato non disponibile"),1,"teal"),
-        ("Variazione dei consumi",facts.get("demand_gwh_change_pct"),"%",comparison,1,""),
-        (next_label,point.estimate if point else None,unit,
-         period_text(pd.Timestamp(point.period),origin.grain) if point else "Previsione non disponibile",1,"blue")
+        ("Variazione dei consumi",facts.get("demand_gwh_change_pct"),"%",comparison,1,"")
     ]
+    if include_forecast:
+        cards.append((next_label,point.estimate if point else None,unit,
+                      period_text(pd.Timestamp(point.period),origin.grain) if point else "Previsione non disponibile",1,"blue"))
     kpi_grid(cards)
     if compact:
         st.markdown(_plain_market(context))
@@ -640,7 +643,7 @@ def _market_quality_notice(context):
 
 
 
-def _market_data(context, visible):
+def _market_data(context, visible, *, include_forecast=True):
     origin=context.bundle.origin
     with st.expander("Dati osservati e previsioni"):
         raw=context.bundle.rows
@@ -652,7 +655,7 @@ def _market_data(context, visible):
         wanted=["period","timestamp_utc",*origin.fields,"source_flag"]
         st.caption("Record della fonte nel periodo selezionato.")
         st.dataframe(raw.loc[raw["period"]>=start,wanted].rename(columns=headings),hide_index=True,width="stretch")
-        if context.projection.points:
+        if include_forecast and context.projection.points:
             st.caption("Previsioni · GWh per periodo")
             st.dataframe([{"Periodo":period_text(pd.Timestamp(p.period),origin.grain),
                            "Stima (GWh)":p.estimate,"Estremo inferiore":p.lower_80,
@@ -672,7 +675,8 @@ def _market_data(context, visible):
 
 def market() -> None:
     header("Mercato e previsioni", "")
-    view=st.radio("Vista mercato",["Domanda e previsioni","Mercato europeo ACER","Sistema elettrico Terna","Mercato gas GME","Laboratorio previsionale","Forecasting Snam"],horizontal=True,label_visibility="collapsed",key="market_view")
+    view=picker("Vista mercato",["Domanda e previsioni","Mercato europeo ACER","Sistema elettrico Terna","Mercato gas GME","Laboratorio previsionale","Forecasting Snam"],key="market_view",
+        labels={"Domanda e previsioni":"Consumi e previsioni","Mercato europeo ACER":"Prezzi europei","Sistema elettrico Terna":"Elettricità","Mercato gas GME":"Mercato gas","Laboratorio previsionale":"Confronta i modelli","Forecasting Snam":"Previsioni Snam"})
     if view=="Mercato gas GME":
         from .gme_market_page import panel
         panel()
@@ -705,19 +709,34 @@ def market() -> None:
     context=preview_market(selection)
     origin=context.bundle.origin
     st.caption("Fonte: "+origin.name+" · "+("mensile" if origin.grain=="monthly" else "giornaliera"))
-    _market_headlines(context)
+    section=picker("Analisi",["Consumi e previsioni","Composizione e prezzi","Meteo","Modelli e dati"],key="market_section",
+                   labels={"Consumi e previsioni":"Andamento","Composizione e prezzi":"Consumi e prezzi","Modelli e dati":"Dati e metodo"})
+    signature=(context.bundle.fingerprint,origin.model_dump_json(),selection.model,context.as_of.astimezone(ROME).date().isoformat())
+    forecast_ready=st.session_state.get("market_forecast_ready_v1")==signature
+    if section=="Consumi e previsioni" and not forecast_ready:
+        action_slot=st.empty()
+        with action_slot.container(key="market_forecast_action"):
+            action,note=st.columns([1,2],vertical_alignment="center")
+            if action.button("Calcola previsione",key="market_forecast_calculate",type="primary",icon=":material/auto_graph:",width="stretch",
+                             disabled=not context.inspection.usable["demand_gwh"].notna().any()):
+                with st.spinner("Calcolo della previsione…"):
+                    _=context.projection
+                st.session_state["market_forecast_ready_v1"]=signature
+                forecast_ready=True
+            note.caption("Prima i consumi osservati. Calcola una stima con il modello scelto quando ti serve.")
+        if forecast_ready:
+            action_slot.empty()
+    _market_headlines(context,include_forecast=forecast_ready)
     _market_quality_notice(context)
-    section=st.radio("Analisi",["Consumi e previsioni","Composizione e prezzi","Meteo","Modelli e dati"],
-                     horizontal=True,label_visibility="collapsed",key="market_section")
     if section=="Consumi e previsioni":
         with st.container(border=True,key="panel_market_chart"):
-            _charts(context,selection.periods,"market",height=390,readout=False)
-            if context.projection.points:
+            _charts(context,selection.periods,"market",height=390,readout=False,include_forecast=forecast_ready)
+            if forecast_ready and context.projection.points:
                 p=context.projection.points[0]
                 if p.lower_80 is not None and p.upper_80 is not None:
                     st.caption("Intervallo stimato (80%) per "+period_text(pd.Timestamp(p.period),origin.grain)+
                                ": "+numero(p.lower_80)+" – "+numero(p.upper_80)+" GWh.")
-            info("Come leggere il grafico","Linea continua: consumi osservati. Tratteggio: stima del modello; la fascia rappresenta l’incertezza.",
+            info("Come leggere il grafico","Linea continua: consumi osservati. Dopo il calcolo, il tratteggio mostra la stima e la fascia la sua incertezza.",
                  "La previsione parte dall’ultimo periodo utilizzabile, non necessariamente da oggi. GWh misura energia.")
     elif section=="Composizione e prezzi":
         visible=context.inspection.usable.tail(selection.periods)
@@ -744,5 +763,7 @@ def market() -> None:
         visible=context.inspection.usable.tail(selection.periods)
         if st.checkbox("Confronta i modelli previsionali",key="market_show_models"):
             _model_comparison(context)
+            st.session_state["market_forecast_ready_v1"]=signature
+            forecast_ready=True
         _quality_panel(context)
-        _market_data(context,visible)
+        _market_data(context,visible,include_forecast=forecast_ready)
