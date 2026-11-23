@@ -133,15 +133,27 @@ def _readout(number, unit: str) -> str:
 
 
 def _scenario_panel() -> None:
+    model=st.radio("Modello di scenario",["Stress Test Italia","Scenario aggregato esistente"],
+                   horizontal=True,key="scenario_model",label_visibility="collapsed")
+    if model=="Stress Test Italia":
+        from .security_scenario_page import panel
+        panel()
+    else:_aggregate_scenario_panel()
+
+
+def _aggregate_scenario_panel() -> None:
     state=assumptions()
     changes=state.stress
-    selected=st.session_state.get("active_bundle")
-    data=selected or fixture()
+    data_mode=st.radio("Base dello scenario aggregato",["Fonte selezionata","Demo · dati fittizi"],
+                       horizontal=True,key="scenario_aggregate_source")
+    data=fixture() if data_mode=="Demo · dati fittizi" else st.session_state.get("active_bundle")
+    if data is None or data.origin.kind==Kind.SYNTHETIC and data_mode!="Demo · dati fittizi":
+        st.info("Seleziona una fonte pubblica disponibile o attiva esplicitamente la modalità Demo.")
+        return
     facts=MarketContext(data,state.model,utc_now()).facts
     if not facts or facts.get("demand_gwh") is None or facts.get("supply_gwh") is None:
-        data=fixture()
-        facts=MarketContext(data,state.model,utc_now()).facts
-        st.warning("La fonte selezionata non contiene domanda e offerta confrontabili. Scenario basato su dati di esempio.")
+        st.info("Domanda e offerta confrontabili non disponibili nella fonte selezionata. Nessun dato di esempio sostituito.")
+        return
     saved_key=f"scenario_case_{data.fingerprint}"
     saved=st.session_state.get(saved_key)
     try:

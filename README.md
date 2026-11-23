@@ -12,6 +12,8 @@ La stessa mappa offre quattro letture: **SYSTEM, FLOW, ATTENTION e INFRASTRUCTUR
 
 **Bilanciamento → Cockpit**: giorno gas, confronto nomination/rinomina/allocazione/flusso, pubblicazioni, driver, eventi e qualità. Vista pubblica di sistema distinta dai portafogli importati e autorizzati. Posizione non calcolabile quando gli input non bastano; nessun saldo ufficiale inventato. I controlli di settlement e riconciliazione esistenti restano accessibili. [Metodo e limiti](docs/BALANCING_COCKPIT.md).
 
+**Bilanciamento → Scenario di mercato → Stress Test Italia**: demand shock, freddo ipotetico, perdita/taglio capacità di un ingresso verificato, riduzione LNG e limite storage, anche combinati. Estende il motore deterministico esistente; dati pubblici e Demo esplicita separati, copertura e mancanze visibili, JSON riproducibile. Accesso anche dalle schede della mappa. [Formule e limiti del modello di disponibilità](docs/ITALIAN_SECURITY_STRESS_TEST.md): non è un digital twin idraulico.
+
 **Demo live:** https://snamigor.streamlit.app/
 
 I.G.O.R. è un prototipo indipendente, non ufficiale Snam. Gli identificatori tecnici e le configurazioni di deployment restano invariati per compatibilità.

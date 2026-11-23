@@ -377,6 +377,8 @@ def test_balancing_missing_storage_shock_does_not_crash(monkeypatch,tmp_path):
     app=AppTest.from_string("from gasops_app.workbench import balancing\nbalancing()",default_timeout=30)
     data=synthetic()
     app.session_state["balancing_view"]="Scenario di mercato"
+    app.session_state["scenario_model"]="Scenario aggregato esistente"
+    app.session_state["scenario_aggregate_source"]="Demo · dati fittizi"
     app.session_state["active_bundle"]=data
     app.session_state["scenario_case_"+data.fingerprint]={"demand_gwh":"100","supply_gwh":"120","storage_gwh":None,"price_eur_mwh":"42"}
     ass=Assumptions()

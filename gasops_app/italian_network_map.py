@@ -28,12 +28,13 @@ ICON_SIZES = {"entry":16,"lng":16,"storage":14,"compressor":12,"production":12,"
 _ATLAS_SYMBOLS = {**SYMBOLS,**{c+"-outline":f'<g fill="none" stroke="white" stroke-width="1.8">{s}</g>' for c,s in SYMBOLS.items()},
     "ring":'<circle cx="12" cy="12" r="10" fill="none" stroke="white" stroke-width="2"/>',
     "finding":'<path d="M12 2 22 12 12 22 2 12Z" fill="none" stroke="white" stroke-width="1.7"/>',
-    "quality":'<circle cx="12" cy="12" r="10" fill="none" stroke="white" stroke-width="1.7" stroke-dasharray="3 2"/>'}
+    "quality":'<circle cx="12" cy="12" r="10" fill="none" stroke="white" stroke-width="1.7" stroke-dasharray="3 2"/>',
+    "assumption":'<circle cx="12" cy="12" r="10" fill="none" stroke="white" stroke-width="2" stroke-dasharray="3 2"/><path d="m8 8 8 8m0-8-8 8" fill="none" stroke="white" stroke-width="2"/>'}
 ICON_MAPPING = {category:{"x":n*24,"y":0,"width":24,"height":24,"mask":True} for n,category in enumerate(_ATLAS_SYMBOLS)}
 ICON_ATLAS = "data:image/svg+xml,"+quote(f'<svg xmlns="http://www.w3.org/2000/svg" width="{24*len(_ATLAS_SYMBOLS)}" height="24" fill="white">'+
     ''.join(f'<g transform="translate({n*24} 0)">{symbol}</g>' for n,symbol in enumerate(_ATLAS_SYMBOLS.values()))+'</svg>')
 MAX_ZOOM = 9
-MARK_COLORS = {"ring":[246,146,157],"finding":[242,190,114],"quality":[180,194,211]}
+MARK_COLORS = {"ring":[246,146,157],"finding":[242,190,114],"quality":[180,194,211],"assumption":[255,202,110]}
 
 
 def legend_symbol(category, *, outlined=False):
@@ -116,11 +117,11 @@ def label_layout(labels, *, zoom=4, width=None, height=None, longitude=12.5, lat
 
 
 def deck(network, boundary, visible, selected=None, event_ids=(), *, observations=(), day=None, direction="entry", show_labels=True, mode="full", viewport_width=600,
-         reading_mode="INFRASTRUCTURE", intelligence=None, finding_ids=(), stable_picking=False):
-    camera = fit_italy(boundary,viewport_width,498 if mode == "overview" else 648)
+         reading_mode="INFRASTRUCTURE", intelligence=None, finding_ids=(), stable_picking=False, scenario_ids=()):
+    camera = fit_italy(boundary,viewport_width,498 if mode in ("overview","scenario") else 648)
     lookup = {g.infrastructure_id:g for g in network.geography}
     point_categories = {i.category for i in visible if i.category != "pipeline"}
-    lines, points, highlight, labels, events, findings, quality = [], [], [], [], [], [], []
+    lines, points, highlight, labels, events, findings, quality, assumptions = [], [], [], [], [], [], [], []
     for item in visible:
         geometry = lookup[item.id].geometry
         tooltip = {"infra_id":item.id, "safe_name":escape(display_name(item.name)),
@@ -171,6 +172,9 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
                            "offset":[10,-10] if item.id == selected else [10,9]})
         if item.id in event_ids:
             events.append(row)
+        if item.id in scenario_ids:
+            assumptions.append(row)
+            row["safe_status"]="ASSUMPTION · stress ipotetico sul punto; non evento pubblicato"
         if reading_mode == "ATTENTION":
             if item.id in finding_ids or info.get("capacity_change_gwh_d") is not None:
                 findings.append(row)
@@ -233,7 +237,8 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
             icon_size_units=pdk.types.String("pixels"),icon_size_min_pixels=6,icon_size_max_pixels=18))
     for rows,identifier,icon,color,size in ((events,"event-rings","ring",[246,146,157,255],28),
             (findings,"finding-marks","finding",[242,190,114,255],34),
-            (quality,"quality-marks","quality",[180,194,211,255],29)):
+            (quality,"quality-marks","quality",[180,194,211,255],29),
+            (assumptions,"scenario-assumptions","assumption",[255,202,110,255],32)):
         if not rows:
             continue
         layers.append(pdk.Layer("GeoJsonLayer", point_features(rows), id=identifier, pickable=False,

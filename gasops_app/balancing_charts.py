@@ -49,3 +49,21 @@ def point_indicators(row):
     fig.update_xaxes(type="linear",tickformat=",.0f",automargin=True)
     fig.update_yaxes(title=None,side="left",autorange="reversed",automargin=True)
     return fig
+
+
+def security_comparison(result):
+    """Comparable rates only; unavailable totals are absent bars, never zeros."""
+    fields=("supply","demand","entry_flow","storage_withdrawal")
+    labels=("Offerta totale","Fabbisogno totale","Flusso ingresso scelto","Prelievo storage")
+    fig=go.Figure()
+    for key,name,color in (("baseline","Baseline",BLUE),("stress","Stress Scenario",TEAL)):
+        values=[result[key][field] for field in fields]
+        fig.add_trace(go.Bar(name=name,y=labels,x=[float(v) if v is not None else None for v in values],
+            orientation="h",marker_color=color,text=[numero(v,1) if v is not None else None for v in values],
+            textposition="outside",cliponaxis=False,hovertemplate="%{y}: %{text} GWh/d<extra>"+name+"</extra>"))
+    _frame(fig,"daily","GWh/d",280)
+    fig.update_layout(barmode="group",margin=dict(l=10,r=65,t=30,b=35),
+                      legend=dict(orientation="h",x=0,y=1.12),hovermode="closest")
+    fig.update_xaxes(type="linear",automargin=True)
+    fig.update_yaxes(side="left",title=None,autorange="reversed",automargin=True)
+    return fig
