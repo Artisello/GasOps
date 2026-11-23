@@ -9,7 +9,6 @@ import json
 
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import Ridge
 
 from .data import ROME
 from .models import utc_now
@@ -106,6 +105,7 @@ def conditional_scenario(series, historical, future):
     if len(future)!=7 or future["hdd"].isna().any():
         raise ValueError("Sette giorni di meteo futuro completi necessari.")
     def fit(frame,with_hdd):
+        from sklearn.linear_model import Ridge
         return Ridge(alpha=2.).fit(features(frame.index,frame["hdd"] if with_hdd else None),frame["demand"])
     errors={}
     for name,with_hdd in (("calendar",False),("weather",True)):

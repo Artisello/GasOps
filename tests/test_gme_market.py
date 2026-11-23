@@ -50,6 +50,7 @@ def test_demo_views_are_offline(monkeypatch):
 
 
 def test_private_fetch_correct_endpoints_and_bounded_response(monkeypatch):
+    monkeypatch.setattr("gasops_app.access.private_access",lambda:True)
     from gasops_app.bso_kpis import closed_gas_day
     from gasops_app.models import utc_now
     day=closed_gas_day(utc_now())

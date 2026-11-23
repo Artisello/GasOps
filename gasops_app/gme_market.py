@@ -24,7 +24,8 @@ MAX_ROWS=10000
 
 def private_enabled():
     # Operator-side opt-in only for a non-public, authorized installation.
-    return os.getenv("IGOR_GME_PRIVATE_AUTHORIZED")=="1"
+    from .access import private_access
+    return os.getenv("IGOR_GME_PRIVATE_AUTHORIZED")=="1" and private_access()
 
 
 def _object(pairs):

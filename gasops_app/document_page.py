@@ -16,6 +16,7 @@ from .document_rag import answer, MAX_PASSAGES
 from .review_register import KEY as REVIEW_KEY, LIMIT as REVIEW_LIMIT, STATUSES, valid_cases, register, decide, export_json, export_markdown
 from .supervisor import ModelUnavailable
 from .document_archive import Archive, ArchiveConfig, ArchiveError, display_name
+from .access import document_directory, private_access, require_private
 
 STATE="document_desk_v1"
 VISITOR_STATE="document_visitor_index_v1"
@@ -81,6 +82,8 @@ def _public_local(directory,manifest):
 
 
 def _local_inputs(directory,*,shared):
+    if not shared:
+        require_private()
     manifest=_manifest(directory)
     if shared:
         return _public_local(directory,manifest)
@@ -113,7 +116,7 @@ def _public_snapshot(local,remote,*,shared):
 
 
 def _admin_panel(config,archive,local,remote):
-    if not (config.admin_id or config.contributor_ids):
+    if not private_access() or not (config.admin_id or config.contributor_ids):
         return
     with st.expander("Pubblica nell’archivio condiviso"):
         saved=st.session_state.get(ADMIN)
@@ -251,8 +254,7 @@ def _visitor_upload_panel(*, has_public=False):
 
 def _archive(selected,scope_slot):
     # Keep the explicit public repository folder separate from ignored local PDFs.
-    override=os.environ.get("GASOPS_PDF_DIR")
-    directory=Path(override) if override else ROOT/"data"/"public-regulatory"
+    directory,shared=document_directory(ROOT)
     upload_slot=st.container()
     config=None
     try:
@@ -261,22 +263,38 @@ def _archive(selected,scope_slot):
         st.warning("Configurazione archivio persistente non valida.")
     public_selected=selected=="Archivio pubblico"
     admin_saved=st.session_state.get(ADMIN)
-    managing=bool(config and admin_saved and admin_saved[0]==config and admin_saved[1].valid(config))
+    managing=bool(private_access() and config and admin_saved and admin_saved[0]==config and admin_saved[1].valid(config))
     local=remote=()
     if public_selected or managing:
         try:
-            local=_local_inputs(directory,shared=not bool(override))
+            manifest=_manifest(directory)
+            opened=st.session_state.get("document_local_opened_v1",False)
+            if shared and manifest and not managing:
+                if not opened:
+                    st.caption(f"{len(manifest)} PDF pubblici disponibili · indicizzazione su richiesta")
+                    opened=st.button("Apri PDF pubblici",key="document_local_open")
+                    if opened:st.session_state["document_local_opened_v1"]=True
+                if opened:local=_local_inputs(directory,shared=True)
+            else:
+                local=_local_inputs(directory,shared=shared)
         except OSError:
             st.warning("Archivio predisposto sul server non leggibile.")
     if config:
         archive=Archive(config)
         if public_selected or managing:
-            try:
-                remote=_read_remote(config)
-            except ArchiveError as exc:
-                st.warning(str(exc)+" Sono mostrati soltanto eventuali PDF predisposti sul server.")
-            else:
-                _admin_panel(config,archive,local,remote)
+            prior=st.session_state.get("document_remote_snapshot_v1")
+            remote=prior[1] if prior and prior[0]==config else ()
+            if st.button("Aggiorna archivio pubblico",key="document_remote_refresh"):
+                try:
+                    clear=getattr(_read_remote,"clear",None)
+                    if clear:clear()
+                    remote=_read_remote(config)
+                    st.session_state["document_remote_snapshot_v1"]=(config,remote)
+                except ArchiveError as exc:
+                    st.warning(str(exc)+" Ultima copia disponibile conservata.")
+            if not prior:
+                st.caption("Archivio remoto consultabile con Aggiorna archivio pubblico.")
+            _admin_panel(config,archive,local,remote)
         else:
             # Login does not need any PDF. After authorization the management
             # path fetches the current archive before allowing mutation.
@@ -301,8 +319,8 @@ def _archive(selected,scope_slot):
             cached=_update_index(personal,state_key=VISITOR_STATE)
             description="Solo sessione · non pubblicati"
         else:
-            cached=_public_snapshot(local,remote,shared=not bool(override))
-            description="Consultabili da tutti"
+            cached=_public_snapshot(local,remote,shared=shared)
+            description="Consultabili da tutti" if shared else "Archivio riservato · account autorizzato"
         docs=cached["docs"]
         count=len(docs.documents)
         pages=sum(p.pages for p in docs.documents.values())

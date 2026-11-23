@@ -4,7 +4,6 @@ import json
 
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import Ridge
 
 from .data import ROME
 from .models import utc_now
@@ -84,6 +83,7 @@ def _predict(train, target, use_hdd, sector):
     cols=list(SECTORS) if sector else ["demand_gwh"]
     x=features(train.index,train["hdd"] if use_hdd else None)
     z=features(target.index,target["hdd"] if use_hdd else None)
+    from sklearn.linear_model import Ridge
     model=Ridge(alpha=2.).fit(x,train[cols].to_numpy())
     pred=np.maximum(np.asarray(model.predict(z),dtype=float).reshape(len(target),len(cols)),0)
     if not np.isfinite(pred).all():

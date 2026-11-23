@@ -35,6 +35,7 @@ class Response:
 
 
 def test_persistence_and_admin_headers(monkeypatch):
+    monkeypatch.setattr("gasops_app.document_archive.private_access",lambda:True)
     from gasops_app import document_archive as mod
     objects={}
     def fake(method,url,headers,**kwargs):

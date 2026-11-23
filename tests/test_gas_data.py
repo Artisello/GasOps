@@ -148,7 +148,8 @@ def test_gie_aggregates_and_sites_keep_native_units_without_invented_publication
 def test_shared_health_definitions(network,cached,failed,partial,age,day,expected):
     frame=dataset(network,[obs(network,day=day,retrieved_at=NOW-timedelta(hours=age))],cached=cached,failed=failed,partial=partial)
     health=observation_health(frame,day,day,NOW)
-    assert health["state"]==expected and health["valid"]==1 and health["expected"]==1
+    assert health["state"]=={"Live":"Current","Stale":"Failed refresh" if failed else "Stale"}.get(expected,expected)
+    assert health["valid"]==1 and health["expected"]==1
     assert health["acquired"]==(NOW-timedelta(hours=age)).isoformat()
     assert health["published_at"]!=(NOW-timedelta(hours=age)).isoformat()
     if failed:assert health["refresh_error"]

@@ -11,6 +11,7 @@ import requests
 
 from .document_desk import MAX_TOTAL_BYTES, extend_uploads
 from .regulatory import MAX_DOCUMENTS, MAX_PDF_BYTES
+from .access import private_access
 
 BUCKET="gasops-documents"
 
@@ -67,6 +68,11 @@ class Archive:
         self.config=config
 
     def _request(self,method,path,*,session=None,**kwargs):
+        public_read = session is None and (
+            method in ("GET","HEAD") and path.startswith("/storage/v1/object/public/"+BUCKET+"/")
+            or method == "POST" and path == "/storage/v1/object/list/"+BUCKET)
+        if not public_read and not private_access():
+            raise ArchiveError("Gestione riservata: accesso privato autorizzato richiesto.")
         headers={"apikey":self.config.publishable_key,**kwargs.pop("headers",{})}
         if session is not None:
             if not session.valid(self.config):

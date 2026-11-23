@@ -6,9 +6,6 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
-from sklearn.linear_model import Ridge
-
-from . import bayesian
 
 BAYESIAN = "Bayesian seasonal"
 AUTOMATIC = "Automatic"
@@ -107,6 +104,7 @@ def _baseline(train: pd.Series, future: pd.DatetimeIndex, daily: bool, model: Mo
     usable = train.dropna()
     if len(usable) < (120 if daily else 24):
         return np.full(len(future), np.nan)
+    from sklearn.linear_model import Ridge
     fitted = Ridge(alpha=2.0).fit(_features(usable.index, daily), usable.to_numpy())
     return fitted.predict(_features(future, daily)).clip(min=0)
 
@@ -115,6 +113,7 @@ def _predict(
     train: pd.Series, dates: pd.DatetimeIndex, daily: bool, model: ModelName
 ) -> tuple[np.ndarray, np.ndarray | None, np.ndarray | None]:
     if model == BAYESIAN:
+        from . import bayesian
         paths = bayesian.predict(train, dates, daily)
         return paths if paths is not None else (np.full(len(dates), np.nan), None, None)
     return _baseline(train, dates, daily, model), None, None

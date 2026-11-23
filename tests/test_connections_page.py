@@ -13,6 +13,11 @@ def test_provider_catalog_never_calls_an_unchecked_configuration_connected():
     assert "da verificare" in rows["Eurostat + ARERA"]["Stato"]
     assert rows["GIE · AGSI+"]["Stato"]=="Non configurata"
     assert rows["Modello AI"]["Stato"]=="Non configurata"
+    assert rows["Eurostat + ARERA"]["Configurata"] is True
+    assert rows["Eurostat + ARERA"]["Raggiungibile"] is None
+    assert rows["Eurostat + ARERA"]["Risposta validata"] is None
+    assert rows["Eurostat + ARERA"]["Dati nel periodo"] is False
+    assert "live pendente" in rows["MASE"]["Stato"]
     # A past success does not turn a removed configuration into a connection.
     stale={page.EXTRA:{"ai":{"status":"Verificata","at":NOW.isoformat()}}}
     rows={r["Fonte"]:r for r in page.provider_rows(stale,config)}

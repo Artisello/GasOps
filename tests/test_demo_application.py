@@ -45,8 +45,7 @@ def test_ready_assistant_respects_local_mode_and_does_not_regenerate_after_clear
     app.run()
     assert not app.exception
     assert app.session_state["execution_mode"]=="Deterministic"
-    assert app.session_state["assistant_history_v1"]
-    assert app.session_state["assistant_history_v1"][0].mode!="LLM-assisted"
+    assert app.session_state["assistant_history_v1"]==[]
     app.session_state["assistant_history_v1"]=[]
     app.run()
     assert not app.exception and app.session_state["assistant_history_v1"]==[]
@@ -85,7 +84,7 @@ def test_every_feature_route_is_reachable_offline_and_preserves_imports(monkeypa
             app.radio(key="balancing_view").set_value("Controllo giornaliero").run()
             assert app.radio(key="daily_desk_data_mode").value=="Esempio guidato"
         if path=="operations":
-            assert app.session_state["assistant_history_v1"]
+            assert app.session_state["assistant_history_v1"]==[]
             assert app.radio(key="assistant_view").value=="Report locali"
         if path=="risk":
             assert "risk_workspace_v2" in app.session_state
@@ -99,6 +98,9 @@ def test_all_page_modules_have_a_dependency_path_from_the_application():
     graph={name:set() for name in paths}
     for name,path in paths.items():
         for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node,ast.Call) and isinstance(node.func,ast.Name) and node.func.id=="lazy":
+                if node.args and isinstance(node.args[0],ast.Constant) and node.args[0].value in paths:
+                    graph[name].add(node.args[0].value)
             if isinstance(node,ast.ImportFrom):
                 module=(node.module or "").split(".")[-1]
                 if module in paths:graph[name].add(module)

@@ -3,6 +3,7 @@ import pandas as pd
 import streamlit as st
 from .models import utc_now
 from .source_health import session_health,compare_srg
+from .freshness import label as freshness_label
 from .operational_sources import attributed_csv
 from .visuals import kpi_grid,info
 
@@ -27,6 +28,7 @@ def render_rows(rows,*,key="source_health",filterable=True,kpis=True,download=Tr
     if visible:
         enriched=any("state" in r for r in visible)
         st.dataframe([{"Serie":r["source"],"Qualità":r["status"],"Ultimo periodo valido":r["latest"],
+                       "Stato del dato":freshness_label(r),
                        "Copertura":f'{r["valid"]}/{r["expected"]}' if r["expected"] else "—",
                        "Perimetro":r["scope"],"Tipo":r["kind"],"Acquisito":r["acquired"],
                        "Ultimo tentativo":r["attempt"],**({"Stato fonte":r.get("state"),

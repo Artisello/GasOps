@@ -8,6 +8,16 @@ from .live_sources import LABELS,STATUS,refresh
 from .models import utc_now
 
 EXTRA="connections_checks_v1"
+CAPABILITIES={
+    "monthly":("https://ec.europa.eu/eurostat/ · https://www.arera.it/","API Eurostat / pubblicazione ARERA",False,"Eurostat","ARERA"),
+    "daily":("https://transparency.entsog.eu/","API HTTPS",False,"ENTSOG"),
+    "agsi":("https://agsi.gie.eu/","API HTTPS",True,"GIE · AGSI+"),
+    "alsi":("https://alsi.gie.eu/","API HTTPS",True,"GIE · ALSI"),
+    "iip":("https://iip.gie.eu/","API HTTPS",True,"GIE · IIP"),
+    "terna":("https://developer.terna.it/","API HTTPS",True,"Terna"),
+    "weather":("https://open-meteo.com/","API HTTPS · demo non commerciale",False,"Open-Meteo"),
+    "mase":("https://unmig.mase.gov.it/","Estratti pubblici manuali · archivio locale",False,"MASE"),
+}
 CATALOG=(
     ("monthly","Eurostat + ARERA","Consumi e prezzi mensili","/market"),
     ("daily","ENTSOG · SRG","Prelievi giornalieri","/market"),
@@ -20,6 +30,7 @@ CATALOG=(
     ("terna_capacity","Terna · capacità","Contesto termoelettrico","/market"),
     ("terna_industry","Terna · IMCEI","Contesto industriale","/market"),
     ("weather","Open-Meteo","Temperature e HDD","/market"),
+    ("mase","MASE","Produzione nazionale · archivi pubblici","/security-of-supply"),
     ("ai","Modello AI","Analisi e risposte con evidenze","/operations"),
     ("documents","Archivio documentale","PDF pubblici approvati","/regulatory"),
 )
@@ -46,10 +57,14 @@ def access():
     return {"gie":gie,"terna":terna,"ai":ai,"documents":documents,"available":available}
 
 
-def provider_rows(state,configuration):
+def provider_rows(state,configuration,now=None):
+    from .source_health import session_health
+    from .freshness import label as freshness_label
+    health=session_health(state,now or utc_now())
     acquired=state.get(STATUS,{}).get("sources",{})
     extra=state.get(EXTRA,{})
     available=set(configuration["available"])
+    available.add("mase")
     if configuration["gie"]:available.add("iip")
     if configuration["ai"]:available.add("ai")
     if configuration["documents"]:available.add("documents")
@@ -57,16 +72,37 @@ def provider_rows(state,configuration):
     for key,name,purpose,path in CATALOG:
         checked=extra.get(key) if key in ("iip","ai","documents") else acquired.get(key)
         status=("Non configurata" if key not in available else
-                checked["status"] if checked else "Disponibile · da verificare")
+                checked["status"] if checked else "Configurata · da verificare")
+        if key=="mase":status="Archivio storico · verifica live pendente"
+        capability=CAPABILITIES.get(key,CAPABILITIES["terna"] if key.startswith("terna_") else ("","Verifica esplicita",True))
+        related=[r for r in health if any(r["source"].startswith(p) for p in capability[3:])]
+        success=bool(checked and checked["status"] in ("Acquisito","Verificata"))
+        valid=[r for r in related if r["valid"]]
+        configured=key in available
         rows.append({"Fonte":name,"Funzione":purpose,"Stato":status,
+                     "Configurata":configured,"Raggiungibile":True if configured and success else None,
+                     "Risposta validata":True if configured and (success or valid) else None,
+                     "Dati nel periodo":bool(valid) if related else None,
+                     "Ultimo periodo valido":max((r["latest"] for r in valid if r["latest"]),default=None),
+                     "Ultima acquisizione riuscita":max((r["acquired"] for r in related if r["acquired"]),default=None),
+                     "Qualità":" · ".join(dict.fromkeys(freshness_label(r) for r in related)),
+                     "URL fonte":capability[0],"Metodo":capability[1],"Autenticazione richiesta":capability[2],
                      "Ultimo controllo":checked["at"] if checked else "—",
-                     "Nota":checked.get("note","") if checked else "",
+                     "Nota":checked.get("note","") if checked else "Verifica live pendente",
                      "Apri":path})
     rows.extend([
-        {"Fonte":"JRC, MASE, ACER, Terna · archivi","Funzione":"Serie pubbliche datate incluse","Stato":"Archivio disponibile","Ultimo controllo":"—","Nota":"Periodi e fonti visibili nelle analisi","Apri":"/market"},
+        {"Fonte":"JRC, ACER, Terna · archivi","Funzione":"Serie pubbliche datate incluse","Stato":"Archivio disponibile","Ultimo controllo":"—","Nota":"Periodi e fonti visibili nelle analisi","Apri":"/market"},
         {"Fonte":"Snam Jarvis","Funzione":"Import e versioni XLSX/CSV","Stato":"Importazione pubblica","Ultimo controllo":"—","Nota":"Nessun endpoint automatico nativo verificato","Apri":"/security-of-supply"},
         {"Fonte":"GME","Funzione":"Prezzi di sbilanciamento","Stato":"Consultazione e import","Ultimo controllo":"—","Nota":"Nessuna raccolta automatica senza autorizzazione prevista dai termini","Apri":"/market"},
     ])
+    for r in rows:
+        r.setdefault("Configurata",True)
+        r.setdefault("Raggiungibile",None)
+        r.setdefault("Risposta validata",None)
+        r.setdefault("Dati nel periodo",None)
+        r.setdefault("Metodo","Importazione manuale / archivio locale")
+        r.setdefault("Autenticazione richiesta",False)
+        r.setdefault("URL fonte",{"Snam Jarvis":"https://jarvis.snam.it/","GME":"https://www.mercatoelettrico.org/"}.get(r["Fonte"],""))
     return rows
 
 
@@ -128,6 +164,7 @@ def page():
         "Apri":st.column_config.LinkColumn("Analisi",display_text="Apri"),
     })
     with st.expander("Dettagli delle verifiche"):
+        st.caption("Configurazione, raggiungibilità, risposta validata e dati nel periodo sono verifiche distinte. Una cella vuota indica verifica pendente. Acquisizione recente ≠ osservazione corrente.")
         st.dataframe(rows,hide_index=True,width="stretch")
         st.caption("Nessuna fonte non raggiungibile viene sostituita da dati simulati.")
     with st.expander("Catalogo delle funzionalità"):

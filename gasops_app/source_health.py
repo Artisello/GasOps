@@ -8,6 +8,7 @@ from .models import Kind
 from .quality import inspect
 from .bso_kpis import closed_gas_day
 from .entsog import SOURCE as ENTSOG_SOURCE
+from .freshness import temporal_evidence, LABELS as TEMPORAL_LABELS
 
 # Diagnostic presentation windows, not supplier SLAs.
 DAYS=14
@@ -15,6 +16,7 @@ TOL=D("0.000001")
 STATE_LABELS={"Live":"Live · acquisizione recente","Cached":"Cached · copia recente",
     "Historical":"Historical · storico","Partial":"Partial · parziale","Stale":"Stale · da aggiornare",
     "Unavailable":"Non disponibile"}
+STATE_LABELS.update(TEMPORAL_LABELS)
 
 
 def finite(x):
@@ -42,7 +44,8 @@ def months(end,n=6):
 
 
 def row(label,scope,kind,values,expected,now,*,acquired=None,failed=False,review=False,
-        age_limit=None,forecast=False,note="",attempt=None,period_limit=None,latest_override=None,counts=None):
+        age_limit=None,forecast=False,note="",attempt=None,period_limit=None,latest_override=None,counts=None,
+        cache_ttl=timedelta(hours=12)):
     valid={d:v for d,v in values.items() if finite(v) and (period_limit is None or d<=period_limit)}
     latest=latest_override if latest_override is not None else max(valid,default=None)
     count=sum(d in valid for d in expected)
@@ -66,7 +69,10 @@ def row(label,scope,kind,values,expected,now,*,acquired=None,failed=False,review
         status="Da aggiornare"
     elif count<expected_count or review:status="Da verificare"
     else:status="Copertura verificata"
-    return {"source":label,"scope":scope,"kind":kind,"status":status,"latest":latest.isoformat() if latest else None,
+    temporal=temporal_evidence(now=now,gas_day=latest,retrieved_at=at,current_day=period_limit,
+        valid=count,expected=expected_count,failed=failed,partial=review or count<expected_count,
+        ttl=cache_ttl)
+    return {**temporal,"source":label,"scope":scope,"kind":kind,"status":status,"latest":latest.isoformat() if latest else None,
             "valid":count,"expected":expected_count,"acquired":at.isoformat() if at else None,
             "attempt":last_attempt.isoformat() if last_attempt else None,"note":note}
 
@@ -107,10 +113,17 @@ def observation_health(frame,first,last,now):
            "Cached" if all(v is True for v in frame.cached) else "Live")
     if valid.empty and not stale and not partial:state="Unavailable"
     status=("Aggiornamento fallito · ultimo dato" if failed else "Da aggiornare") if stale else item["status"]
-    return {**item,"status":status,"state":state,"historical":historical,"cached":all(v is True for v in frame.cached),
+    temporal=temporal_evidence(now=now,gas_day=max(values,default=None),retrieved_at=oldest,
+        current_day=closed_gas_day(now) if frame.provider.iloc[0]=="ENTSOG" else now.astimezone(ROME).date()-timedelta(days=1),
+        observed_at=max(published) if published else None,published_at=max(published) if published else None,
+        period_from=min((t for t in frame.period_from if _stamp(t)),default=None),
+        period_to=max((t for t in frame.period_to if _stamp(t)),default=None),
+        valid=item["valid"],expected=item["expected"],cached=all(v is True for v in frame.cached),
+        failed=failed,partial=partial,ttl=ttl,publication_status="Confirmed" if confirmed.all() else "Non confermato",
+        historical=historical)
+    return {**item,**temporal,"status":status,"state":temporal["data_status"],
         "failed":failed,"partial":bool(partial),"cache_age_hours":round(age.total_seconds()/3600,2) if age else 0 if oldest else None,
         "oldest_acquired":oldest.isoformat() if oldest else None,
-        "published_at":max(published).isoformat() if published else None,
         "coverage_basis":"record" if interval else "giorni gas",
         "refresh_error":"Aggiornamento non riuscito; ultima copia valida" if failed else None,
         "revision_rows":int((frame.revision_count>1).sum()),"source_url":frame.source_url.iloc[0]}
@@ -187,6 +200,7 @@ def _weather(state,now,kind):
     vals=_values(clean,"hdd")
     return row(label,"Milano/Roma/Napoli","Previsione" if forecast else "Storico",vals,expected,now,
                acquired=item["acquired"],failed=item["failed"],forecast=forecast,
+               cache_ttl=timedelta(hours=6 if forecast else 24),
                age_limit=timedelta(hours=12) if forecast else timedelta(days=10),note="Temperatura e HDD entrambi presenti",
                period_limit=expected[-1])
 
@@ -206,6 +220,7 @@ def _inventory(state,now,platform,field,name):
         vals=_values(f.set_index("gas_day"),field)
         if "review" in f:review=bool(f.loc[f.gas_day.isin(expected),"review"].any())
     return row(name,"Italia","Osservato",vals,expected,now,acquired=r["acquired"] if r else None,
+               cache_ttl=timedelta(hours=24),
                failed=bool(saved.get("error") or (r and r["failed"])),review=review,
                age_limit=timedelta(days=3),attempt=attempt,period_limit=end,note="14 date pubblicabili; perimetro IT")
 

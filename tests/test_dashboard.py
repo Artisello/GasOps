@@ -39,7 +39,9 @@ def test_overview_button_completes_offline_run(monkeypatch, tmp_path):
     assert not app.exception
     report = app.session_state["last_run"]
     from gasops_app.session import database
-    assert database().recent()==[]  # Public UI must not persist visitor runs.
+    from gasops_app.store import Store
+    assert Store(database().path).recent()==[]  # Public UI must not persist visitor runs.
+    with pytest.raises(PermissionError):database().recent()
     assert report.finished_at and len(report.results) == 6
     assert app.session_state["last_briefing"].id == report.id
     assert any("Ultimo bollettino generato" in e.value for e in app.markdown)
@@ -110,12 +112,16 @@ def test_agsi_is_default_and_loads_independently(monkeypatch,tmp_path):
     monkeypatch.setattr(op,"load_agsi",fake)
     app=AppTest.from_string("from gasops_app.operational_sources_page import operational_context\noperational_context()",default_timeout=30).run()
     assert not app.exception
-    assert calls==["IT"] and app.radio(key="operational_platform").value=="AGSI+"
+    assert calls==[] and app.radio(key="operational_platform").value=="AGSI+"
+    app.button(key="AGSI+_IT_load").click().run()
+    assert not app.exception and calls==["IT"]
     assert any("Giacenza" in e.proto.body for e in app.get("html"))
     assert any("Gas Infrastructure Europe" in el.value for el in app.markdown)
     app.run()
     assert calls==["IT"] and not app.exception
     app.selectbox(key="AGSI+_scope").select("EU").run()
+    assert calls==["IT"] and not app.exception
+    app.button(key="AGSI+_EU_load").click().run()
     assert calls==["IT","EU"] and not app.exception
 
 
@@ -159,6 +165,8 @@ def test_iip_market_desk_filters_and_detail_without_more_network(monkeypatch,tmp
     app=AppTest.from_string("from gasops_app.operational_sources_page import operational_context\noperational_context()",default_timeout=30)
     app.session_state["operational_platform"]="IIP"
     app.run()
+    assert not calls
+    app.button(key="gie_iip_load").click().run()
     assert not app.exception
     assert len(app.dataframe)==1 and len(app.dataframe[0].value)==2
     assert any("2 / 2" in m.value for m in app.markdown)
@@ -461,6 +469,7 @@ def test_document_desk_empty_state_has_no_precompiled_findings(monkeypatch,tmp_p
 def test_document_desk_pdf_search_and_rag_without_model(monkeypatch,tmp_path):
     import pymupdf
     from gasops_app import document_page
+    monkeypatch.setattr(document_page,"document_directory",lambda root:(tmp_path,True))
     monkeypatch.setenv("GASOPS_PDF_DIR",str(tmp_path))
     monkeypatch.setattr(document_page,"reasoner",lambda:None)
     with pymupdf.open() as doc:
@@ -468,6 +477,7 @@ def test_document_desk_pdf_search_and_rag_without_model(monkeypatch,tmp_path):
         doc.save(tmp_path/"fixture.pdf")
     app=AppTest.from_string("from gasops_app.document_page import document_page\ndocument_page()").run()
     assert not app.exception
+    app.button(key="document_local_open").click().run()
     next(e for e in app.text_input if e.label=="Cosa vuoi cercare?").set_value("garanzia economica")
     next(b for b in app.button if b.label=="Cerca nei PDF").click().run()
     assert not app.exception
@@ -489,6 +499,8 @@ def test_assistant_session_history_isolated_and_shortcut_works(monkeypatch,tmp_p
     monkeypatch.setattr(assistant_page,"analysis_label",lambda:"Genera bollettino di mercato")
     monkeypatch.setattr(assistant_page,"ai_configured",lambda:False)
     db=session.database()
+    from gasops_app.store import Store
+    db=Store(db.path)  # Seed legacy private history outside the public UI boundary.
     data=synthetic()
     foreign=Run(question="DOMANDA_DI_UN_ALTRO_VISITATORE",source=data.origin,input_sha256=data.fingerprint,assumptions={})
     db.save(foreign)
@@ -541,6 +553,7 @@ def test_shared_document_archive_visible_to_fresh_sessions(monkeypatch,tmp_path)
     first=AppTest.from_string(script).run()
     second=AppTest.from_string(script).run()
     for app in (first,second):
+        app.button(key="document_remote_refresh").click().run()
         assert not app.exception
         assert any(e.value=="garanzie.pdf" for e in app.text)
         assert search(app.session_state[desk.STATE]["docs"],"garanzia economica")
@@ -579,6 +592,7 @@ def test_repository_document_import_instructions_and_bundled_pdf(monkeypatch,tmp
     app=AppTest.from_string("from gasops_app.document_page import document_page\ndocument_page()").run()
     assert not app.exception
     assert any(e.label=="Carica PDF" for e in app.expander)
+    app.button(key="document_local_open").click().run()
     assert any(e.value=="public.pdf" for e in app.text)
     assert not any(e.value=="private.pdf" for e in app.text)
     assert search(app.session_state[desk.STATE]["docs"],"garanzia autorizzata")
@@ -825,6 +839,7 @@ def test_ai_readout_can_show_sections_without_repeating_usage():
 def test_document_workspace_precedes_management_and_keeps_tools(monkeypatch,tmp_path):
     import pymupdf
     from gasops_app import document_page as desk
+    monkeypatch.setattr(desk,"document_directory",lambda root:(tmp_path,True))
     monkeypatch.setenv("GASOPS_PDF_DIR",str(tmp_path))
     monkeypatch.setattr(desk,"_archive_config",lambda:None)
     monkeypatch.setattr(desk,"reasoner",lambda:None)
@@ -834,6 +849,7 @@ def test_document_workspace_precedes_management_and_keeps_tools(monkeypatch,tmp_
         pdf.save(tmp_path/"regole.pdf")
     app=AppTest.from_string("from gasops_app.document_page import document_page\ndocument_page()").run()
     assert not app.exception
+    app.button(key="document_local_open").click().run()
     assert app.radio(key="desk_mode").value=="Cerca"
     assert len(app.radio(key="desk_mode").options)==8
     assert any("1 PDF · 2/2 pagine con testo" in c.value for c in app.caption)

@@ -174,11 +174,11 @@ def _credit(platform):
 
 
 def _load_once(state,button,loader,key,*args,primary=False):
-    """One automatic load for each selection in this session. Explicit retry only."""
+    """Rendering is local; an explicit action authorizes each acquisition."""
     clicked=st.button(button,key=state+"_load",type="primary" if primary else "secondary",
                       icon=":material/refresh:")
     previous=st.session_state.get(state)
-    if previous is None or clicked:
+    if clicked:
         now=utc_now()
         if previous is not None and now-previous["attempted"]<timedelta(seconds=60):
             st.info("Attendi 60 secondi tra richieste manuali alla stessa fonte.")
@@ -194,6 +194,8 @@ def _load_once(state,button,loader,key,*args,primary=False):
                 saved=previous.get("result") if previous else None
                 st.session_state[state]={"attempted":now,"error":reason,"result":saved}
     snapshot=st.session_state.get(state,{})
+    if not snapshot:
+        st.caption("Premi " + button + " per consultare la fonte.")
     if snapshot.get("error"):
         st.caption("Aggiornamento non disponibile · ultimo dato valido conservato, se presente.")
         with st.expander("Dettagli connessione"):
