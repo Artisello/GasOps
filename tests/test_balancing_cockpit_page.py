@@ -56,11 +56,15 @@ def test_day_filter_updates_reconciliation_provenance_and_audit_together(offline
     app.date_input(key="cockpit_day_system").set_value(date(2026,11,18)).run()
     assert not app.exception and frames
     assert all(set(f.gas_day)=={date(2026,11,18)} for f in frames if "gas_day" in f)
+    app.radio(key="cockpit_readout").set_value("Pubblicazioni").run()
+    assert not app.exception and not app.get("plotly_chart")
+    assert set(app.dataframe[0].value.gas_day)=={date(2026,11,18)}
     app.date_input(key="cockpit_day_system").set_value(date(2026,11,21)).run()
+    assert any("Nessuna pubblicazione" in c.value for c in app.caption)
+    app.radio(key="cockpit_readout").set_value("Riconciliazione").run()
     assert not app.exception
     assert app.dataframe[0].value["Flusso fisico"].isna().all()
     assert not app.get("plotly_chart")
-    assert any("Nessuna pubblicazione" in c.value for c in app.caption)
 
 
 def test_empty_shipper_context_never_uses_demo_or_public_inputs(offline,monkeypatch):
@@ -95,6 +99,7 @@ def test_authorized_portfolio_and_drilldown_reuse_existing_settlement(offline):
     assert not app.exception
     assert app.radio(key="balancing_view").value=="Controllo giornaliero"
     assert app.radio(key="daily_desk_data_mode").value=="Dati importati"
+    assert app.radio(key="daily_desk_section").value=="Giornata"
     assert app.session_state["daily_desk_day"]=="2026-09-05"
     assert app.session_state["settlement_desk_csv_v1"]["sha"]==imported()["sha"]
 

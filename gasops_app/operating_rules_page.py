@@ -34,9 +34,9 @@ def calendar_panel(now):
         st.caption("Sabato e domenica esclusi nei termini lavorativi; festività solo se inserite. Stato data, non stato di esecuzione. Verificare edizione, eccezioni e calendario ufficiale.")
 
 
-def network_panel():
+def network_panel(*,expanded=False):
     now=utc_now()
-    with st.expander("Quadratura del bilancio di rete"):
+    with st.expander("Quadratura del bilancio di rete",expanded=expanded):
         st.latex(r"I+S=P+C+PE+\Delta LPC+GNC")
         st.caption("CdR XCII · cap. 9 §3.1.1 · pp. 368–370. Solo aggregati SRG, stessa fase e giorno gas, GWh a PCS coerente.")
         st.download_button("Modello CSV vuoto",template(),"igor-bilancio-rete.csv","text/csv",key="network_balance_template")

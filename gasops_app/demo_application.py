@@ -12,13 +12,15 @@ def prepare(route):
         state["execution_mode"]="Deterministic"
     if route=="balancing":
         state.setdefault("balancing_view","Cockpit")
-        state.setdefault("daily_desk_data_mode","Esempio guidato")
-        state.setdefault("daily_desk_filter","Rettifiche")
+        register=state.get("settlement_desk_csv_v1",{})
+        imported=register.get("authorized") is True and register.get("origin")=="user_upload" and bool(register.get("rows"))
+        state.setdefault("daily_desk_data_mode","Dati importati" if imported else "Esempio guidato")
     elif route=="security-of-supply" and "operational_platform" not in state:
         state["operational_platform"]="MAP"
     elif route=="kpi":
         state.setdefault("bso_view","Registro operativo")
-        state.setdefault("bso_mode","Demo")
+        tasks=state.get("bso_tasks_v1",{}).get("tasks")
+        state.setdefault("bso_mode","Dati importati" if tasks else "Demo")
     elif route=="operations":
         _prepare_assistant()
 

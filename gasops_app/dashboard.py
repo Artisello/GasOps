@@ -498,10 +498,11 @@ def _overview_mix(context):
 
 
 def overview() -> None:
-    from .workspace import render
+    from .workspace import getting_started, render
     from .italian_network_page import panel as network_panel
     with st.container(key="network_home_title"):
         st.title("I.G.O.R. — Sistema Gas Italiano")
+    render(show_example=False)
     network_panel(mode="overview")
     st.divider()
     top = st.container()
@@ -510,7 +511,7 @@ def overview() -> None:
     with top:
         st.subheader("Scrivania operativa" if view == "Scrivania BSO" else "Panoramica del mercato")
     if view == "Scrivania BSO":
-        render()
+        getting_started()
         return
     top,controls=st.container(),st.container()
     with controls:

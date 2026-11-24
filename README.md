@@ -10,9 +10,9 @@ La stessa mappa offre quattro letture: **Sistema, Flussi, Attenzione e Infrastru
 
 **Security of Supply → Esplora dati**: confronto delle osservazioni ENTSOG e GIE già disponibili, con serie temporali, D-1, revisioni, tabella e CSV dalla stessa selezione. Accesso diretto dalla scheda Fonti della mappa e diagnostica condivisa con Source Health. Nessun caricamento o fetch al cambio filtro. [Funzioni e limiti del Data Explorer](docs/GAS_DATA_EXPLORER.md).
 
-**Bilanciamento → Cockpit**: giorno gas, confronto nomination/rinomina/allocazione/flusso, pubblicazioni, driver, eventi e qualità. Vista pubblica di sistema distinta dai portafogli importati e autorizzati. Posizione non calcolabile quando gli input non bastano; nessun saldo ufficiale inventato. I controlli di settlement e riconciliazione esistenti restano accessibili. [Metodo e limiti](docs/BALANCING_COCKPIT.md).
+**Bilanciamento → Sistema e portafoglio** apre il confronto tra nomina, rinomina, allocazione e flusso fisico del giorno gas scelto. Pubblicazioni, eventi e fonti si caricano all’apertura della relativa vista. I portafogli richiedono registri importati con autorizzazione d’uso. [Metodo e limiti](docs/BALANCING_COCKPIT.md).
 
-**Bilanciamento → Scenario di mercato → Stress Test Italia**: demand shock, freddo ipotetico, perdita/taglio capacità di un ingresso verificato, riduzione LNG e limite storage, anche combinati. Estende il motore deterministico esistente; dati pubblici e Demo esplicita separati, copertura e mancanze visibili, JSON riproducibile. Accesso anche dalle schede della mappa. [Formule e limiti del modello di disponibilità](docs/ITALIAN_SECURITY_STRESS_TEST.md): non è un digital twin idraulico.
+**Bilanciamento → Scenari → Stress Test Italia**: demand shock, freddo ipotetico, perdita/taglio capacità di un ingresso verificato, riduzione LNG e limite storage, anche combinati. Estende il motore deterministico esistente; dati pubblici e Demo esplicita separati, copertura e mancanze visibili, JSON riproducibile. Accesso anche dalle schede della mappa. [Formule e limiti del modello di disponibilità](docs/ITALIAN_SECURITY_STRESS_TEST.md): non è un digital twin idraulico.
 
 **Demo live:** https://snamigor.streamlit.app/
 
@@ -20,7 +20,9 @@ La stessa mappa offre quattro letture: **Sistema, Flussi, Attenzione e Infrastru
 
 La navigazione carica solo i moduli della vista richiesta. Modelli statistici, indice PDF e archivio remoto vengono caricati quando servono. L'assistente parte in modalità locale senza generare report; AI, acquisizioni e indicizzazione dei PDF pubblici richiedono un'azione esplicita. Cache, storico e dati mancanti mantengono il proprio significato e periodo.
 
-**Navigazione semplice.** Selettori uniformi con nomi brevi, controlli da 44 px e disposizione su due colonne su telefono. Le schede della Panoramica aprono direttamente gli esempi. Nel mercato compaiono subito i consumi osservati: **Calcola previsione** avvia la stima, poi riutilizzata nella sessione. Un modello scelto esplicitamente evita gli altri calcoli finché non servono confronto o ripiego. Metodi, unità, fonti e formule restano gli stessi.
+La **Panoramica** apre con un clic Bilanciamento, Settlement e Operazioni gas. In Settlement seleziona una riga per vedere le versioni del giorno, oppure apri grafici, confronto con esiti e controlli aggiuntivi. In Operazioni gas l’agenda evidenzia le attività scadute e quelle dei prossimi sette giorni. Gli esempi guidati sono riconoscibili e i CSV importati restano disponibili nella sessione.
+
+Nel mercato compaiono subito i consumi osservati. **Calcola previsione** avvia la stima, poi riutilizzata nella sessione. Un modello scelto esplicitamente evita gli altri calcoli finché non servono confronto o ripiego.
 
 **Importazioni API.** In **Fonti e connessioni → Aggiorna fonti connesse** seleziona le fonti e importa anche tutti i punti verificati ENTSOG, con storico di 7/30 giorni e impianti GIE associati. L’esploratore riutilizza dodici indicatori pubblicati di stoccaggi/GNL, con unità separate. Confronto europeo opzionale, paginazione IIP limitata, autenticazione Terna riutilizzata nel lotto e cache conservata in caso di errore. [Copertura, fonti e limiti](docs/API_IMPORTS.md).
 

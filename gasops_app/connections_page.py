@@ -186,7 +186,7 @@ def page():
         st.markdown(
             "- [Bilanciamento, settlement e rettifiche](/balancing)\n"
             "- [Fatture, garanzie, scadenze e GNL](/ledger)\n"
-            "- [KPI, monitoraggio, incentivi e centro operativo](/kpi)\n"
+            "- [Operazioni gas, agenda, indicatori e monitoraggio](/kpi)\n"
             "- [Mercato, previsioni, Terna e analisi Snam](/market)\n"
             "- [Scorte, GNL, avvisi, HS1 e interconnessioni](/security-of-supply)\n"
             "- [Rischi e stress test](/risk)\n"

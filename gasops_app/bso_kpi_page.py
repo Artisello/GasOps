@@ -7,7 +7,7 @@ import streamlit as st
 
 from .data import ROME
 from .models import utc_now
-from .italiano import numero
+from .italiano import data_it, numero
 from .operations_ledger import sample_rows
 from .settlement_desk_page import STATE as SETTLEMENT_STATE
 from .visuals import info, kpi_grid
@@ -16,7 +16,7 @@ from .bso_kpis import (PUBLIC_MILESTONES,NEWS,CODE,JARVIS,MAX_BYTES,AREAS,
                        balancing_metrics,settlement_metrics,closed_gas_day,is_timed,local_day)
 
 STATE="bso_tasks_v1"
-AREA_LABEL={"all":"Tutte","balancing":"Balancing","settlement":"Settlement","operations":"Operations"}
+AREA_LABEL={"all":"Tutte","balancing":"Bilanciamento","settlement":"Settlement","operations":"Operazioni gas"}
 DEMO_NOW=datetime(2026,11,18,14,tzinfo=ROME)
 
 
@@ -27,7 +27,7 @@ def stamp(d):
 
 
 def month_option(values,key):
-    return st.selectbox("Periodo",values,format_func=lambda x:f"{x[0]}-{x[1]:02d}",key=key)
+    return st.selectbox("Periodo",values,format_func=lambda x:data_it(date(x[0],x[1],1),day=False),key=key)
 
 
 def _import_tasks():
@@ -56,7 +56,6 @@ def _import_tasks():
 
 
 def _deadlines(demo,now):
-    st.subheader("Scadenze operative")
     if not demo:
         _import_tasks()
     saved=st.session_state.get(STATE)
@@ -64,36 +63,40 @@ def _deadlines(demo,now):
     if not tasks:
         st.info("Importa il registro delle attività per monitorare scadenze e puntualità.")
         return
-    st.caption("Registro sintetico" if demo else "CSV utente · stato dichiarato · copertura non verificata")
-    a,b=st.columns(2)
+    source="Registro sintetico" if demo else "CSV utente · stato dichiarato"
+    st.caption(f"{source} · situazione al {stamp(now)}")
+    a,b,settings=st.columns([2,2,1.25],vertical_alignment="bottom")
     with a:
         area=st.selectbox("Area",["all",*AREAS],format_func=AREA_LABEL.__getitem__,key="bso_area")
     with b:
         months=sorted({(now.year,now.month),*((local_day(x["due_at"]).year,local_day(x["due_at"]).month) for x in tasks)},reverse=True)
         ym=(now.year,now.month)
-        y,m=st.selectbox("Mese KPI",months,index=months.index(ym),format_func=lambda x:f"{x[0]}-{x[1]:02d}",key="bso_ops_month")
-    r=operations_metrics(tasks,now,y,m,area)
-    with st.popover("Target e definizioni",icon=":material/info:"):
+        y,m=st.selectbox("Mese per la puntualità",months,index=months.index(ym),
+                         format_func=lambda x:data_it(date(x[0],x[1],1),day=False),key="bso_ops_month")
+    with settings, st.popover("Target e definizioni",icon=":material/info:",width="stretch"):
         target=st.number_input("Puntualità target (%)",0.,100.,100.,step=1.,key="bso_sla_target")
         st.caption("Target di studio, non SLA Snam. Puntualità = attività completate entro termine / attività con termine trascorso nel mese. Le attività aperte in ritardo sono nel denominatore; quelle non ancora dovute sono escluse. Conteggi di agenda: tutte le date del registro, area selezionata. Date senza orario: scadenza a fine giorno locale; completamento datato senza ora non certifica l'orario.")
         if not demo:
             st.text("SHA-256: "+saved["sha256"])
-    kpi_grid([("Puntualità",r["on_time_pct"],"%",f'{r["on_time"]}/{r["due"]} · target {numero(target,0)}%',1,
-               "rose" if r["on_time_pct"] is not None and r["on_time_pct"]<target else ""),
-              ("Scadute aperte",len(r["overdue"]),"","Anche mesi precedenti",0,"rose" if r["overdue"] else ""),
+    r=operations_metrics(tasks,now,y,m,area)
+    st.caption("L’agenda mostra le attività dell’area in tutte le date del registro.")
+    kpi_grid([("Scadute aperte",len(r["overdue"]),"","Anche mesi precedenti",0,"rose" if r["overdue"] else ""),
               ("Entro 24 ore",r["next24"],"","Attività aperte",0,""),
-              ("Entro 7 giorni",r["next7"],"","Include le prossime 24 h",0,"")])
-    if r["overdue"]:
-        st.warning(f'{len(r["overdue"])} attività oltre termine nel registro.')
-    filter_=st.radio("Agenda",["Priorità","Tutte","Completate"],horizontal=True,key="bso_task_filter")
-    rows=r["overdue"]+r["upcoming"] if filter_=="Priorità" else r["rows"] if filter_=="Tutte" else [x for x in r["rows"] if x["completed_at"] is not None]
+              ("Entro 7 giorni",r["next7"],"","Include le prossime 24 h",0,""),
+              ("Puntualità",r["on_time_pct"],"%",f'{r["on_time"]}/{r["due"]} · target {numero(target,0)}%',1,
+               "rose" if r["on_time_pct"] is not None and r["on_time_pct"]<target else "")])
+    groups={"Priorità":r["overdue"]+r["upcoming"],"Scadute":r["overdue"],"Entro 7 giorni":r["upcoming"],
+            "Tutte":r["rows"],"Completate":[x for x in r["rows"] if x["completed_at"] is not None]}
+    filter_=st.radio("Mostra attività",tuple(groups),horizontal=True,key="bso_task_filter",
+                     format_func=lambda key:f"{key} · {len(groups[key])}")
+    rows=groups[filter_]
     if rows:
         st.dataframe([{"Attività":x["activity"],"Area":AREA_LABEL[x["area"]],"Scadenza":stamp(x["due_at"]),
                        "Stato":x["status"],"Completamento":stamp(x["completed_at"]),"Ore residue":round(x["remaining_hours"],1) if x["completed_at"] is None else None}
                       for x in rows],hide_index=True,width="stretch")
     else:
         st.caption("Nessuna attività per questo filtro.")
-    st.download_button("Esporta registro",task_csv(tasks),"igor-attivita.csv","text/csv",key="bso_export_tasks")
+    st.download_button("Esporta registro",task_csv(tasks),"igor-attivita.csv","text/csv",key="bso_export_tasks",on_click="ignore")
 
 
 def _public(now):
@@ -175,10 +178,9 @@ def _settlement(demo,now):
 def page():
     from .workspace import apply_intent, guide, picker
     apply_intent("kpi")
-    st.title("KPI operativi")
-    st.caption("Attività, scadenze e risultati da controllare.")
-    view=picker("Vista KPI",["Panoramica","Registro operativo","Monitoraggio fonti","Executive demo","Centro operativo"],key="bso_view",
-                labels={"Panoramica":"In sintesi","Registro operativo":"Attività e scadenze","Executive demo":"Esempio completo"})
+    st.title("Operazioni gas")
+    view=picker("Vista operazioni gas",["Registro operativo","Panoramica","Monitoraggio fonti","Executive demo","Centro operativo"],
+                key="bso_view",index=1,labels={"Panoramica":"Indicatori","Registro operativo":"Agenda e scadenze","Executive demo":"Esempio completo"})
     if view=="Centro operativo":
         from .agentic_operations_page import panel
         panel()
@@ -195,18 +197,24 @@ def page():
         from .advanced_kpi_page import panel
         panel()
         return
-    selection=st.radio("Modalità dati",["Dati importati","Demo"],horizontal=True,key="bso_mode")
-    guide("operations")
+    source,section_control=st.columns([2,1],vertical_alignment="bottom")
+    labels={"Scadenze":"Agenda","Calendario Snam":"Calendario Snam","Balancing":"KPI bilanciamento","Settlement":"KPI settlement"}
+    section=section_control.selectbox("Consulta",tuple(labels),key="bso_register_section",format_func=labels.__getitem__)
+    if section=="Calendario Snam":
+        if "bso_mode" in st.session_state:
+            st.session_state["bso_mode"]=st.session_state["bso_mode"]
+        _public(utc_now().astimezone(ROME))
+        return
+    selection=source.radio("Dati da utilizzare",["Dati importati","Demo"],horizontal=True,key="bso_mode",
+                           format_func=lambda value:"Esempio guidato" if value=="Demo" else value)
     demo=selection=="Demo"
     now=DEMO_NOW if demo else utc_now().astimezone(ROME)
-    st.caption(("Demo sintetica · " if demo else "Dati di sessione · ")+stamp(now)+" · calcolato alla visualizzazione")
-    section=st.radio("Area operativa",["Scadenze","Calendario Snam","Balancing","Settlement"],
-                     horizontal=True,label_visibility="collapsed",key="bso_register_section")
+    if section!="Scadenze":
+        st.caption(("Esempio · " if demo else "Situazione al ")+stamp(now))
     if section=="Scadenze":
         _deadlines(demo,now)
-    elif section=="Calendario Snam":
-        _public(utc_now().astimezone(ROME))
     elif section=="Balancing":
         _balancing(demo,now)
     else:
         _settlement(demo,now)
+    guide("operations")
