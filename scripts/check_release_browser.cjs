@@ -132,7 +132,7 @@ async function main(){
    report.checks.push({check:'missing_gie_credentials',status:'PASS'});
   }
   const routes=[['market','Mercato e previsioni'],['balancing','Bilanciamento'],['ledger','Fatture e garanzie'],
-    ['risk','Simulazione rischi'],['operations','Assistente AI'],['kpi','KPI operativi'],['connections','Fonti e API'],['demo','BSO, in sintesi']];
+    ['risk','Simulazione rischi'],['operations','Assistente AI'],['kpi','Operazioni gas'],['connections','Fonti e API'],['demo','BSO, in sintesi']];
   for(const [route,title] of routes)await open(a,route,title);
   await open(a,'regulatory','Norme e documenti');
   await a.locator('input[type=file]').setInputFiles({name:'SESSION_A_CANARY.pdf',mimeType:'application/pdf',buffer:fixturePdf()});

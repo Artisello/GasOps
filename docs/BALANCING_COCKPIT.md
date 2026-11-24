@@ -1,14 +1,14 @@
 # Balancing Cockpit & Reconciliation
 
-**Bilanciamento → Cockpit** è la vista iniziale in Demo e Workbench. Il giorno gas precede posizione, avanzamento e confronti. Le quattro viste precedenti — scenario, simulazione del partecipante, Stato sistema e Controllo giornaliero — restano nel selettore esistente. Non sono sostituiti i motori di settlement, riconciliazione, linepack o rettifica.
+**Bilanciamento → Sistema e portafoglio** è la vista iniziale in Demo e Workbench. Il collegamento dalla Panoramica usa il giorno gas selezionato. Il confronto per punto si apre subito. Pubblicazioni, eventi e componenti del bilancio si caricano quando apri la relativa vista.
 
 ## Due perimetri
 
-**SYSTEM VIEW** usa esclusivamente osservazioni pubbliche aggregate, copie incluse, cache e import Jarvis pubblici già presenti. All’apertura è selezionato l’ultimo giorno con flusso fisico disponibile, non il giorno corrente privo di dati. Le date successive senza osservazioni restano selezionabili e mostrano assenze, senza recuperare valori di un altro giorno.
+**Sistema gas** usa osservazioni pubbliche, copie incluse, cache e import Jarvis già presenti. Se non hai scelto una data, la vista apre l’ultimo giorno con flusso fisico disponibile nella finestra dell’esploratore. Quando scegli una data, la tabella legge l’intervallo di quel giorno e segnala le misure assenti.
 
-**PORTFOLIO / SHIPPER VIEW** usa soltanto `settlement_desk_csv_v1` con provenienza `user_upload` e autorizzazione d’uso registrata. Gli importatori esistenti di bilanci ed esiti comunicati registrano la dichiarazione di autorizzazione, acquisizione e hash. Importazioni precedenti senza tale dichiarazione restano negli strumenti originali e non vengono promosse automaticamente a portafoglio. Gli esempi guidati e i dati pubblici non alimentano la posizione individuale. La dichiarazione d’uso non certifica autonomamente i diritti o l’autenticità del file.
+**Portafoglio importato** usa soltanto `settlement_desk_csv_v1` con provenienza `user_upload` e autorizzazione d’uso registrata. Gli importatori esistenti di bilanci ed esiti comunicati registrano la dichiarazione di autorizzazione, acquisizione e hash. Importazioni precedenti senza tale dichiarazione restano negli strumenti originali e non vengono promosse automaticamente a portafoglio. Gli esempi guidati e i dati pubblici non alimentano la posizione individuale. La dichiarazione d’uso non certifica autonomamente i diritti o l’autenticità del file.
 
-La selezione di shipper e giorno viene trasferita al controllo esistente tramite **Apri settlement e riconciliazione**. Il confronto con gli esiti comunicati richiede anche un estratto indipendente autorizzato; le versioni discordanti restano non confrontabili secondo `reconcile_days`.
+**Apri il giorno nel settlement** mostra lo stesso partecipante, mese e giorno nel dettaglio. **Confronta con esiti** richiede un estratto indipendente autorizzato. Le versioni discordanti restano non confrontabili secondo `reconcile_days`.
 
 La conferma nel modulo dei bilanci riguarda esplicitamente l’intero registro della sessione, comprese le versioni già importate. Non viene dedotta dall’importazione di un singolo CSV.
 

@@ -3,9 +3,6 @@ from html import escape
 
 import streamlit as st
 
-from .gas_calendar import closed_gas_day
-from .italiano import data_it
-from .models import utc_now
 from .visuals import chip
 
 INTENT = "bso_workspace_intent"
@@ -13,20 +10,17 @@ INTENTS = {
     "balancing": ("balancing", {"balancing_view": "Cockpit", "cockpit_context":"SYSTEM VIEW"}),
     "settlement": ("balancing", {"balancing_view": "Controllo giornaliero",
                                   "balancing_daily_mode": "Settlement e rettifiche",
-                                  "daily_desk_data_mode": "Dati importati"}),
+                                  "daily_desk_data_mode": "Dati importati", "daily_desk_section": "Giornate"}),
     "settlement_example": ("balancing", {"balancing_view": "Controllo giornaliero",
                                           "balancing_daily_mode": "Settlement e rettifiche",
-                                          "daily_desk_data_mode": "Esempio guidato"}),
+                                          "daily_desk_data_mode": "Esempio guidato", "daily_desk_section": "Giornate"}),
     "operations": ("kpi", {"bso_view": "Registro operativo", "bso_mode": "Dati importati",
-                            "bso_register_section": "Scadenze"}),
+                            "bso_register_section": "Scadenze", "bso_task_filter": "Priorità"}),
 }
 TASKS = (
-    ("balancing", "Bilanciamento", "Sistema gas", "Segui le stime del sistema e confronta le pubblicazioni.",
-     "Osservazioni pubbliche già disponibili", "Giorno gas, confronti per punto e revisioni", "Apri il sistema gas"),
-    ("settlement", "Settlement", "Bilanci e rettifiche", "Controlla le giornate del mese e individua gli importi da verificare.",
-     "Bilanci e prezzi di sbilanciamento in CSV", "Eccezioni, rettifiche e controllo esportabile", "Controlla i bilanci"),
-    ("operations", "Operations", "Attività e scadenze", "Trova le attività in ritardo e quelle in scadenza.",
-     "Registro attività con date e completamenti", "Agenda delle priorità e indicatori di puntualità", "Apri le attività"),
+    ("balancing", "Bilanciamento", "Flussi, nomine e pubblicazioni del giorno gas.", ":material/balance:"),
+    ("settlement", "Settlement", "Bilanci mensili, rettifiche e importi da verificare.", ":material/receipt_long:"),
+    ("operations", "Operazioni gas", "Attività aperte e scadenze dei prossimi giorni.", ":material/event_available:"),
 )
 
 
@@ -47,6 +41,11 @@ def apply_intent(page):
     if target == page:
         st.session_state.pop(INTENT, None)
         st.session_state.update(values)
+        if intent == "balancing":
+            from .system_status_page import SELECTED_DAY
+            day = st.session_state.get(SELECTED_DAY)
+            if day is not None:
+                st.session_state["cockpit_focus_day"] = day
 
 
 def open_workspace(intent):
@@ -57,7 +56,7 @@ def open_workspace(intent):
         page = st.Page(balancing, title="Bilanciamento", icon=":material/balance:", url_path="balancing")
     else:
         from .bso_kpi_page import page as kpis
-        page = st.Page(kpis, title="KPI operativi", icon=":material/monitoring:", url_path="kpi")
+        page = st.Page(kpis, title="Operazioni gas", icon=":material/monitoring:", url_path="kpi")
     st.switch_page(page)
 
 
@@ -68,47 +67,41 @@ def _availability(key):
     state, field = names[key]
     saved = st.session_state.get(state)
     count = len(saved.get(field, ())) if saved else 0
-    noun = ("attività importata" if count == 1 else "attività importate") if key == "operations" else (
-        "versione importata" if count == 1 else "versioni importate")
-    return (f"{count} {noun}", "historical") if count else ("Dati da caricare", "")
+    if key == "balancing":
+        return ("Dati pubblici e stime importate" if count else "Dati pubblici", "historical")
+    if count:
+        noun = ("attività importata" if count == 1 else "attività importate") if key == "operations" else (
+            "versione importata" if count == 1 else "versioni importate")
+        return f"{count} {noun}", "ok"
+    return "CSV o esempio", ""
 
 
-def render():
-    day = closed_gas_day(utc_now())
-    st.html('<div class="gas-desk-context"><span>Ultimo giorno gas concluso '
-            f'<strong>{escape(data_it(day))}</strong></span>'
-            '<span>Dati pubblici e file della sessione</span></div>')
+def render(*, show_example=True):
     with st.container(key="bso_workspaces"):
-        for col, task in zip(st.columns(3, gap="medium"), TASKS, strict=True):
-            key, title, label, description, needs, result, action = task
+        for col, task in zip(st.columns(3, gap="small"), TASKS, strict=True):
+            key, title, description, icon = task
             status, tone = _availability(key)
             with col, st.container(border=True, key="bso_launch_" + key):
-                st.html(f'<article class="gas-task"><span class="gas-task-label">{escape(label)}</span>'
-                        f'<h2>{escape(title)}</h2><p>{escape(description)}</p>'
-                        f'<dl><dt>Ti serve</dt><dd>{escape(needs)}</dd>'
-                        f'<dt>Ottieni</dt><dd>{escape(result)}</dd></dl>'
-                        f'{chip(status, tone)}</article>')
-                if st.button(action, key="workspace_open_" + key, icon=":material/arrow_forward:", width="stretch"):
-                    open_workspace(key)
-    with st.container(border=True, key="bso_example"):
-        text, action = st.columns([2.4, 1], vertical_alignment="center")
-        with text:
-            st.markdown("**Scopri il flusso con un esempio guidato**")
-            st.caption("30 giorni di bilancio, una rettifica da esaminare e un controllo da esportare. Dati sintetici, separati dai tuoi file.")
-        with action:
-            if st.button("Prova il settlement", key="workspace_example", type="primary",
-                         icon=":material/play_arrow:", width="stretch"):
-                open_workspace("settlement_example")
+                st.button(title, key="workspace_open_" + key, icon=icon, width="stretch",
+                          on_click=open_workspace, args=(key,))
+                st.html(f'<div class="gas-task"><p>{escape(description)}</p>{chip(status, tone)}</div>')
+    if show_example:
+        getting_started()
+
+
+def getting_started():
+    st.button("Prova un esempio di settlement", key="workspace_example",
+              icon=":material/play_arrow:", on_click=open_workspace, args=("settlement_example",))
     with st.expander("Quale strumento usare?"):
         from .bso_reference import render_terms
         st.markdown("**Sistema gas** per le stime aggregate della rete. **Bilanci e rettifiche** per il saldo del partecipante. "
-                    "**Fatture e garanzie** per confronti documentali e credito. **KPI operativi** per attività e scadenze.")
+                    "**Fatture e garanzie** per confronti documentali e credito. **Operazioni gas** per attività e scadenze.")
         st.caption("Le stime del sistema e i bilanci individuali hanno perimetri diversi: non sono intercambiabili.")
         st.markdown("**SAS**: sbilanciamento atteso del sistema. **DS**: sbilanciamento del partecipante. "
                     "**MWh e GWh** misurano energia: 1 GWh = 1.000 MWh.")
         st.markdown("Dal menu trovi anche previsioni, stoccaggi, scenari di rischio, ricerca nei documenti e assistente.")
         render_terms("home", "bso_home_term")
-    st.caption("I file importati restano nella sessione: esportali per conservarli. Nessun invio a portali operativi.")
+        st.caption("Esporta i file della sessione per conservarli.")
 
 
 def guide(key):

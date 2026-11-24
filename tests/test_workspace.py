@@ -64,6 +64,15 @@ def test_home_example_reaches_settlement_without_replacing_imports(monkeypatch):
     assert any("57.000,00" in h.proto.body for h in app.get("html"))
     assert app.radio(key="daily_desk_filter").value=="Rettifiche"
     assert len(app.dataframe[0].value)==1
+    assert not app.get("plotly_chart")
+    app.button(key="daily_desk_example_day").click().run()
+    assert app.radio(key="daily_desk_section").value=="Giornata"
+    assert app.selectbox(key="daily_desk_day").value=="2026-09-05"
+    assert len(app.dataframe[0].value)==2 and "Versione" in app.dataframe[0].value
+    app.radio(key="daily_desk_section").set_value("Grafici").run()
+    assert not app.exception and len(app.get("plotly_chart"))==2
+    app.radio(key="daily_desk_section").set_value("Giornate").run()
+    assert app.radio(key="daily_desk_filter").value=="Rettifiche"
     app.radio(key="daily_desk_filter").set_value("Tutte").run()
     assert not app.exception and len(app.dataframe[0].value)==30
     app.radio(key="daily_desk_data_mode").set_value("Dati importati").run()
@@ -89,6 +98,6 @@ def test_operations_intent_opens_the_task_register(monkeypatch):
     app.run()
     assert not app.exception
     assert app.radio(key="bso_view").value=="Registro operativo"
-    assert app.radio(key="bso_register_section").value=="Scadenze"
+    assert app.selectbox(key="bso_register_section").value=="Scadenze"
     assert app.radio(key="bso_mode").value=="Dati importati"
     assert workspace.INTENT not in app.session_state

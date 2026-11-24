@@ -6,9 +6,10 @@ GROUPS=(
     ("Mercato",(1,2)),
     ("Strumenti",(5,6,7)),
 )
-LABELS={"security-of-supply":"Rete e forniture","kpi":"Indicatori operativi",
+LABELS={"security-of-supply":"Rete e forniture",
+        "balancing":"Bilanciamento e settlement",
         "connections":"Fonti e connessioni","demo":"Esempi guidati"}
-HINTS={"":"Situazione del sistema, mappa e avvisi.","balancing":"Confronta i dati del sistema e controlla i bilanci.",
+HINTS={"":"Azioni quotidiane, situazione del sistema e avvisi.","balancing":"Confronta flussi e nomine, verifica bilanci e rettifiche.",
        "ledger":"Esplora fatture, garanzie e scadenze con esempi dichiarati.",
        "kpi":"Segui attività, scadenze e indicatori operativi.","market":"Leggi i consumi e calcola una previsione quando serve.",
        "security-of-supply":"Esplora la rete, le scorte e i dati già disponibili.",

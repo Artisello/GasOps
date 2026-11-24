@@ -44,7 +44,7 @@ def test_both_home_modes_open_map_and_side_panel_without_api_calls(monkeypatch,t
     assert any("SciGRID 2021" in c.value for c in app.caption)
     if mode == "demo":
         assert any("simulati" in s.value for s in app.caption)
-        assert len(app.get("plotly_chart")) == 2  # point history plus the preserved BSO case
+        assert len(app.get("plotly_chart")) == 1
     else:
         assert app.button(key="workspace_open_balancing")
 

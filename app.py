@@ -49,7 +49,7 @@ def application(demo=True):
         st.Page(demo_application.risk if demo else lazy("risk_page", "risk_page"), title="Simulazione rischi", icon=":material/query_stats:", url_path="risk"),
         st.Page(demo_application.regulatory if demo else lazy("workbench", "regulatory"), title="Norme e documenti", icon=":material/menu_book:", url_path="regulatory"),
         st.Page(lazy("workbench", "operations"), title="Assistente AI", icon=":material/hub:", url_path="operations"),
-        st.Page(lazy("bso_kpi_page", "page"), title="KPI operativi", icon=":material/monitoring:", url_path="kpi"),
+        st.Page(lazy("bso_kpi_page", "page"), title="Operazioni gas", icon=":material/monitoring:", url_path="kpi"),
     ]
     if demo:
         pages.extend([
@@ -74,6 +74,8 @@ def application(demo=True):
         st.html('<div class="gas-byline"><strong>Prototipo per Snam · creato da Igor</strong><small>Progetto indipendente, non ufficiale.</small></div>')
     if demo:
         demo_application.prepare(current.url_path)
+    elif current.url_path=="kpi":
+        st.session_state.setdefault("bso_view","Registro operativo")
     current.run()
 
 

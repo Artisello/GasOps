@@ -8,9 +8,9 @@ from .settlement_desk import csv_text
 from .models import utc_now
 from .visuals import kpi_grid
 
-def panel():
+def panel(*,expanded=False):
     state=st.session_state
-    with st.expander("Sessioni di aggiustamento",expanded=STATE in state):
+    with st.expander("Sessioni di aggiustamento",expanded=expanded or STATE in state):
         st.caption("Esiti economici separati dal bilancio definitivo · importi IVA esclusa.")
         with st.popover("Formato e regole",icon=":material/info:"):
             st.write(REF)

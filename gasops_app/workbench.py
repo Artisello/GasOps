@@ -229,9 +229,10 @@ def _aggregate_scenario_panel() -> None:
 def balancing() -> None:
     from .workspace import apply_intent, guide, picker
     apply_intent("balancing")
-    header("Bilanciamento", "Giorno gas · sistema e portafoglio")
-    view=picker("Vista bilanciamento",["Cockpit","Scenario di mercato","Sbilanciamento del partecipante","Stato sistema","Controllo giornaliero"],key="balancing_view",
-                labels={"Cockpit":"Sistema e portafoglio","Scenario di mercato":"Scenari","Sbilanciamento del partecipante":"Calcolo partecipante","Controllo giornaliero":"Bilanci e rettifiche"})
+    header("Bilanciamento", "")
+    view=picker("Vista bilanciamento",["Cockpit","Controllo giornaliero","Stato sistema","Sbilanciamento del partecipante","Scenario di mercato"],
+                key="balancing_view",labels={"Cockpit":"Sistema e portafoglio","Controllo giornaliero":"Settlement",
+                    "Stato sistema":"Pubblicazioni Jarvis","Sbilanciamento del partecipante":"Calcola sbilanciamento","Scenario di mercato":"Scenari"})
     if view=="Cockpit":
         from .balancing_cockpit_page import panel
         panel()
@@ -244,18 +245,22 @@ def balancing() -> None:
         from .operational_sources_page import _jarvis_panel
         _jarvis_panel(prefix="balancing")
     else:
-        mode=st.radio("Controlli",["Settlement e rettifiche","Riconciliazione infrastrutture"],
-                      horizontal=True,key="balancing_daily_mode",label_visibility="collapsed")
+        source,tool=st.columns([2,1],vertical_alignment="bottom")
+        labels={"Settlement e rettifiche":"Bilanci e rettifiche","Riconciliazione infrastrutture":"Allocazioni G+1",
+                "Aggiustamenti":"Aggiustamenti","Quadratura rete":"Quadratura rete"}
+        mode=tool.selectbox("Controllo di settlement",tuple(labels),key="balancing_daily_mode",format_func=labels.__getitem__)
         if mode=="Riconciliazione infrastrutture":
             from .interface_reconciliation_page import panel
             panel()
+        elif mode=="Aggiustamenti":
+            from .adjustments_page import panel
+            panel(expanded=True)
+        elif mode=="Quadratura rete":
+            from .operating_rules_page import network_panel
+            network_panel(expanded=True)
         else:
             from .settlement_desk_page import panel
-            panel()
-            from .adjustments_page import panel as adjustments_panel
-            adjustments_panel()
-            from .operating_rules_page import network_panel
-            network_panel()
+            panel(source_controls=source)
 
 
 def regulatory() -> None:

@@ -58,8 +58,10 @@ def _sas_chart(b, key, height=290):
 def _overview(pack, *, network=True):
     if network:
         from .italian_network_page import panel
+        from .workspace import render
         with st.container(key="network_home_title"):
             st.title("I.G.O.R. — Sistema Gas Italiano")
+        render(show_example=False)
         panel(mode="overview")
         st.divider()
         st.subheader("Prova con un esempio")
@@ -85,6 +87,8 @@ def _overview(pack, *, network=True):
                 action={"Balancing":"Esplora il bilanciamento","Settlement":"Esplora la rettifica","Operations":"Esplora le scadenze"}[view]
                 st.button(action,key="demo_example_"+view.lower(),on_click=_open_example,args=(view,),
                           icon=":material/arrow_forward:",width="stretch")
+    if network:
+        return
     left, right = st.columns([1.5, 1])
     with left, st.container(border=True):
         st.subheader("SAS · giornata simulata")
