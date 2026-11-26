@@ -112,6 +112,14 @@ def _results(result,base,r,unit):
 
 def risk_page(*, auto_demo=False):
     st.title("Simulazione rischi")
+    from .gme_market import private_enabled as gme_enabled
+    if gme_enabled():
+        from .workspace import picker
+        if picker("Analisi del rischio", ("Simula uno scenario", "Rischio prezzo IGI"),
+                  key="risk_workspace") == "Rischio prezzo IGI":
+            from .gme_market_page import risk
+            risk()
+            return
     st.caption("Scenario ipotetico · non rischio ufficiale")
     state=assumptions()
     data=st.session_state.get("active_bundle") or fixture()

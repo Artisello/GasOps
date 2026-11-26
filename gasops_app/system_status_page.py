@@ -57,6 +57,10 @@ def header(status):
         cards.append((label, m.value, m.unit, detail, 1, ""))
     with st.container(key="system_status_kpis"):
         kpi_grid(cards)
+    from .gme_market import private_enabled as gme_enabled
+    if gme_enabled():
+        from .gme_market_page import overview_kpis
+        overview_kpis(status.gas_day)
 
 
 def _remember_day():

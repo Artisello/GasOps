@@ -42,18 +42,26 @@ def operational_context():
         from .italian_network_page import panel
         panel()
         return
-    if not key and selected in ("AGSI+","ALSI","IIP"):
+    if not key and selected in ("ALSI","IIP"):
         st.info("Accesso GIE non configurato. I controlli HS1 e la sezione Rete Snam restano disponibili.")
     with st.popover("Fonti",icon=":material/info:"):
         st.write("AGSI+: gas negli stoccaggi. ALSI: terminali di gas naturale liquefatto (GNL). IIP: avvisi pubblicati dagli operatori. Jarvis: dati della rete Snam importati manualmente.")
         st.caption("Chiave GIE configurata; verifica al caricamento." if key else "Imposta GASOPS_GIE_API_KEY nei Secrets di Streamlit e riavvia l’app.")
     if selected=="AGSI+":
-        mode=st.radio("Vista scorte",["Giacenze pubbliche","Bilanciamento HS1"],horizontal=True,
-                      key="storage_view",label_visibility="collapsed")
-        if mode=="Bilanciamento HS1":
+        from .gme_market import private_enabled as gme_enabled
+        views = ["Giacenze pubbliche","Bilanciamento HS1"]
+        if gme_enabled():
+            views.append("Scambi MGS")
+        mode=st.radio("Vista scorte",views,horizontal=True,key="storage_view",label_visibility="collapsed")
+        if mode=="Scambi MGS":
+            from .gme_market_page import panel
+            panel("mgs", prefix="gme_storage")
+        elif mode=="Bilanciamento HS1":
             from .storage_balancing_page import panel
             panel()
         else:
+            if not key:
+                st.info("Accesso GIE non configurato. I controlli HS1 e la sezione Rete Snam restano disponibili.")
             _inventory_panel(selected,load_agsi,key)
     elif selected=="ALSI":
         _inventory_panel(selected,load_alsi,key)

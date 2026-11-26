@@ -97,9 +97,16 @@ def _public(day_layout=None):
             st.session_state[key]=next((p for p in options if by_point[p]["infrastructure_id"]==st.session_state.get(SELECTED)),options[0])
         point=st.selectbox("Punto da esaminare",options,key=key,
             format_func=lambda p:display_name(by_point[p]["point"])+" · "+("Ingresso" if by_point[p]["direction"]=="entry" else "Uscita"))
-    readout=picker("Consulta",("Riconciliazione","Pubblicazioni","Eventi","Fonti"),key="cockpit_readout",
+    from .gme_market import private_enabled as gme_enabled
+    readouts = ("Riconciliazione","Pubblicazioni","Eventi","Fonti")
+    if gme_enabled():
+        readouts += ("Prezzi e interventi GME",)
+    readout=picker("Consulta",readouts,key="cockpit_readout",
                    labels={"Riconciliazione":"Confronto per punto","Fonti":"Bilancio e fonti"})
-    if readout=="Riconciliazione":
+    if readout=="Prezzi e interventi GME":
+        from .gme_market_page import balancing
+        balancing(day)
+    elif readout=="Riconciliazione":
         _compare(rows,by_point,point,day)
     elif readout=="Pubblicazioni":
         _publications(frame,point,day,now)
