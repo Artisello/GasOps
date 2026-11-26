@@ -34,7 +34,14 @@ def panel():
     if not use_recent:
         frame=frame.tail(730)
         st.caption("Ultimi 730 giorni dell'archivio storico: risultati non riferiti al mercato attuale.")
-    available=session_features(st.session_state) if use_recent else {}
+    available={}
+    if use_recent:
+        from .gas_data import cached_national_inventory
+        state = dict(st.session_state)
+        agsi = cached_national_inventory(database(),"AGSI+",now)
+        if agsi is not None:
+            state["AGSI+_IT"] = {"result":agsi}
+        available = session_features(state)
     options=list(available)
     # Suggest only sufficiently long historical series, never select by test error.
     eligible=[k for k in ("terna_residual_wind_solar","terna_Thermal","storage","entsog_Physical Flow","flow") if k in available and available[k].values.dropna().shape[0]>=MIN_TRAIN+28+7]

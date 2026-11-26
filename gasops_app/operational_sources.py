@@ -270,10 +270,22 @@ def _load_inventory(store, api_key, platform, scope, now, refresh, first, last):
         data = parser(text, acquired, scope=scope, first=first if ranged else None,
                       last=last if ranged else None, **kwargs)
         return {**data,"first":first,"last":last} if ranged else data
-    result = retrieve(store,key=key,name=GIE_CREDIT[platform],url=AGSI_URL if storage else ALSI_SOURCE+"api",
-        parse=parse,ttl=timedelta(hours=24),params=params,attempts=1,
-        headers={"x-key":api_key.strip(),"Accept":"application/json"},timeout=(5,20),
-        diagnostics=True,refresh=refresh)
+    previous = None
+    if store is not None and scope=="IT" and not ranged:
+        from .gas_data import cached_national_inventory
+        previous = cached_national_inventory(store,platform,now)
+        if (previous and not refresh and not previous["failed"] and
+                timedelta(0)<=now-previous["acquired"]<timedelta(hours=24)):
+            return previous
+    try:
+        result = retrieve(store,key=key,name=GIE_CREDIT[platform],url=AGSI_URL if storage else ALSI_SOURCE+"api",
+            parse=parse,ttl=timedelta(hours=24),params=params,attempts=1,
+            headers={"x-key":api_key.strip(),"Accept":"application/json"},timeout=(5,20),
+            diagnostics=True,refresh=refresh)
+    except SourceUnavailable as error:
+        if previous:
+            return {**previous,"failed":True,"refresh_error":str(error)}
+        raise
     return result if result.get("cached") or result.get("failed") else {**result,"first":first,"last":last}
 
 
