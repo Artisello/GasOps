@@ -92,29 +92,35 @@ def test_operational_sources_visible_when_entsog_unavailable(monkeypatch,tmp_pat
 
 
 def test_agsi_is_default_and_loads_independently(monkeypatch,tmp_path):
-    from datetime import timedelta
     import json
+    from gasops_app.gas_calendar import closed_gas_day
     from gasops_app.models import utc_now
-    from gasops_app.data import ROME
     from gasops_app.operational_sources import parse_agsi
-    from gasops_app import operational_sources_page as op
+    from gasops_app import operational_acquisition as acquisition, operational_sources_page as op
     monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
-    monkeypatch.setenv("GASOPS_GIE_API_KEY","fixture-key")
     monkeypatch.setattr(op,"configured_key",lambda:"fixture-key")
     calls=[]
-    def fake(store,key,scope,**kwargs):
+    def fake(store,key,scope,*,first=None,last=None,now=None,**kwargs):
         calls.append(scope)
-        now=utc_now()
-        day=now.astimezone(ROME).date()-timedelta(days=1)
+        now = now or utc_now()
+        day = last or closed_gas_day(now)
         payload={"last_page":1,"total":1,"data":[{"code":scope,"gasDayStart":day.isoformat(),
                  "gasInStorage":"90,5","workingGasVolume":"100","full":"90,5","withdrawal":"40","status":"C"}]}
-        return parse_agsi(json.dumps(payload),now,scope=scope)
+        body = json.dumps(payload)
+        if first is not None:
+            store.cache(f"agsi-public-range-v1:{scope}:{first}:{last}",now.isoformat(),body)
+        return parse_agsi(body,now,scope=scope)
+
+    def run_inline(store,network,now,*,api_key,**options):
+        work = acquisition.plan(network,acquisition.journal(store),now,api_key=api_key,**options)
+        acquisition.synchronize(store,network,work,now,api_key=api_key,pause=0)
+
+    monkeypatch.setattr(acquisition,"schedule",run_inline)
+    monkeypatch.setattr(acquisition,"load_agsi",fake)
     monkeypatch.setattr(op,"load_agsi",fake)
     app=AppTest.from_string("from gasops_app.operational_sources_page import operational_context\noperational_context()",default_timeout=30).run()
-    assert not app.exception
-    assert calls==[] and app.radio(key="operational_platform").value=="AGSI+"
-    app.button(key="AGSI+_IT_load").click().run()
     assert not app.exception and calls==["IT"]
+    assert app.radio(key="operational_platform").value=="AGSI+"
     assert any("Giacenza" in e.proto.body for e in app.get("html"))
     assert any("Gas Infrastructure Europe" in el.value for el in app.markdown)
     app.run()

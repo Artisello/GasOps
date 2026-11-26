@@ -143,7 +143,9 @@ def test_legend_geometry_matches_each_marker_in_the_embedded_atlas():
 
 def test_map_filters_detail_period_empty_selection_and_reset_are_offline(monkeypatch):
     offline(monkeypatch)
-    app=AppTest.from_string(SCRIPT,default_timeout=30).run()
+    app=AppTest.from_string(SCRIPT,default_timeout=30)
+    app.session_state[page.ARCHIVE_KEY] = True
+    app.run()
     assert not app.exception and len(app.get("deck_gl_json_chart")) == 1
     assert app.selectbox(key="net_infrastructure").value == "INET_BP_65"
     assert "GWh/d" in app.metric[0].value

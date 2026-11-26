@@ -1,4 +1,4 @@
-"""Optional panels; no background network work, no storage of uploaded files."""
+"""Operational sources, shared national cache and session-only file imports."""
 from datetime import timedelta
 import json
 
@@ -219,10 +219,33 @@ def _inventory_panel(platform,loader,key):
     with control:
         scope=st.selectbox("Area geografica",["IT","EU"],format_func=scope_label,key=platform+"_scope")
     _credit(platform)
-    if not key:
-        return
-    with action:
-        result=_load_once(platform+"_"+scope,"Aggiorna dati",loader,key,scope)
+    if scope=="IT":
+        from .balancing_cockpit import inventory_state
+        from .gas_calendar import closed_gas_day
+        from .gas_data import cached_sources
+        from .operational_acquisition import HISTORY_DAYS, journal, schedule
+        from .operational_progress import watch
+        now,store = utc_now(),database()
+        connections = journal(store).get("connections",{})
+        source = "agsi" if is_storage else "alsi"
+        with action:
+            clicked=st.button("Aggiorna dati",key=platform+"_IT_load",disabled=not key)
+        job=schedule(store,None,now,api_key=key,sources=(source,),force=clicked)
+        watch(store,job,connections)
+        day=closed_gas_day(now)
+        _,rows,_,_=cached_sources(store,None,now,day-timedelta(days=HISTORY_DAYS-1),day,inventory_platform=platform)
+        previous=st.session_state.get(platform+"_IT",{})
+        if previous.get("result"):
+            rows.append((platform,None,"IT",previous["result"],bool(previous.get("error"))))
+        selected=inventory_state({"inventory":rows},st.session_state,None,history=True)
+        result=selected.get(platform+"_IT",{}).get("result")
+        if result and connections.get(source,{}).get("failed"):
+            result={**result,"failed":True}
+    else:
+        if not key:
+            return
+        with action:
+            result=_load_once(platform+"_"+scope,"Aggiorna dati",loader,key,scope)
     if result is None:
         return
     if result["scope"]!=scope:

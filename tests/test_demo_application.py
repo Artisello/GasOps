@@ -4,6 +4,7 @@ from pathlib import Path
 import requests
 from streamlit.testing.v1 import AppTest
 
+from gasops_app.system_status_page import ARCHIVE_KEY
 from gasops_app import demo_application,session
 from gasops_app.llm import LLMConfig
 from gasops_app.operations_ledger import sample_rows
@@ -18,7 +19,9 @@ def test_home_works_with_presentation_module_loaded_before_sidebar_release(monke
     # which has the overview renderer but not the newer `home` convenience alias.
     monkeypatch.delattr(presentation,"home")
     monkeypatch.delenv("GASOPS_APP_MODE",raising=False)
-    app=AppTest.from_file(ROOT/"app.py",default_timeout=30).run()
+    app=AppTest.from_file(ROOT/"app.py",default_timeout=30)
+    app.session_state[ARCHIVE_KEY] = True
+    app.run()
     assert not app.exception
     assert app.title[0].value=="I.G.O.R. — Sistema Gas Italiano"
     assert len(app.get("page_link"))==11

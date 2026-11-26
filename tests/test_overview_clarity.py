@@ -6,6 +6,7 @@ import pytest
 import requests
 from streamlit.testing.v1 import AppTest
 
+from gasops_app.system_status_page import ARCHIVE_KEY
 from gasops_app import italian_network_page as view,session
 from gasops_app.italian_network_map import deck
 
@@ -38,7 +39,9 @@ def test_italian_mode_labels_preserve_selection_day_and_chart_identity(offline):
 
 
 def test_secondary_evidence_is_collapsed_but_complete_and_exportable(offline):
-    app=AppTest.from_string(SCRIPT,default_timeout=30).run()
+    app=AppTest.from_string(SCRIPT,default_timeout=30)
+    app.session_state[ARCHIVE_KEY] = True
+    app.run()
     assert not app.exception
     secondary=[e for e in app.expander if e.label.startswith(("Bilancio giornaliero ·","Qualità delle fonti ·"))
                or e.label=="Capacità e dati commerciali"]

@@ -78,17 +78,43 @@ def _window(first,last,now):
     return first,last
 
 
-def cached_sources(store,network,now,first,last):
+def _covering_entries(store,prefix,first,last):
+    """Retain all pages for the newest requests covering each requested day."""
+    grouped = {}
+    for item in store.cached_entries(prefix,window=(first,last),limit=100):
+        fields = item[0][len(prefix):].split(":")
+        try:
+            bounds = tuple(date.fromisoformat(d) for d in fields[:2])
+        except ValueError:
+            continue
+        if len(bounds)==2:
+            grouped.setdefault(bounds,[]).append(item)
+    remaining = set(first+timedelta(days=i) for i in range((last-first).days+1))
+    for (a,b),entries in grouped.items():
+        covered = {d for d in remaining if a<=d<=b}
+        if covered:
+            remaining.difference_update(covered)
+            yield from entries
+
+
+def cached_sources(store,network,now,first,last,*,inventory_platform=None):
     """Read only known cache keys, with existing parsers and an 8 MB budget."""
     snapshots, inventories, interruptions, notices=[],[],[],[]
     if store is None:return snapshots,inventories,interruptions,notices
-    bindings={b.point_direction:b for b in verified_bindings(network)}
+    bindings={} if inventory_platform else {b.point_direction:b for b in verified_bindings(network)}
     pages, desks={},{}
     budget=0
-    prefixes=("italian-map-ops-v1:","entsog-network-v1:","italian-map-interruptions-v1:","italian-map-gie-v1:",
-              "agsi-public-v2-","alsi-public-v2-")
+    platforms = ("agsi",) if inventory_platform=="AGSI+" else ("alsi",) if inventory_platform=="ALSI" else ("agsi","alsi")
+    prefixes=tuple(f"{platform}-public-v2-" for platform in platforms)
+    if not inventory_platform:
+        prefixes+=("entsog-network-v1:","italian-map-interruptions-v1:","italian-map-gie-v1:")
     entries=[]
     for prefix in prefixes:entries.extend(store.cached_entries(prefix,limit=MAX_CACHE_ENTRIES))
+    for point in bindings:
+        prefix=f"italian-map-ops-v1:{point}:"
+        entries.extend(_covering_entries(store,prefix,first,last))
+    for platform in platforms:
+        entries.extend(_covering_entries(store,f"{platform}-public-range-v1:IT:",first,last))
     if len(entries)>MAX_CACHE_ENTRIES:
         notices.append(f"Lettura limitata alle {MAX_CACHE_ENTRIES} estrazioni più recenti; lo storico completo resta nelle viste originali.")
     for key,at,size in sorted(entries,key=lambda r:r[1],reverse=True)[:MAX_CACHE_ENTRIES]:
@@ -129,8 +155,13 @@ def cached_sources(store,network,now,first,last):
                 if len(matches)!=1:continue
                 b=matches[0]
                 parser=parse_agsi if b.provider=="AGSI+" else parse_alsi
-                result=parser(text,acquired,scope=b.external_id,cached=True)
+                result=parser(text,acquired,scope=b.external_id,first=a,last=z,cached=True)
                 inventories.append((b.provider,b.infrastructure_id,b.external_id,{**result,"first":a,"last":z},False))
+            elif parts[0] in ("agsi-public-range-v1", "alsi-public-range-v1"):
+                storage=parts[0].startswith("agsi")
+                a,z=map(date.fromisoformat,parts[2:4])
+                result=(parse_agsi if storage else parse_alsi)(text,acquired,scope=parts[1],first=a,last=z,cached=True)
+                inventories.append(("AGSI+" if storage else "ALSI",None,parts[1],{**result,"first":a,"last":z},False))
             elif key.startswith(("agsi-public-v2-","alsi-public-v2-")):
                 storage=key.startswith("agsi-")
                 scope=key.rsplit("-",1)[1]
@@ -213,7 +244,9 @@ def source_context(network,bundled,state,now,*,store=None,first=None,last=None,i
         bindings=[b for b in network.bindings if b.provider==provider and b.external_id==eic and b.mapping_confidence=="confirmed"]
         if len(bindings)==1:
             inventory.append((provider,bindings[0].infrastructure_id,eic,result,provider+":"+eic in saved.get("failures",())))
+    from .entsog import cached_ranges
     return {"snapshots":snapshots,"inventory":inventory,"interruptions":[*interruptions,*events,*saved.get("interruptions",{}).values()],
+            "srg":cached_ranges(store,first,last,now) if store is not None else (),
             "notices":notices,"first":first,"last":last}
 
 

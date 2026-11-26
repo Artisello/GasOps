@@ -27,6 +27,10 @@ class SourceUnavailable(RuntimeError):
     """La fonte non ha restituito dati validi e la cache non è utilizzabile."""
 
 
+def network_allowed():
+    return _NETWORK_ALLOWED.get()
+
+
 @contextmanager
 def cached_only(enabled=True):
     """Request-local read policy; never changes another visitor's acquisition."""

@@ -180,8 +180,8 @@ def jarvis_audit(state,day,now):
     return out
 
 
-def inventory_state(context,state,day):
-    """Expose the newest cached national GIE query covering this day to P0 drivers."""
+def inventory_state(context,state,day,*,history=False):
+    """Project the newest national inventory and bounded SRG cache into P0 state."""
     combined=dict(state)
     for provider in ("AGSI+","ALSI"):
         candidates=[]
@@ -191,12 +191,43 @@ def inventory_state(context,state,day):
             first=result.get("first") or (min(frame.gas_day) if not frame.empty else None)
             last=result.get("last") or (max(frame.gas_day) if not frame.empty else None)
             if first is None or last is None:continue
-            if first<=day<=last:candidates.append((result["acquired"],result,failed))
+            if history or day is None or first<=day<=last:candidates.append((result["acquired"],result,failed))
         if candidates:
             at=max(c[0] for c in candidates)
             tied=[c for c in candidates if c[0]==at]
             _,result,failed=tied[-1]
-            result={**result,"frame":pd.concat([r["frame"] for _,r,_ in tied],ignore_index=True),
+            frames=[r["frame"] for _,r,_ in tied]
+            if history:
+                editions, acquired_by_day = [], {}
+                for acquired,query,_ in sorted(candidates,key=lambda c:c[0]):
+                    frame = query["frame"]
+                    days = set(frame.gas_day)
+                    editions = [(when,rows.loc[~rows.gas_day.isin(days)] if when<acquired else rows)
+                                for when,rows in editions]
+                    editions.append((acquired,frame))
+                    acquired_by_day.update(dict.fromkeys(days,acquired))
+                frames = [frame for _,frame in editions]
+                result = {**result,"acquired_by_day":acquired_by_day}
+            result={**result,"frame":pd.concat(frames,ignore_index=True).drop_duplicates(),
                     "failed":any(r.get("failed") or error for _,r,error in tied)}
             combined[provider+"_IT"]={"result":result,"error":failed}
+    ranges = sorted(context.get("srg",()), key=lambda r:r[2].retrieved_at)
+    if ranges and (day is None or any(first<=day<=last for first,last,_ in ranges)):
+        from .entsog import combine
+        from .live_sources import BUNDLES
+        from .public_data import SourceUnavailable
+        selected = [r for r in ranges if day is None or r[0]<=day<=r[1]]
+        first = context["first"] if day is None else day
+        last = context["last"] if day is None else day
+        try:
+            bundle = combine([r[2] for r in selected],first,last)
+        except SourceUnavailable:
+            pass
+        else:
+            prior=state.get(BUNDLES,{}).get("daily")
+            if prior is None or prior.origin.retrieved_at<=bundle.origin.retrieved_at:
+                combined[BUNDLES]={**state.get(BUNDLES,{}),"daily":bundle}
+                combined["srg_window_acquisitions"]={
+                    d:query.retrieved_at for a,b,query in selected
+                    for d in query.flags if first<=d<=last and a<=d<=b}
     return combined

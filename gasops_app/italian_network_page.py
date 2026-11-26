@@ -23,9 +23,14 @@ from .italian_network import (ASSETS, CATEGORIES, applicable, filter_infrastruct
                               validated_observations, reading_infrastructure, READING_MODES)
 from .italian_network_events import iip_events, verified_events, parse_interruptions
 from .italian_network_map import deck, display_name, legend_symbol
-from .italian_network_refresh import STATE, refresh_network
+from .italian_network_refresh import STATE
 from .italian_network_sources import decode_snapshot
 from .models import utc_now
+from . import operational_acquisition as acquisition
+from .balancing_cockpit import inventory_state
+from .gas_data import source_context
+from .operational_progress import connection_status, watch
+from .system_status_page import ARCHIVE_KEY
 from .session import database
 from .visuals import chip, local_time, plot, kpi_grid
 
@@ -267,19 +272,103 @@ def _open_stress(identifier,day):
     st.switch_page(st.Page(balancing,title="Bilanciamento",icon=":material/balance:",url_path="balancing"))
 
 
+def _status_state(context, saved, now, day):
+    state = inventory_state(context,saved,day,history=True)
+    details = state.get("operational_acquisition",{})
+    signals = acquisition.failures(details,day or _last_completed(now))
+    old = state.get(STATE,{})
+    facilities = dict(old.get("facilities",{}))
+    for provider,identifier,eic,result,_ in context["inventory"]:
+        if identifier and ((provider,eic) not in facilities or
+                (result.get("acquired") and result["acquired"]>facilities[(provider,eic)]["acquired"])):
+            facilities[provider,eic] = result
+    state[STATE] = {**old,"facilities":facilities,"failures":{**old.get("failures",{}),**dict.fromkeys(signals,True)}}
+    state["operational_connections"] = {"srg":{"failed":"srg" in signals}}
+    for source,field in (("agsi","AGSI+_IT"),("alsi","ALSI_IT")):
+        if source in signals and field in state:
+            state[field] = {**state[field],"error":"Aggiornamento non riuscito"}
+    return state
+
+
+def _publish_details(result):
+    if not result:
+        return
+    saved = dict(st.session_state.get(STATE,{}))
+    for field in ("interruptions","facilities"):
+        if field in result:
+            saved[field] = {**saved.get(field,{}),**result[field]}
+    st.session_state[STATE] = saved
+    if "gie_iip" in result:
+        st.session_state["gie_iip"] = result["gie_iip"]
+
+
+def _window_context(network, bundled, state, now, store, first, last, archive):
+    return source_context(network,bundled if archive else (),{} if archive else state,now,
+        store=None if archive else store,first=first,last=last,
+        interruptions=(bundled_interruptions(),) if archive else ())
+
+
+def _automatic_day():
+    from .system_status_page import REQUESTED_DAY
+    st.session_state.pop(REQUESTED_DAY,None)
+
+
+def _archive_changed(widget):
+    st.session_state[ARCHIVE_KEY] = st.session_state[widget]
+    _automatic_day()
+    st.session_state.pop("net_period",None)
+
+
+def _source_controls(connections, *, gie, overview=False):
+    widget = ARCHIVE_KEY+("_overview" if overview else "_map")
+    archive = st.session_state.get(ARCHIVE_KEY,False)
+    if st.session_state.get(widget) != archive:
+        st.session_state[widget] = archive
+    with st.popover("Fonti operative"):
+        connection_status(connections,gie=gie)
+        st.checkbox("Consulta lo snapshot storico",key=widget,on_change=_archive_changed,args=(widget,))
+        if overview:
+            st.button("Ultimo giorno coperto",key="ops_default_day",on_click=_automatic_day)
+            return st.button("Aggiorna fonti",key="ops_refresh_overview")
+    return False
+
+
 def overview_panel():
+    """Render cache immediately; the shared worker refreshes sources outside Streamlit."""
     from .system_status import build_status
     from . import system_status_page as system
+    from .operational_sources_page import configured_key
     network,boundary,bundled = assets()
-    saved = st.session_state.get(STATE,{})
-    snapshots = (*bundled,*saved.get("snapshots",{}).values())
-    now = utc_now()
-    snapshots = tuple(s for s in snapshots if s.acquired <= now)
-    observations = validated_observations(network,merge_observations(snapshots),now)
+    now,store = utc_now(),database()
+    completed = _last_completed(now)
+    chosen = st.session_state.get(system.REQUESTED_DAY)
+    info = acquisition.journal(store)
+    connections = info.get("connections",{})
+    api_key = configured_key()
+    refresh = _source_controls(connections,gie=bool(api_key),overview=True)
+    archive = st.session_state.get(ARCHIVE_KEY,False)
+    anchor = min(chosen or (max(s.last for s in bundled) if archive else completed),completed)
+    job = None
+    if not archive:
+        requested = (dict(first=anchor,last=anchor) if chosen else
+                     dict(first=completed-timedelta(days=6),last=completed) if refresh else {})
+        job = acquisition.schedule(store,network,now,api_key=api_key,force=refresh,**requested)
+    watch(store,job,connections)
+    if archive:
+        st.caption("Snapshot storico incluso · acquisizioni statiche.")
+    context = _window_context(network,bundled,st.session_state,now,store,anchor-timedelta(days=34),anchor,archive)
+    data = {} if archive else dict(st.session_state,operational_acquisition=info)
+    snapshots = context["snapshots"]
     policy = system.policy()
-    status = build_status(network,snapshots,st.session_state,now,
-                          gas_day=st.session_state.get(system.SELECTED_DAY,st.session_state.get(system.DAY_KEY)),
-                          interruptions=(bundled_interruptions(),),policy=policy)
+    state = _status_state(context,data,now,chosen)
+    status = build_status(network,snapshots,state,now,gas_day=chosen,
+                          interruptions=context["interruptions"],policy=policy)
+    if chosen is None and not archive:
+        state = _status_state(context,data,now,status.gas_day)
+        status = build_status(network,snapshots,state,now,gas_day=status.gas_day,
+                              interruptions=context["interruptions"],policy=policy)
+    saved = state.get(STATE,{})
+    observations = validated_observations(network,merge_observations(snapshots),now)
     day = status.gas_day
     first = day-timedelta(days=6)
     identifier = st.session_state.get(SELECTED,st.session_state.get("net_infrastructure","INET_BP_65"))
@@ -571,28 +660,25 @@ def panel(mode="full"):
         st.session_state["net_layers"] = sorted(set(st.session_state.get("net_layers",list(CATEGORIES)))|{item.category})
         for key in ("net_operators","net_regions","net_statuses","net_only_events"):
             st.session_state.pop(key,None)
-    saved = st.session_state.get(STATE, {})
-    snapshots = (*bundled, *saved.get("snapshots", {}).values())
-    now = utc_now()
-    snapshots = tuple(s for s in snapshots if s.acquired <= now)
-    observations = validated_observations(network,merge_observations(snapshots),now)
-    default_last = min(max(s.last for s in bundled), _last_completed(now))
+    from .operational_sources_page import configured_key
+    now,store = utc_now(),database()
+    completed = _last_completed(now)
+    info = acquisition.journal(store)
+    connections = info.get("connections",{})
+    api_key = configured_key()
+    archive = st.session_state.get(ARCHIVE_KEY,False)
+    default_last = min(max(s.last for s in bundled),completed) if archive else completed
     meta, period_col, actions = st.columns([3,2,2], vertical_alignment="bottom")
     with meta:
-        st.caption("Italia · dati pubblici · cartografia storica e aggiornamenti su richiesta")
+        st.caption("Italia · snapshot storico incluso" if archive else "Italia · dati pubblici e cache operativa")
         data_status = st.empty()
-        if saved.get("attempted"):
-            st.caption("Ultimo tentativo: "+local_time(saved["attempted"]))
-            if saved.get("notices"):
-                with st.expander("Esito aggiornamento", expanded=bool(saved.get("failures"))):
-                    for notice in saved["notices"]:
-                        st.caption(notice)
+        _source_controls(connections,gie=bool(api_key))
     period = period_col.date_input("Periodo · giorni gas", value=(default_last-timedelta(days=6),default_last),
-        min_value=min(s.first for s in (*bundled,*snapshots)), max_value=_last_completed(now), key="net_period", format="DD/MM/YYYY")
+        min_value=date(2000,1,1), max_value=completed, key="net_period", format="DD/MM/YYYY")
     with actions:
         refresh_col, reset_col = st.columns(2)
         refresh_clicked = refresh_col.button("Aggiorna", icon=":material/refresh:", key="net_refresh", width="stretch",
-            help="Aggiorna il punto e la direzione selezionati, gli avvisi ENTSOG e il contesto GIE se configurato. Nessuna chiamata durante la navigazione.")
+            disabled=archive,help="Aggiorna tutti i punti e le direzioni verificati per il periodo selezionato.")
         reset_col.button("Reset filtri", on_click=reset_filters, key="net_reset", width="stretch")
     reading = _mode_selector("full")
     layer_col, event_col, filter_col = st.columns([5,1,1], vertical_alignment="bottom")
@@ -609,10 +695,20 @@ def panel(mode="full"):
         st.info("Seleziona un periodo da 1 a 31 giorni gas conclusi.")
         return
     first, last = period
-    iip_result = st.session_state.get("gie_iip", {}).get("result")
+    job = None
+    if not archive and not refresh_clicked:
+        requested = dict(first=first,last=last) if last<completed else {}
+        job = acquisition.schedule(store,network,now,api_key=api_key,**requested)
+    policy = status_policy()
+    context = _window_context(network,bundled,st.session_state,now,store,min(first,last-timedelta(days=policy.baseline_days)),last,archive)
+    snapshots = context["snapshots"]
+    observations = validated_observations(network,merge_observations(snapshots),now)
+    data = {} if archive else dict(st.session_state,operational_acquisition=info)
+    state = _status_state(context,data,now,last)
+    saved = state.get(STATE,{})
+    iip_result = state.get("gie_iip", {}).get("result")
     iip, unresolved = iip_events(network, iip_result, first, last)
-    interruptions = {bundled_interruptions()["point_direction"]:bundled_interruptions(), **saved.get("interruptions", {})}
-    interruption_sets = interruptions.values()
+    interruption_sets = context["interruptions"]
     events, withheld = verified_events(network,(*iip, *(e for s in interruption_sets for e in s["records"])),first,last,now)
     unresolved += withheld
     event_ids = {e["infrastructure_id"] for e in events}
@@ -643,18 +739,12 @@ def panel(mode="full"):
             st.session_state["net_direction"] = directions[0] if directions else None
         direction = st.selectbox("Direzione", directions, key="net_direction", disabled=not directions,
             format_func=lambda d:"Ingresso" if d == "entry" else "Uscita", placeholder="—") if directions else None
-    if refresh_clicked:
-        if identifier:
-            from .operational_sources_page import configured_key
-            with st.spinner("Aggiornamento delle fonti per la selezione…"):
-                refresh_network(st.session_state, database(), network, identifier, direction, first, last, now,
-                                api_key=configured_key())
-            st.rerun()
-        else:
-            st.caption("Seleziona un’infrastruttura per aggiornare i dati.")
-    policy = status_policy()
-    operational = build_status(network,snapshots,st.session_state,now,gas_day=last,
-                               interruptions=(bundled_interruptions(),),policy=policy)
+    if refresh_clicked and not archive:
+        detail = (identifier,direction,first,last) if identifier else None
+        job = acquisition.schedule(store,network,now,api_key=api_key,first=first,last=last,force=True,detail=detail)
+    watch(store,job,connections,on_done=_publish_details)
+    operational = build_status(network,snapshots,state,now,gas_day=last,
+                               interruptions=interruption_sets,policy=policy)
     intelligence = _map_intelligence(network,visible,observations,snapshots,last,now,saved,identifier,direction,policy)
     active_event_ids = {e["infrastructure_id"] for e in operational.active_events}
     finding_ids = {f.infrastructure_id for f in operational.attention if f.category not in ("quality","event") and f.infrastructure_id}
@@ -716,9 +806,9 @@ def panel(mode="full"):
         st.link_button("SciGRID · dataset e licenza", "https://zenodo.org/records/4750979")
         st.download_button("Esporta selezione e provenienza",export(network,visible,observations,events,first,last),
                            "igor-rete-italiana.json","application/json",key="net_export")
-    national = st.session_state.get("AGSI+_IT", {}).get("result")
+    national = state.get("AGSI+_IT", {}).get("result")
     if national and not national["frame"].empty:
         latest = national["frame"].iloc[-1]
         st.caption(f"Contesto nazionale GIE AGSI+ · {data_it(latest.gas_day)} · {numero(latest.stock_twh,2)} TWh · {numero(latest.fill_pct,1)}% · indipendente dai filtri geografici")
-        failed = national["failed"] or st.session_state.get("AGSI+_IT",{}).get("error")
+        failed = national["failed"] or state.get("AGSI+_IT",{}).get("error")
         st.caption("Acquisito "+local_time(national["acquired"])+(" · ultima cache, aggiornamento non riuscito" if failed else ""))

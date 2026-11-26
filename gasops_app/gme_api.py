@@ -121,6 +121,7 @@ class Client:
         self._expires = 0.
         self._next_request = 0.
         self._blocked_until = 0.
+        self.last_quota = None
 
     def _send(self, method, action, *, body=None, token=None):
         delay = self._next_request - monotonic()
@@ -190,7 +191,10 @@ class Client:
             if not error.transient:
                 raise
             raw = self._authorized("GET", "GetMyQuotas")
-        return _parse_quotas(raw, datetime.now(timezone.utc))
+        checked = datetime.now(timezone.utc)
+        counts = _parse_quotas(raw,checked)
+        self.last_quota = (counts,checked)
+        return counts
 
     def quotas(self):
         with self._lock:

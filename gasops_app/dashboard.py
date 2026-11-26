@@ -729,6 +729,9 @@ def market() -> None:
             action_slot.empty()
     _market_headlines(context,include_forecast=forecast_ready)
     _market_quality_notice(context)
+    if origin.grain=="daily" and not origin.archive and origin.kind in (Kind.LIVE,Kind.HISTORICAL):
+        from .gme_market_page import daily_context
+        daily_context(origin.latest_period)
     if section=="Consumi e previsioni":
         with st.container(border=True,key="panel_market_chart"):
             _charts(context,selection.periods,"market",height=390,readout=False,include_forecast=forecast_ready)

@@ -8,6 +8,7 @@ import pytest
 import requests
 from streamlit.testing.v1 import AppTest
 
+from gasops_app.system_status_page import ARCHIVE_KEY
 from gasops_app import italian_network_page as view
 from gasops_app.gas_calendar import gas_day_bounds
 from gasops_app.italian_network import (Observation, READING_MODES, filter_infrastructure,
@@ -245,7 +246,9 @@ def test_native_pick_indices_keep_their_identity_when_modes_filter_markers(asset
 
 
 def test_overview_has_real_d30_gaps_and_same_sections_as_full_card(offline):
-    app = AppTest.from_string("from gasops_app.italian_network_page import panel\npanel(mode='overview')",default_timeout=30).run()
+    app = AppTest.from_string("from gasops_app.italian_network_page import panel\npanel(mode='overview')",default_timeout=30)
+    app.session_state[ARCHIVE_KEY] = True
+    app.run()
     assert not app.exception
     assert [t.label for t in app.tabs] == ["Dati","Storico","Eventi","Fonti"]
     captions = {c.value for c in app.caption}

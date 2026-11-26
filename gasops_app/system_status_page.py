@@ -13,6 +13,8 @@ from .models import utc_now
 
 DAY_KEY = "system_status_gas_day"
 SELECTED_DAY = "system_status_selected_gas_day"
+REQUESTED_DAY = "system_status_requested_gas_day"
+ARCHIVE_KEY = "operational_historical_archive"
 KINDS = {"observed":"Osservato", "estimated":"Stimato", "historical":"Storico", "unavailable":"N/A"}
 
 
@@ -34,6 +36,8 @@ def header(status):
             st.caption(f"{status.source_coverage.valid}/{status.source_coverage.expected} componenti · "
                        f"06:00–06:00 Europe/Rome · {status.hours} ore")
         with date_col:
+            if REQUESTED_DAY not in st.session_state and DAY_KEY in st.session_state:
+                st.session_state[DAY_KEY] = status.gas_day
             st.date_input("Giorno gas", value=status.gas_day,
                 max_value=status.active_gas_day, min_value=status.active_gas_day.replace(year=2000, month=1, day=1),
                 key=DAY_KEY, format="DD/MM/YYYY", on_change=_remember_day)
@@ -50,6 +54,8 @@ def header(status):
                      ("Giacenza stoccaggi", status.storage_level),
                      ("Prelievi SRG" if demand is status.demand_actual else "Prelievi SRG · previsione", demand)):
         detail = f"{m.source} · {data_it(m.gas_day)} · {m.coverage.valid}/{m.coverage.expected}"
+        if m.value is not None and m.gas_day != status.gas_day:
+            detail += " · Ultima giacenza pubblicata"
         if m.status == "estimated":
             detail += " · Stimato"
         if m.freshness == "stale":
@@ -65,6 +71,7 @@ def header(status):
 
 def _remember_day():
     st.session_state[SELECTED_DAY] = st.session_state[DAY_KEY]
+    st.session_state[REQUESTED_DAY] = st.session_state[DAY_KEY]
 
 
 def balance(status, *, compact=False):

@@ -7,7 +7,7 @@ import streamlit as st
 from .italiano import ESITI, GRAVITA, TIPI, numero
 from .market import demand_trend_question, demand_readout
 from .assistant_sources import source_rows
-from .models import Agent, AGENT_LABELS, Run, utc_now
+from .models import Agent, AGENT_LABELS, Kind, Run, utc_now
 from .reports import markdown
 from . import session
 from .session import analysis_label, launch, market_scope, reasoner, source_filters, ai_activation_panel
@@ -116,6 +116,10 @@ def _report(report:Run,selection):
         if not report.results:
             st.text(report.summary or "Nessun risultato disponibile.")
     _source_evidence_panel(report)
+    if (report.source.grain=="daily" and not report.source.archive and
+            report.source.kind in (Kind.LIVE,Kind.HISTORICAL) and report.assumptions.get("requested_country","IT")=="IT"):
+        from .gme_market_page import daily_context
+        daily_context(report.source.latest_period)
     if Agent.REGULATORY in report.results:
         st.caption("Normativa: materiali di studio, non PDF caricati.")
         info("Fonti normative","I riscontri normativi del supervisore usano materiali predisposti. Interroga i PDF del tuo archivio in Norme e documenti.")
