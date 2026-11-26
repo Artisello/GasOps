@@ -48,9 +48,9 @@ def operational_context():
         st.write("AGSI+: gas negli stoccaggi. ALSI: terminali di gas naturale liquefatto (GNL). IIP: avvisi pubblicati dagli operatori. Jarvis: dati della rete Snam importati manualmente.")
         st.caption("Chiave GIE configurata; verifica al caricamento." if key else "Imposta GASOPS_GIE_API_KEY nei Secrets di Streamlit e riavvia l’app.")
     if selected=="AGSI+":
-        from .gme_market import private_enabled as gme_enabled
+        from .gme_market import session_authorized as gme_authorized
         views = ["Giacenze pubbliche","Bilanciamento HS1"]
-        if gme_enabled():
+        if gme_authorized():
             views.append("Scambi MGS")
         mode=st.radio("Vista scorte",views,horizontal=True,key="storage_view",label_visibility="collapsed")
         if mode=="Scambi MGS":

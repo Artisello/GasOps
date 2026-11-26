@@ -112,8 +112,8 @@ def _results(result,base,r,unit):
 
 def risk_page(*, auto_demo=False):
     st.title("Simulazione rischi")
-    from .gme_market import private_enabled as gme_enabled
-    if gme_enabled():
+    from .gme_market import session_authorized as gme_authorized
+    if gme_authorized():
         from .workspace import picker
         if picker("Analisi del rischio", ("Simula uno scenario", "Rischio prezzo IGI"),
                   key="risk_workspace") == "Rischio prezzo IGI":

@@ -42,7 +42,7 @@ PREFERRED = {"prices": "WeightedAveragePrice", "continuous": "AveragePrice", "pg
 
 
 def _private_cache():
-    if not g.private_enabled():
+    if not g.session_authorized():
         st.session_state.pop(STATE, None)
         st.session_state.pop(OWNER, None)
         return None
@@ -92,7 +92,7 @@ def _credit(item):
 
 
 def _acquisition(kind, segment, prefix, cutoff, day=None):
-    from .gme_api import private_client
+    from .gme_api import session_client
     previous = snapshot(kind, segment)
     context = f"{prefix}_{kind}_{segment}" + (f"_{day.isoformat()}" if day else "")
     with st.expander("Carica dati GME", expanded=previous is None):
@@ -114,7 +114,7 @@ def _acquisition(kind, segment, prefix, cutoff, day=None):
                     st.session_state[key] = ("caption", "Copia della sessione già aggiornata.")
                 else:
                     with st.spinner("Acquisizione GME…"):
-                        refreshed = private_client().fetch(kind, segment, first, last, cutoff)
+                        refreshed = session_client().fetch(kind, segment, first, last, cutoff)
                     if not refreshed["rows"] and previous and previous["rows"]:
                         st.session_state[key] = ("warning", "Nessuna osservazione nel nuovo periodo · ultima copia conservata.")
                     else:
@@ -134,11 +134,11 @@ def _acquisition(kind, segment, prefix, cutoff, day=None):
 
 
 def _quota_panel(prefix):
-    from .gme_api import QUOTAS, private_client
+    from .gme_api import QUOTAS, session_client
     key = prefix + "_gme_quota"
     if st.button("Controlla quote", key=key):
         try:
-            st.session_state[key+"_result"] = (private_client().quotas(), utc_now())
+            st.session_state[key+"_result"] = (session_client().quotas(), utc_now())
         except ValueError as error:
             st.warning(str(error))
     state = st.session_state.get(key+"_result")
@@ -149,25 +149,46 @@ def _quota_panel(prefix):
         st.caption("Verifica " + local_time(checked))
 
 
+def _sign_in():
+    if g.credentials() is None:
+        return
+    from .access import login_configured
+    if not login_configured():
+        st.caption("Accedi ai dati GME con un account autorizzato. Configurazione OIDC richiesta.")
+    elif getattr(st.user, "is_logged_in", False):
+        st.caption("Questo account non è autorizzato a consultare i dati GME.")
+        st.button("Cambia account", key="gme_switch_account", on_click=st.logout)
+    else:
+        st.button("Accedi ai dati GME", key="gme_sign_in", on_click=st.login)
+
+
 def panel(kind=None, *, prefix="gme", day=None):
-    private = g.private_enabled()
-    if kind is not None and not private:
+    authorized = g.session_authorized()
+    if kind is not None and not authorized:
         return
     if kind is None:
         st.subheader("Mercato gas · GME")
-        if private:
+        if authorized:
+            from .access import PRIVATE, profile
+            if profile() != PRIVATE:
+                st.button("Esci dai dati GME", key="gme_sign_out", on_click=st.logout)
             kind = st.selectbox("Dataset", tuple(g.DATASETS),
                                 format_func=lambda k: g.DATASETS[k].label, key="gme_dataset")
         else:
+            _sign_in()
             kind = st.radio("Analisi", g.DEMO_KINDS, format_func=lambda k: g.DATASETS[k].label,
                             horizontal=True, key="gme_view", label_visibility="collapsed")
     spec = g.DATASETS[kind]
     cutoff = closed_gas_day(utc_now())
     segment = spec.segments[0]
-    if private and len(spec.segments) > 1:
+    if authorized and len(spec.segments) > 1:
         segment = st.selectbox("Segmento", spec.segments, key=prefix+"_segment_"+kind)
-    if private:
-        item = _acquisition(kind, segment, prefix, cutoff, day)
+    if authorized:
+        if g.credentials() is not None:
+            item = _acquisition(kind, segment, prefix, cutoff, day)
+        else:
+            item = snapshot(kind, segment)
+            st.caption("Configura la sezione GME nei Secrets per acquisire dati dall’API.")
         if prefix == "gme":
             with st.expander("Importa estratto autorizzato"):
                 file = st.file_uploader("JSON, XML o risposta API JSON", type=["json", "xml"],
@@ -183,14 +204,14 @@ def panel(kind=None, *, prefix="gme", day=None):
                         _save(item)
     else:
         _private_cache()
-        st.caption("Demo pubblica · accesso API GME disabilitato.")
+        st.caption("Esempi sintetici dei mercati del gas.")
         if st.button("Mostra demo", key="gme_demo"):
             st.session_state.setdefault(DEMO_STATE, {})[kind] = g.demo(kind, cutoff)
         item = st.session_state.get(DEMO_STATE, {}).get(kind)
     if item is not None:
         _credit(item)
         if prefix == "gme" and st.button("Rimuovi estratto", key="gme_clear_"+kind):
-            if private:
+            if authorized:
                 _private_cache().pop((kind, segment), None)
             else:
                 st.session_state[DEMO_STATE].pop(kind, None)
@@ -294,7 +315,7 @@ def _series(rows, spec, field, item, key):
 
 
 def overview_kpis(day):
-    if not g.private_enabled():
+    if not g.session_authorized():
         return
     cards = []
     for kind, field, caption in (("igi", "Price", "IGI · GME"),

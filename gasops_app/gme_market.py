@@ -3,7 +3,6 @@ import base64
 import binascii
 import io
 import json
-import os
 import zipfile
 import zlib
 from dataclasses import dataclass
@@ -18,7 +17,6 @@ MANUAL = "https://gme.mercatoelettrico.org/Portals/0/Documents/it-IT/20251015Man
 PORTAL = "https://www.mercatoelettrico.org/Home/InterfacciaAPI"
 ESITI = "https://www.mercatoelettrico.org/it-it/Home/Esiti/Gas/"
 ENDPOINT = "https://api.mercatoelettrico.org/request/api/v1"
-FLAG = "IGOR_GME_PRIVATE_AUTHORIZED"
 MAX_BYTES = 4 * 1024 * 1024
 MAX_ROWS = 10000
 MAX_DAYS = 31
@@ -95,9 +93,20 @@ DATASETS = {
 }
 
 
-def private_enabled():
-    from .access import private_access
-    return os.getenv(FLAG) == "1" and private_access()
+def session_authorized():
+    from .access import authorized_identity
+    return authorized_identity()
+
+
+def credentials():
+    """Read the server-side GME integration configuration."""
+    import streamlit as st
+    try:
+        config = st.secrets["gme"]
+        values = tuple(config[key] for key in ("username", "password", "base_url"))
+    except (FileNotFoundError, KeyError, TypeError, ValueError):
+        return None
+    return values if all(isinstance(value, str) and value.strip() for value in values) else None
 
 
 def _object(pairs):
@@ -311,7 +320,7 @@ def demo(kind, cutoff):
 
 def fetch_private(kind, first, last, login, password, *, transport=None):
     """Compatibility entry point for authorized callers of the original importer."""
-    if not private_enabled():
+    if not session_authorized():
         raise ValueError("Accesso privato autorizzato non configurato.")
     from .gme_api import Client
     from .gas_calendar import closed_gas_day

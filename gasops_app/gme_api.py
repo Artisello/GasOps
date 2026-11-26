@@ -223,28 +223,22 @@ def _account(username, password, base_url):
 
 
 def _secrets_client():
-    import streamlit as st
-    try:
-        credentials = st.secrets.get("gme", {})
-        values = tuple(credentials[key] for key in ("username", "password", "base_url"))
-    except (KeyError, FileNotFoundError, TypeError, ValueError):
-        raise GMEError("Configurazione GME assente o incompleta nei Secrets locali.") from None
-    if not all(isinstance(v, str) for v in values):
-        raise GMEError("Configurazione GME non valida.")
+    values = market.credentials()
+    if values is None:
+        raise GMEError("Configurazione GME assente o incompleta nei Secrets.")
     with ACCOUNT_LOCK:
         return _account(values[0], values[1], _endpoint(values[2]))
 
 
-def private_client():
-    if not market.private_enabled():
-        raise GMEError("Accesso GME privato non abilitato.")
+def session_client():
+    if not market.session_authorized():
+        raise GMEError("Accedi con un account autorizzato per consultare GME.")
     return _secrets_client()
 
 
 def main():
     """Explicit local smoke test using exactly the Streamlit Secrets configuration."""
     import argparse
-    import os
     from pathlib import Path
     from .gas_calendar import closed_gas_day
     from .models import utc_now
@@ -257,8 +251,8 @@ def main():
     parser.add_argument("--segment")
     parser.add_argument("--authorized-private-use", action="store_true")
     args = parser.parse_args()
-    if not args.authorized_private_use or os.getenv(market.FLAG) != "1":
-        parser.error("Conferma l’uso privato autorizzato e configura " + market.FLAG + "=1.")
+    if not args.authorized_private_use:
+        parser.error("Conferma l’uso privato autorizzato con --authorized-private-use.")
     if args.output and args.output.exists():
         parser.error("Il file di destinazione esiste già.")
     segment = args.segment or market.DATASETS[args.kind].segments[0]

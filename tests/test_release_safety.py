@@ -31,11 +31,10 @@ def test_client_state_and_legacy_mode_never_grant_private_access(monkeypatch, pr
     import streamlit as st
     monkeypatch.setenv("GASOPS_PROFILE", profile)
     monkeypatch.setenv("GASOPS_APP_MODE", "workbench")
-    monkeypatch.setenv("IGOR_GME_PRIVATE_AUTHORIZED", "1")
     monkeypatch.setattr(st, "session_state", {"GASOPS_PROFILE":access.PRIVATE,"authenticated":True})
     assert not access.private_access()
-    from gasops_app.gme_market import private_enabled
-    assert not private_enabled()
+    from gasops_app.gme_market import session_authorized
+    assert not session_authorized()
     with pytest.raises(PermissionError):
         access.require_private()
 

@@ -7,12 +7,29 @@ from datetime import date, timedelta
 
 import pytest
 import requests
+import streamlit as st
 from streamlit.testing.v1 import AppTest
 
+from gasops_app import access
 from gasops_app import gme_api as api, gme_market as g
 from gasops_app.gme_market_page import STATE
 
 DAY = date(2026, 11, 17)
+SECRETS = {"gme":{"username":"fixture","password":"secret-fixture","base_url":g.ENDPOINT}}
+
+
+class Identity(dict):
+    is_logged_in = True
+
+
+def _authorize(monkeypatch, profile):
+    issuer = "https://identity.example.test"
+    subject = "operator"
+    monkeypatch.setenv("GASOPS_PROFILE", profile)
+    monkeypatch.setenv("GASOPS_AUTH_ISSUER", issuer)
+    monkeypatch.setenv("GASOPS_PRIVATE_SUBJECTS", subject)
+    monkeypatch.setattr(st, "user", Identity(iss=issuer, sub=subject, exp=4102444800))
+    monkeypatch.setattr(st, "secrets", SECRETS)
 
 
 def _token(expiry=2_000_000_000):
@@ -101,8 +118,7 @@ def test_auth_quota_data_and_jwt_reuse():
 
 
 def test_private_fetch_compatibility_uses_same_client(monkeypatch):
-    monkeypatch.setenv(g.FLAG,"1")
-    monkeypatch.setattr("gasops_app.access.private_access",lambda:True)
+    _authorize(monkeypatch, access.PRIVATE)
     row = {"FlowDate":20261117,"WeightedAveragePrice":42}
     transport = _Transport(_auth(),_Response(_quota()),_Response(_response([row])))
     payload = g.fetch_private("prices",DAY,DAY,"fixture","secret-fixture",transport=transport)
@@ -165,12 +181,13 @@ def test_429_respects_cooldown_without_automatic_retries():
     assert len(transport.calls) == 2
 
 
-def test_streamlit_private_acquisition_uses_cache_and_preserves_last_valid_on_failure(monkeypatch):
-    monkeypatch.setenv(g.FLAG,"1")
-    monkeypatch.setattr("gasops_app.access.private_access",lambda:True)
+@pytest.mark.parametrize("profile", [access.PUBLIC, access.PRIVATE])
+def test_streamlit_acquisition_is_enabled_in_both_layouts_and_reuses_cache(monkeypatch, profile):
+    _authorize(monkeypatch, profile)
+    assert access.private_access() == (profile == access.PRIVATE)
     transport = _Transport(_auth(),_Response(_quota()),_data(),_Response(_quota()),_Response({},503))
-    monkeypatch.setattr(api,"private_client",lambda:_client_shared)
-    _client_shared = _client(transport)
+    client = _client(transport)
+    monkeypatch.setattr(api,"_account",lambda *args:client)
     app = AppTest.from_string("from gasops_app.gme_market_page import panel\npanel()").run()
     app.selectbox(key="gme_dataset").set_value("igi").run()
     app.date_input[0].set_value((DAY,DAY)).run()
@@ -184,21 +201,44 @@ def test_streamlit_private_acquisition_uses_cache_and_preserves_last_valid_on_fa
     app.button(key="gme_igi_IGI_fetch").click().run()
     assert not app.exception and ("igi","IGI") in app.session_state[STATE]
     assert any("ultima copia conservata" in w.value for w in app.warning)
-    monkeypatch.delenv(g.FLAG)
+    monkeypatch.setattr(st, "user", Identity(iss=st.user["iss"], sub="unlisted", exp=4102444800))
     app.run()
     assert STATE not in app.session_state and app.button(key="gme_demo")
 
 
 def test_gme_result_not_accessible_to_public_even_if_cache_exists(monkeypatch):
-    monkeypatch.setenv(g.FLAG,"1")
-    monkeypatch.setenv("GASOPS_PROFILE","public_demo")
+    monkeypatch.setenv("GASOPS_PROFILE",access.PUBLIC)
+    monkeypatch.setattr(st, "secrets", SECRETS)
     app = AppTest.from_string("from gasops_app.gme_market_page import overview_kpis\n"
                               "from datetime import date\noverview_kpis(date(2026, 11, 17))")
     app.session_state[STATE] = {("igi","IGI"):{"canary":"secret"}}
     app.run()
     assert not app.exception and not app.caption
-    with pytest.raises(api.GMEError,match="privato"):
-        api.private_client()
+    with pytest.raises(api.GMEError,match="account autorizzato"):
+        api.session_client()
+
+
+def test_public_market_login_does_not_request_gme(monkeypatch):
+    monkeypatch.setenv("GASOPS_PROFILE",access.PUBLIC)
+    monkeypatch.setattr(st, "secrets", SECRETS)
+    monkeypatch.setattr(access, "login_configured", lambda: True)
+    logins = []
+    monkeypatch.setattr(st, "login", lambda: logins.append(True))
+    monkeypatch.setattr(api, "_secrets_client", lambda: pytest.fail("GME access without verified identity"))
+    app = AppTest.from_string("from gasops_app.gme_market_page import panel\npanel()").run()
+    assert not app.exception and not app.get("file_uploader")
+    app.button(key="gme_sign_in").click().run()
+    assert not app.exception and logins == [True]
+
+
+def test_authorized_market_keeps_file_import_when_api_configuration_is_missing(monkeypatch):
+    _authorize(monkeypatch, access.PRIVATE)
+    monkeypatch.setattr(st, "secrets", {"gme":{"username":"fixture"}})
+    app = AppTest.from_string("from gasops_app.gme_market_page import panel\npanel()").run()
+    assert not app.exception and app.get("file_uploader")
+    assert not any(button.label == "Carica dall’API" for button in app.button)
+    with pytest.raises(api.GMEError,match="incompleta"):
+        api.session_client()
 
 
 def test_full_quota_counters_expire_only_after_their_official_windows():
