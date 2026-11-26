@@ -18,8 +18,7 @@ DAY = date(2026, 11, 17)
 SECRETS = {"gme":{"username":"fixture","password":"secret-fixture","base_url":g.ENDPOINT}}
 
 
-def _private_profile(monkeypatch, profile):
-    monkeypatch.setenv("GASOPS_PROFILE", profile)
+def _configured_gme(monkeypatch):
     monkeypatch.setattr(st, "secrets", SECRETS)
     monkeypatch.setattr(access, "authorized_identity", lambda: pytest.fail("GME must not inspect OIDC"))
 
@@ -110,7 +109,7 @@ def test_auth_quota_data_and_jwt_reuse():
 
 
 def test_private_fetch_compatibility_uses_same_client(monkeypatch):
-    _private_profile(monkeypatch, access.PRIVATE)
+    _configured_gme(monkeypatch)
     row = {"FlowDate":20261117,"WeightedAveragePrice":42}
     transport = _Transport(_auth(),_Response(_quota()),_Response(_response([row])))
     payload = g.fetch_private("prices",DAY,DAY,"fixture","secret-fixture",transport=transport)
@@ -173,71 +172,53 @@ def test_429_respects_cooldown_without_automatic_retries():
     assert len(transport.calls) == 2
 
 
-@pytest.mark.parametrize("profile", [access.PRIVATE_DEMO, access.PRIVATE])
-def test_streamlit_acquisition_uses_the_private_deployment_and_session_cache(monkeypatch, profile):
-    _private_profile(monkeypatch, profile)
-    assert access.demo_layout() == (profile == access.PRIVATE_DEMO)
+@pytest.mark.parametrize("profile", [None, access.PUBLIC, "unknown", access.PRIVATE])
+def test_api_access_depends_only_on_secrets_and_data_stays_in_the_session(monkeypatch, profile):
+    if profile is None:
+        monkeypatch.delenv("GASOPS_PROFILE", raising=False)
+    else:
+        monkeypatch.setenv("GASOPS_PROFILE", profile)
+    _configured_gme(monkeypatch)
     transport = _Transport(_auth(),_Response(_quota()),_data(),_Response(_quota()),_Response({},503))
     client = _client(transport)
     monkeypatch.setattr(api,"_account",lambda *args:client)
-    app = AppTest.from_string("from gasops_app.gme_market_page import panel\npanel()").run()
+    script = ("from gasops_app.gme_market_page import overview_kpis, panel\n"
+              "from datetime import date\npanel()\noverview_kpis(date(2026, 11, 17))")
+    app = AppTest.from_string(script).run()
+    assert len(app.selectbox(key="gme_dataset").options) == len(g.DATASETS)
     app.selectbox(key="gme_dataset").set_value("igi").run()
     app.date_input[0].set_value((DAY,DAY)).run()
     assert not app.exception and not transport.calls
     app.button(key="gme_igi_IGI_fetch").click().run()
     assert not app.exception and app.session_state[STATE][("igi","IGI")]["origin"] == "api"
-    assert any(g.SOURCE in c.value for c in app.caption)
+    assert any(c.value == "Fonte: " + g.SOURCE for c in app.caption)
     app.button(key="gme_igi_IGI_fetch").click().run()
     assert len(transport.calls) == 3
-    other_session = AppTest.from_string("from gasops_app.gme_market_page import panel\npanel()").run()
+    other_session = AppTest.from_string(script).run()
     assert not other_session.exception and other_session.session_state[STATE] == {}
     assert len(transport.calls) == 3
     app.date_input[0].set_value((DAY-timedelta(days=1),DAY)).run()
     app.button(key="gme_igi_IGI_fetch").click().run()
     assert not app.exception and ("igi","IGI") in app.session_state[STATE]
     assert any("ultima copia conservata" in w.value for w in app.warning)
-    monkeypatch.setenv("GASOPS_PROFILE", access.PUBLIC)
+    monkeypatch.setattr(st, "secrets", {})
     app.run()
-    assert STATE not in app.session_state and app.button(key="gme_demo")
+    assert not app.exception and app.session_state[STATE] == {}
+    assert not any(g.SOURCE in c.value for c in app.caption)
+    assert any("non configurata" in info.value for info in app.info)
 
 
-def test_gme_result_not_accessible_to_public_even_if_cache_exists(monkeypatch):
-    monkeypatch.setenv("GASOPS_PROFILE",access.PUBLIC)
-    monkeypatch.setattr(st, "secrets", SECRETS)
-    app = AppTest.from_string("from gasops_app.gme_market_page import overview_kpis\n"
-                              "from datetime import date\noverview_kpis(date(2026, 11, 17))")
-    app.session_state[STATE] = {("igi","IGI"):{"canary":"secret"}}
-    app.run()
-    assert not app.exception and not app.caption
-    with pytest.raises(api.GMEError,match="deployment privati"):
-        api.session_client()
-
-
-@pytest.mark.parametrize("profile", [None, access.PUBLIC, access.TEST, "unknown"])
-def test_market_requires_a_server_configured_private_deployment(monkeypatch, profile):
-    if profile is None:
-        monkeypatch.delenv("GASOPS_PROFILE", raising=False)
-    else:
-        monkeypatch.setenv("GASOPS_PROFILE", profile)
-    monkeypatch.setenv("GASOPS_APP_MODE", "workbench")
-    monkeypatch.setattr(st, "secrets", SECRETS)
-    monkeypatch.setattr(g, "credentials", lambda: pytest.fail("Secrets read in an unverified deployment"))
-    app = AppTest.from_string("from gasops_app.gme_market_page import panel\npanel()")
-    app.query_params["profile"] = access.PRIVATE_DEMO
-    app.session_state["GASOPS_PROFILE"] = access.PRIVATE_DEMO
-    app.run()
-    assert not app.exception and not app.get("file_uploader")
-    assert [button.label for button in app.button] == ["Mostra demo"]
-    with pytest.raises(api.GMEError, match="deployment privati"):
-        api.session_client()
-
-
-def test_authorized_market_keeps_file_import_when_api_configuration_is_missing(monkeypatch):
-    _private_profile(monkeypatch, access.PRIVATE)
+def test_missing_api_configuration_still_allows_real_file_import(monkeypatch):
+    _configured_gme(monkeypatch)
     monkeypatch.setattr(st, "secrets", {"gme":{"username":"fixture"}})
-    app = AppTest.from_string("from gasops_app.gme_market_page import panel\npanel()").run()
+    monkeypatch.setattr(api, "_account", lambda *args: pytest.fail("Incomplete credentials reached client"))
+    app = AppTest.from_string("from gasops_app.gme_market_page import panel\npanel()")
+    uploaded = g.parse(b'[{"FlowDate":20261117,"WeightedAveragePrice":42}]', "prices", DAY)
+    app.session_state[STATE] = {("prices","GAS"):uploaded}
+    app.run()
     assert not app.exception and app.get("file_uploader")
-    assert not any(button.label == "Carica dall’API" for button in app.button)
+    assert any("provenienza dichiarata" in c.value for c in app.caption)
+    assert not any("demo" in button.label.lower() or button.label == "Carica dall’API" for button in app.button)
     with pytest.raises(api.GMEError,match="incompleta"):
         api.session_client()
 

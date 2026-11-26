@@ -228,8 +228,8 @@ def _day_detail(daily,rows,user,prefix,*,imported=False):
                            "DS (MWh)":str(row.imbalance),"Flusso (€)":str(row.cash) if row.cash is not None else "—"}
                       for row in versions],hide_index=True,width="stretch")
         if imported and detail["closed"] and versions[-1].stage == "definitive":
-            from .gme_market import session_authorized as gme_authorized
-            if gme_authorized():
+            from .gme_market import api_configured as gme_configured
+            if gme_configured():
                 from .gme_market_page import settlement
                 settlement(versions[-1])
     else:
