@@ -18,18 +18,10 @@ DAY = date(2026, 11, 17)
 SECRETS = {"gme":{"username":"fixture","password":"secret-fixture","base_url":g.ENDPOINT}}
 
 
-class Identity(dict):
-    is_logged_in = True
-
-
-def _authorize(monkeypatch, profile):
-    issuer = "https://identity.example.test"
-    subject = "operator"
+def _private_profile(monkeypatch, profile):
     monkeypatch.setenv("GASOPS_PROFILE", profile)
-    monkeypatch.setenv("GASOPS_AUTH_ISSUER", issuer)
-    monkeypatch.setenv("GASOPS_PRIVATE_SUBJECTS", subject)
-    monkeypatch.setattr(st, "user", Identity(iss=issuer, sub=subject, exp=4102444800))
     monkeypatch.setattr(st, "secrets", SECRETS)
+    monkeypatch.setattr(access, "authorized_identity", lambda: pytest.fail("GME must not inspect OIDC"))
 
 
 def _token(expiry=2_000_000_000):
@@ -118,7 +110,7 @@ def test_auth_quota_data_and_jwt_reuse():
 
 
 def test_private_fetch_compatibility_uses_same_client(monkeypatch):
-    _authorize(monkeypatch, access.PRIVATE)
+    _private_profile(monkeypatch, access.PRIVATE)
     row = {"FlowDate":20261117,"WeightedAveragePrice":42}
     transport = _Transport(_auth(),_Response(_quota()),_Response(_response([row])))
     payload = g.fetch_private("prices",DAY,DAY,"fixture","secret-fixture",transport=transport)
@@ -181,10 +173,10 @@ def test_429_respects_cooldown_without_automatic_retries():
     assert len(transport.calls) == 2
 
 
-@pytest.mark.parametrize("profile", [access.PUBLIC, access.PRIVATE])
-def test_streamlit_acquisition_is_enabled_in_both_layouts_and_reuses_cache(monkeypatch, profile):
-    _authorize(monkeypatch, profile)
-    assert access.private_access() == (profile == access.PRIVATE)
+@pytest.mark.parametrize("profile", [access.PRIVATE_DEMO, access.PRIVATE])
+def test_streamlit_acquisition_uses_the_private_deployment_and_session_cache(monkeypatch, profile):
+    _private_profile(monkeypatch, profile)
+    assert access.demo_layout() == (profile == access.PRIVATE_DEMO)
     transport = _Transport(_auth(),_Response(_quota()),_data(),_Response(_quota()),_Response({},503))
     client = _client(transport)
     monkeypatch.setattr(api,"_account",lambda *args:client)
@@ -197,11 +189,14 @@ def test_streamlit_acquisition_is_enabled_in_both_layouts_and_reuses_cache(monke
     assert any(g.SOURCE in c.value for c in app.caption)
     app.button(key="gme_igi_IGI_fetch").click().run()
     assert len(transport.calls) == 3
+    other_session = AppTest.from_string("from gasops_app.gme_market_page import panel\npanel()").run()
+    assert not other_session.exception and other_session.session_state[STATE] == {}
+    assert len(transport.calls) == 3
     app.date_input[0].set_value((DAY-timedelta(days=1),DAY)).run()
     app.button(key="gme_igi_IGI_fetch").click().run()
     assert not app.exception and ("igi","IGI") in app.session_state[STATE]
     assert any("ultima copia conservata" in w.value for w in app.warning)
-    monkeypatch.setattr(st, "user", Identity(iss=st.user["iss"], sub="unlisted", exp=4102444800))
+    monkeypatch.setenv("GASOPS_PROFILE", access.PUBLIC)
     app.run()
     assert STATE not in app.session_state and app.button(key="gme_demo")
 
@@ -214,25 +209,31 @@ def test_gme_result_not_accessible_to_public_even_if_cache_exists(monkeypatch):
     app.session_state[STATE] = {("igi","IGI"):{"canary":"secret"}}
     app.run()
     assert not app.exception and not app.caption
-    with pytest.raises(api.GMEError,match="account autorizzato"):
+    with pytest.raises(api.GMEError,match="deployment privati"):
         api.session_client()
 
 
-def test_public_market_login_does_not_request_gme(monkeypatch):
-    monkeypatch.setenv("GASOPS_PROFILE",access.PUBLIC)
+@pytest.mark.parametrize("profile", [None, access.PUBLIC, access.TEST, "unknown"])
+def test_market_requires_a_server_configured_private_deployment(monkeypatch, profile):
+    if profile is None:
+        monkeypatch.delenv("GASOPS_PROFILE", raising=False)
+    else:
+        monkeypatch.setenv("GASOPS_PROFILE", profile)
+    monkeypatch.setenv("GASOPS_APP_MODE", "workbench")
     monkeypatch.setattr(st, "secrets", SECRETS)
-    monkeypatch.setattr(access, "login_configured", lambda: True)
-    logins = []
-    monkeypatch.setattr(st, "login", lambda: logins.append(True))
-    monkeypatch.setattr(api, "_secrets_client", lambda: pytest.fail("GME access without verified identity"))
-    app = AppTest.from_string("from gasops_app.gme_market_page import panel\npanel()").run()
+    monkeypatch.setattr(g, "credentials", lambda: pytest.fail("Secrets read in an unverified deployment"))
+    app = AppTest.from_string("from gasops_app.gme_market_page import panel\npanel()")
+    app.query_params["profile"] = access.PRIVATE_DEMO
+    app.session_state["GASOPS_PROFILE"] = access.PRIVATE_DEMO
+    app.run()
     assert not app.exception and not app.get("file_uploader")
-    app.button(key="gme_sign_in").click().run()
-    assert not app.exception and logins == [True]
+    assert [button.label for button in app.button] == ["Mostra demo"]
+    with pytest.raises(api.GMEError, match="deployment privati"):
+        api.session_client()
 
 
 def test_authorized_market_keeps_file_import_when_api_configuration_is_missing(monkeypatch):
-    _authorize(monkeypatch, access.PRIVATE)
+    _private_profile(monkeypatch, access.PRIVATE)
     monkeypatch.setattr(st, "secrets", {"gme":{"username":"fixture"}})
     app = AppTest.from_string("from gasops_app.gme_market_page import panel\npanel()").run()
     assert not app.exception and app.get("file_uploader")

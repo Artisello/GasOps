@@ -94,8 +94,10 @@ DATASETS = {
 
 
 def session_authorized():
-    from .access import authorized_identity
-    return authorized_identity()
+    # The private demo relies on upstream access control. The Workbench
+    # enforces its existing authentication at the application entry point.
+    from .access import PRIVATE, PRIVATE_DEMO, profile
+    return profile() in (PRIVATE, PRIVATE_DEMO)
 
 
 def credentials():

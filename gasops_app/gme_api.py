@@ -232,7 +232,7 @@ def _secrets_client():
 
 def session_client():
     if not market.session_authorized():
-        raise GMEError("Accedi con un account autorizzato per consultare GME.")
+        raise GMEError("GME è disponibile nei deployment privati configurati.")
     return _secrets_client()
 
 
@@ -259,7 +259,7 @@ def main():
     cutoff = closed_gas_day(utc_now())
     try:
         market.validate_window(args.kind, segment, args.first, args.last, cutoff)
-        client = _secrets_client()
+        client = session_client()
         snapshot, payload = client.download(args.kind, segment, args.first, args.last, cutoff)
         if args.output:
             with args.output.open("xb") as file:

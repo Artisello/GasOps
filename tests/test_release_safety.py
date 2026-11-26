@@ -53,7 +53,21 @@ def test_private_access_requires_verified_identity_issuer_subject_and_expiry(mon
     assert not access.private_access()
 
 
+def test_private_demo_keeps_the_demo_layout_and_workbench_boundary(monkeypatch):
+    authorize(monkeypatch)
+    monkeypatch.setenv("GASOPS_PROFILE", access.PRIVATE_DEMO)
+    monkeypatch.setenv("GASOPS_APP_MODE", "workbench")
+    assert access.authorized_identity()
+    assert access.demo_layout()
+    assert not access.private_access()
+    with pytest.raises(PermissionError):
+        access.require_private()
+
+
 def test_private_entrypoint_blocks_direct_url_before_loading_application(monkeypatch,tmp_path):
+    import streamlit as st
+    monkeypatch.setattr(st, "secrets", {"gme": {"username": "fixture", "password": "fixture",
+                                                     "base_url": "https://api.mercatoelettrico.org/request"}})
     monkeypatch.setenv("GASOPS_PROFILE",access.PRIVATE)
     monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
     app=AppTest.from_file(Path(__file__).resolve().parents[1]/"app.py")
