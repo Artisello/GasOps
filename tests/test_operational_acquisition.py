@@ -12,6 +12,7 @@ from gasops_app.gas_calendar import closed_gas_day, gas_day_bounds
 from gasops_app.gas_data import source_context
 from gasops_app.italian_network import load_network_assets, verified_bindings
 from gasops_app.italian_network_page import _status_state
+from gasops_app.operational_sources import load_agsi
 from gasops_app.store import Store
 from gasops_app.system_status import build_status
 
@@ -118,6 +119,8 @@ def test_published_stock_keeps_its_own_day_and_srg_cache_feeds_daily_models(prov
     requests_before = len(run["requests"])
     with public_data.cached_only():
         bundle,_ = load(store,now=NOW)
+        inventory = load_agsi(store,"fixture","IT",now=NOW)
+    assert len(inventory["frame"])==89 and not inventory["failed"]
     assert bundle.origin.latest_period==DAY.isoformat() and len(bundle.rows)>=90
     assert len(run["requests"])==requests_before
 
