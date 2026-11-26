@@ -318,12 +318,14 @@ def _series(rows, spec, field, item, key):
         plot(figure.update_layout(height=280), key+"_series")
 
 
-def _prices(day, *, include_extremes=False):
+def _prices(day, *, include_extremes=False, kinds=("igi","prices")):
     fields = [("igi","Price","IGI · GME"),("prices","WeightedAveragePrice","Prezzo medio di remunerazione · GME")]
     if include_extremes:
         fields.extend(("prices",field,FIELDS[field]) for field in ("MaxPurchaseSRGPrice","MinSaleSRGPrice"))
     cards = []
     for kind, field, label in fields:
+        if kind not in kinds:
+            continue
         item = snapshot(kind,api_only=True)
         if not item:
             continue
@@ -342,9 +344,9 @@ def _prices(day, *, include_extremes=False):
     return cards
 
 
-def _headline_windows(day):
+def _headline_windows(day, kinds=("igi","prices")):
     ending = min(day,closed_gas_day(utc_now()))
-    return tuple(_window(kind,g.DATASETS[kind].segments[0],ending,31) for kind in ("igi","prices"))
+    return tuple(_window(kind,g.DATASETS[kind].segments[0],ending,31) for kind in kinds)
 
 
 def overview_kpis(day):
@@ -378,6 +380,37 @@ def daily_context(period):
             st.caption("Fonte: " + g.SOURCE)
         else:
             st.caption("Nessun prezzo GME disponibile per "+data_it(day)+".")
+
+
+def assistant_prices(request, as_of):
+    """Resolve GME questions entirely in the browser session."""
+    st.markdown("**Prezzi GME · consultazione locale**")
+    if not g.api_configured():
+        st.caption("API GME non configurata.")
+        return
+    requested=request.get("day")
+    ending=date.fromisoformat(requested) if requested else closed_gas_day(as_of)
+    if not g.FIRST_DAY<=ending<=closed_gas_day(utc_now()):
+        st.caption("La data richiesta non è un giorno gas concluso del periodo supportato.")
+        return
+    kinds=tuple(kind for kind in ("igi","prices") if kind in request.get("kinds",()))
+    _automatic_sources(_headline_windows(ending,kinds))
+    cards=[]
+    for kind in kinds:
+        day=ending
+        if not requested:
+            item=snapshot(kind,api_only=True)
+            field="Price" if kind=="igi" else "WeightedAveragePrice"
+            latest=max((row["FlowDate"] for row in item["rows"]
+                        if row["FlowDate"]<=ending.isoformat() and row[field] is not None),default=None) if item else None
+            if latest:
+                day=date.fromisoformat(latest)
+        cards.extend(_prices(day,include_extremes=True,kinds=(kind,)))
+    if cards:
+        kpi_grid(cards)
+        st.caption("Fonte: "+g.SOURCE)
+    else:
+        st.caption("Nessuna osservazione GME validata per il periodo richiesto.")
 
 
 def balancing(day):

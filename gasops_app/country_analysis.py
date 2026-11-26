@@ -18,12 +18,19 @@ from .briefing_context import inventory_context
 COUNTRY_PATTERNS={
     "IT":r"\b(?:italia|italian[oaie]|italy)\b",
     "DE":r"\b(?:germania|tedesc(?:o|a|he|hi)|germany|german)\b",
-    "OTHER":r"\b(?:europa|europe|europe[oaie]|francia|frances[ei]|france|spagna|spagnol[oaie]|spain|paesi bassi|olanda|dutch|netherlands|austria|austriac(?:o|a|he|hi)|belgio|belgium|polonia|poland|regno unito|uk|united kingdom|svizzera|switzerland|norvegia|norway|ucraina|ukraine|portogallo|portugal|grecia|greece|russia|stati uniti|usa|ungheria|repubblica ceca|danimarca|svezia|finlandia|turchia)\b",
+    "OTHER":r"\b(?:francia|frances[ei]|france|spagna|spagnol[oaie]|spain|paesi bassi|olanda|dutch|netherlands|austria|austriac(?:o|a|he|hi)|belgio|belgium|polonia|poland|regno unito|uk|united kingdom|svizzera|switzerland|norvegia|norway|ucraina|ukraine|portogallo|portugal|grecia|greece|russia|stati uniti|usa|ungheria|repubblica ceca|danimarca|svezia|finlandia|turchia)\b",
 }
 
 
 def requested_country(question):
     matches=[code for code,pattern in COUNTRY_PATTERNS.items() if re.search(pattern,question,re.I)]
+    european=bool(re.search(r"\b(?:ue|eu|europa|europe|europe[oaie]|unione europea)\b",question,re.I))
+    if european:
+        from .assistant_sources import ACER, requested_sources
+        sources=set(requested_sources(question))
+        if not matches and sources and sources<={ACER,"AGSI+","ALSI"}:
+            return "EU"
+        return "unsupported"
     if not matches or matches==["IT"]:return None
     return "DE" if matches==["DE"] else "unsupported"
 

@@ -12,12 +12,15 @@ from .iip_view import coverage
 from .public_data import SourceUnavailable
 
 
-def inventory_context(result, now, platform):
+def inventory_context(result, now, platform, *, day=None):
+    requested = day
     cols=("stock_twh","fill_pct","withdrawal_gwh_d","injection_gwh_d") if platform=="AGSI+" else (
           "inventory_1000m3_lng","inventory_gwh","sendout_gwh_d","sendout_reference_pct")
     frame=result["frame"]
     fields=[col for col in cols if col in frame]
     valid=frame.loc[frame[fields].notna().any(axis=1)]
+    if requested is not None:
+        valid=valid.loc[valid["gas_day"]==requested]
     if valid.empty:
         raise ValueError("Invalid inventory snapshot")
     row=valid.iloc[-1]
@@ -27,8 +30,9 @@ def inventory_context(result, now, platform):
     reference_day=(now.astimezone(ROME)-timedelta(hours=6)).date()
     age=(reference_day-day).days
     out={**attribution(platform),"scope":result["scope"],"gas_day":day.isoformat(),
-         "acquired":result["acquired"].isoformat(),"source_status":row["status"],
-         "status":"stale" if result["failed"] or age>2 or age<0 or result["acquired"]>now else "available"}
+         "acquired":result.get("acquired_by_day",{}).get(day,result["acquired"]).isoformat(),
+         "source_status":row["status"],"kind":"estimated" if row["status"]=="E" else "observed",
+         "status":"stale" if result["failed"] or (requested is None and age>2) or age<0 or result["acquired"]>now else "available"}
     out["limitation"]=("Giacenza fisica, riempimento e flussi giornalieri di stoccaggio; non capacità libera o deficit."
                        if platform=="AGSI+" else "Inventario GNL e send-out giornaliero; non prezzo o capacità disponibile.")
     if out["status"]=="available":
@@ -77,30 +81,37 @@ def weather_context(result,now):
             "limitation":"Scenario condizionale settoriale, non previsione principale; tre città a pesi uguali."}
 
 
-def collect(store, context, now, *, key="", include_gie=False, include_weather=False, weather_snapshots=None, clock=None):
+def collect(store, context, now, *, key="", include_gie=False, include_weather=False,
+            weather_snapshots=None, clock=None, only=None, day=None, scope="IT"):
     """Only called on explicit report launch, never during widget reruns."""
     tasks={}
     out={}
     # Request windows use the start time; freshness uses the time after retrieval.
     # Explicit clock injection keeps historical/offline tests deterministic.
     checked_at=clock or (lambda:now)
-    if include_gie and key:
-        tasks["AGSI+"]=lambda: inventory_context(load_agsi(store,key,"IT",now=now),checked_at(),"AGSI+")
-        tasks["ALSI"]=lambda: inventory_context(load_alsi(store,key,"IT",now=now),checked_at(),"ALSI")
-        tasks["IIP"]=lambda: iip_context(load_iip(store,key,now=now),checked_at())
-    elif include_gie:
-        out.update({name:{**attribution(name),"status":"unavailable","reason":"Chiave GIE non configurata."}
-                    for name in ("AGSI+","ALSI","IIP")})
-    if include_weather:
-        origin=context.bundle.origin
-        if origin.kind in (Kind.HISTORICAL,Kind.LIVE) and not origin.archive:
+    gie = ("AGSI+","ALSI","IIP") if scope=="IT" else ("AGSI+","ALSI") if scope=="EU" else ("AGSI+",)
+    if include_gie:
+        loaders = {"AGSI+":load_agsi,"ALSI":load_alsi}
+        for name in gie:
+            if only is not None and name not in only:
+                continue
+            if not key:
+                out[name]={**attribution(name),"status":"unavailable","reason":"Chiave GIE non configurata."}
+            elif name=="IIP":
+                tasks[name]=lambda: iip_context(load_iip(store,key,now=now),checked_at())
+            else:
+                tasks[name]=lambda name=name: inventory_context(
+                    loaders[name](store,key,scope,now=now),checked_at(),name,day=day)
+    if include_weather and (only is None or "Open-Meteo" in only):
+        origin=context.bundle.origin if context is not None else None
+        if origin is None or origin.kind in (Kind.HISTORICAL,Kind.LIVE) and not origin.archive:
             def weather_task():
                 from .weather_source import refresh,outlook,STATE
                 state={STATE:weather_snapshots} if weather_snapshots is not None else {}
                 if weather_snapshots is None:refresh(state,store,now)
                 estimate=outlook(state,checked_at())
                 result={**estimate,"source_url":estimate["url"],"status":"available"} if estimate else None
-                if origin.grain=="daily" and origin.name.startswith("ENTSOG"):
+                if origin is not None and origin.grain=="daily" and origin.name.startswith("ENTSOG"):
                     try:
                         scenario=weather_context(analyse_gas_day(store,context.inspection.usable,now,
                             snapshots=state.get(STATE,{})),checked_at())

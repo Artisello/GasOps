@@ -25,8 +25,7 @@ from .store import Store
 from .access import document_directory, private_access, require_private
 from .visuals import chip, info, kind_tag, local_time, steps
 from .workflow import DAILY_BRIEFING, run_workflow, plan
-from .market import demand_trend_question
-from .assistant_sources import requested_sources, add_price_source, complete_requirements, MARKET
+from .assistant_sources import GIE, GME, MARKET, POWER, WEATHER, mentions_day, query_day, requested_sources
 
 LOG = logging.getLogger(__name__)
 DEMO, PUBLIC, ARCHIVE = "Dati di esempio · giornalieri", "Eurostat + ARERA · mensili", "JRC · archivio giornaliero"
@@ -433,11 +432,41 @@ def briefing_run() -> Run | None:
     return None
 
 
+def _briefing_gie_key():
+    from .operational_sources import gie_key
+    try:
+        return gie_key(st.secrets)
+    except (FileNotFoundError,KeyError):
+        return gie_key()
+
+
+def _collect_assistant_sources(context,selected,requested,*,full=False,day=None,scope="IT",question=""):
+    from .assistant_lookup import collect_context
+    from .weather_source import STATE as WEATHER_STATE, enabled, refresh
+    now,store=utc_now(),database()
+    include_gie=bool(st.session_state.get("briefing_gie",True)) and (full or bool(set(requested)&set(GIE)))
+    include_weather=enabled(st.session_state) and (full or WEATHER in requested)
+    terna=()
+    if full or set(requested)&set(POWER):
+        from .terna_power import credentials
+        try:
+            terna=credentials(st.secrets)
+        except (FileNotFoundError,KeyError):
+            terna=credentials()
+    if include_weather:
+        refresh(st.session_state,store,now)
+    return collect_context(
+        store,selected,context,now,st.session_state,requested=requested,full=full,
+        key=_briefing_gie_key() if include_gie else "",terna=terna,include_gie=include_gie,
+        include_weather=include_weather,weather_snapshots=st.session_state.get(WEATHER_STATE,{}) if include_weather else None,
+        day=day,scope=scope,question=question,clock=utc_now,
+    )
+
+
 def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool = False,
            persist: bool = False, planned_only: bool = False, compact: bool = False,
            ai_policy: str = "selected") -> Run | None:
-    if selection.bundle is None:
-        return None
+    from .assistant_lookup import lookup_report
     from .country_analysis import requested_country, country_report, direct_market_question
     if ai_policy not in ("selected","required","off"):
         raise ValueError("Modalità di analisi non valida.")
@@ -445,62 +474,47 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
     if ai_policy == "required" and model is None:
         raise ModelUnavailable("AI non attiva. Nessuna domanda eseguita.")
     country=requested_country(question) if not full else None
+    requested=() if full else requested_sources(question)
+    day=None if full else query_day(question,today=utc_now().astimezone(ROME).date())
+    if requested and day is None and mentions_day(question):
+        report=lookup_report(question,{},utc_now(),issue="Indica un solo giorno valido, oppure usa Analista dati per confrontare più date.")
+        st.session_state["last_run"]=report
+        return report
+    targets={call.agent for call in plan(question,False)} if requested else set()
+    standalone=bool(requested) and not targets.intersection((Agent.REGULATORY,Agent.SETTLEMENT,Agent.SCENARIO)) and (
+        not set(requested).intersection(MARKET) or (day is not None or selection.bundle is None) and Agent.FORECAST not in targets)
+    scoped_lookup=country=="EU" or country=="DE" and requested==("AGSI+",)
+    if scoped_lookup or (country is None and standalone):
+        with st.spinner("Lettura delle fonti pertinenti…"):
+            public=_collect_assistant_sources(None,selection.bundle,requested,day=day,scope=country or "IT",question=question)
+            report=lookup_report(question,public,utc_now(),day=day,scope=country or "IT",reasoner=model)
+        st.session_state["last_run"]=report
+        return report
     if country:
-        from .operational_sources import gie_key
-        try:
-            key=gie_key(st.secrets)
-        except (FileNotFoundError,KeyError):
-            key=gie_key()
         with st.spinner("Consultazione delle fonti del mercato richiesto…"):
             report=country_report(
-                database(),question,country,selection.model,model,gie_key=key,
+                database(),question,country,selection.model,model,gie_key=_briefing_gie_key(),
                 include_gie=bool(st.session_state.get("briefing_gie",True)))
         st.session_state["last_run"]=report
         return report
+    if selection.bundle is None:
+        return None
     context = MarketContext(selection.bundle, selection.model, utc_now())
     status = st.status("Generazione del bollettino…" if full else "Analisi della domanda…", expanded=not compact)
     stage = status.empty()
     stage.html(steps(None, grid=True))
     try:
-        requested=() if full else requested_sources(question)
-        targets={call.agent for call in plan(question,False)} if requested else set()
         source_direct=bool(requested) and targets<={Agent.QUALITY,Agent.MARKET,Agent.FORECAST}
         direct=not full and (direct_market_question(question) or source_direct)
-        narrow=direct and demand_trend_question(question) and set(requested)<=set(MARKET)
         docs = Library(include_notes=False) if direct else library()
-        from .briefing_context import collect
-        from .operational_sources import gie_key
-        include_gie=bool(st.session_state.get("briefing_gie",True))
-        from .weather_source import enabled,refresh as refresh_weather,STATE as WEATHER_STATE
         origin=selection.bundle.origin
         current_context=not origin.archive and origin.kind in (Kind.HISTORICAL,Kind.LIVE)
-        include_gie=include_gie and current_context and not narrow
-        include_weather=enabled(st.session_state) and current_context and not narrow
         public_context={}
-        if include_gie or include_weather:
-            try:
-                key=gie_key(st.secrets) if include_gie else ""
-            except (FileNotFoundError,KeyError):
-                key=gie_key() if include_gie else ""
-            with st.spinner("Consultazione delle fonti pubbliche selezionate…"):
-                if include_weather:refresh_weather(st.session_state,database(),utc_now())
-                public_context=collect(database(),context,utc_now(),key=key,include_gie=include_gie,include_weather=include_weather,
-                    weather_snapshots=st.session_state.get(WEATHER_STATE,{}) if include_weather else None,
-                    clock=utc_now)
-        if current_context and (full or model is not None):
-            from .briefing_market_sources import collect_market_sources
-            from .terna_power import credentials
-            try:
-                terna=credentials(st.secrets)
-            except (FileNotFoundError,KeyError):
-                terna=credentials()
-            with st.spinner("Lettura delle fonti di mercato e degli indicatori pubblici…"):
-                public_context.update(collect_market_sources(database(),selection.bundle,utc_now(),
-                    st.session_state,terna=terna,clock=utc_now,only=set(MARKET) if narrow else None))
-        if current_context and model is not None and not full:
-            add_price_source(public_context)
-            complete_requirements(public_context,requested)
-        requirements=requested if current_context and model is not None and not full else ()
+        if current_context and (full or requested):
+            with st.spinner("Lettura delle fonti pertinenti…"):
+                public_context=_collect_assistant_sources(context,selection.bundle,requested,full=full,question=question,
+                                                          day=day if Agent.FORECAST not in targets else None)
+        requirements=tuple(public_context) if not full else ()
         report = run_workflow(
             context, docs, assumptions(), question, full=full, reasoner=model,public_context=public_context,planned_only=planned_only or direct,
             source_requirements=requirements,
@@ -515,6 +529,9 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
     if model is None:
         report.assumptions["ai_mode_reason"] = ("Modalità locale selezionata" if ai_policy=="off" or ai_configured()
                                                else "Modello AI non configurato o configurazione non valida")
+    if GME in requested:
+        from .assistant_lookup import gme_request
+        report.assumptions["gme_request"]=gme_request(question,day)
     st.session_state["last_run"] = report
     if full:
         st.session_state["last_briefing"] = report

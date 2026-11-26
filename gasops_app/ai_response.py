@@ -1,4 +1,5 @@
 """Bounded evidence projection and structured response validation."""
+from decimal import Decimal, InvalidOperation
 import re
 from .supervisor import ModelUnavailable
 from .models import AGENT_LABELS, Agent
@@ -23,6 +24,104 @@ def compact_context(context):
             return [compact(v) for v in value]
         return value
     return {key:compact(value) for key,value in context.items() if isinstance(value,dict)}
+
+
+_UNIT=r"(?:€|EUR)\s*/\s*MWh|GWh(?:\s*/\s*(?:giorno(?: gas)?|[dg]))?|TWh|MWh|MW|°\s*C|%|€|EUR"
+_CLAIM=re.compile(
+    r"(?<![\w.,])(?P<number>[+−-]?(?:\d{1,3}(?:[. \u00a0]\d{3})+(?:,\d+)?|\d+(?:[,.]\d+)?))"
+    r"\s*(?P<unit>"+_UNIT+r")(?![\w/])",re.I)
+_LOWER_UPPER=re.compile(
+    r"\b(?:da|tra|fra)\s+(?P<number>[+−-]?\d+(?:[.,]\d+)?)\s+"
+    r"(?:e|a)\s+[+−-]?\d+(?:[.,]\d+)?\s*(?P<unit>"+_UNIT+r")(?![\w/])",re.I)
+_SUFFIX_UNITS={"eur_mwh":"€/mwh","temperature_c":"°c","twh":"twh","gwh":"gwh","mwh":"mwh","pct":"%"}
+_SEMANTIC_FIELDS={"load":"gwh","wind":"gwh","estimate":"gwh","lower_80":"gwh","upper_80":"gwh"}
+_EURO_UNITS={"eur":"€","eur/mwh":"€/mwh"}
+
+
+def _unit(raw):
+    if isinstance(raw,str):
+        # The source's period and scope remain independent of the energy unit.
+        match=re.match(_UNIT,raw.strip(),re.I)
+        if match:
+            unit=re.sub(r"\s+","",match[0].lower())
+            return "gwh" if unit.startswith("gwh/") else _EURO_UNITS.get(unit,unit)
+    return None
+
+
+def _decimal_forms(raw):
+    text=re.sub(r"\s+","",raw.replace("−","-"))
+    if "," in text:
+        options=(text.replace(".","").replace(",","."),)
+    elif "." in text and re.fullmatch(r"[+-]?\d{1,3}(?:\.\d{3})+",text):
+        options=(text,text.replace(".","")) if text.count(".")==1 else (text.replace(".",""),)
+    else:
+        options=(text,)
+    return tuple((Decimal(form),len(form.partition(".")[2])) for form in options)
+
+
+def _claims(text):
+    # Include both ends of the standard Italian range "da x a y UNITÀ".
+    for pattern in (_CLAIM,_LOWER_UPPER):
+        for match in pattern.finditer(text):
+            try:
+                yield _unit(match["unit"]),_decimal_forms(match["number"])
+            except InvalidOperation:
+                continue
+
+
+def _values(data, inherited=None):
+    if isinstance(data,dict):
+        if data.get("status") in ("stale","unavailable","failed"):
+            return
+        unit=_unit(data.get("unit")) or inherited
+        for key,value in data.items():
+            field_unit=next((u for tail,u in _SUFFIX_UNITS.items()
+                             if key==tail or key.endswith("_"+tail) or "_"+tail+"_" in key),None)
+            if inherited=="%" or key.endswith("_pct"):
+                field_unit="%"
+            if isinstance(value,(dict,list)):
+                yield from _values(value,field_unit or unit)
+            elif type(value) in (int,float):
+                field_unit=field_unit or _SEMANTIC_FIELDS.get(key) or (unit if key=="value" else None)
+                if field_unit:
+                    amount=Decimal(str(value))
+                    if amount.is_finite():
+                        yield field_unit,amount
+    elif isinstance(data,list):
+        for item in data:
+            yield from _values(item,inherited)
+
+
+def model_context(context):
+    """Expose usable tuples and keep source gaps as metadata only."""
+    safe={}
+    for key,item in compact_context(context).items():
+        # GME observations stay in the local view even if another analysis
+        # attaches market prices to a Run in the future.
+        if re.search(r"\bGME\b|Gestore dei Mercati Energetici",key+" "+str(item.get("source","")),re.I):
+            continue
+        if item.get("status") in ("unavailable","stale"):
+            item={field:value for field,value in item.items() if field in
+                  ("source","scope","status","period","gas_day","grain","acquired","reason","kind","limitation")}
+        safe[key]=item
+    return safe
+
+
+def verify_measurements(sections, tools, public):
+    """Check unit-bearing figures against the sources cited in each section."""
+    numbers={"src:"+name:set(_values(item)) for name,item in public.items()}
+    for agent,item in tools.items():
+        if item.get("status") not in ("completed","review"):
+            continue
+        statements=[item["summary"],*(ref["support"] for ref in item.get("sources",[]))]
+        numbers[agent]={(unit,amount) for statement in statements for unit,forms in _claims(statement)
+                        for amount,_ in forms} | set(_values(item.get("projection",{})))
+    for section in sections:
+        allowed=set().union(*(numbers.get(ref,set()) for ref in section["references"]))
+        for unit,forms in _claims(section["text"]):
+            if not any(unit==known_unit and abs(amount-known)<=Decimal("0.5").scaleb(-places)
+                       for known_unit,known in allowed for amount,places in forms):
+                raise InvalidSynthesis("La sintesi riporta un valore o un’unità non riscontrabili nelle fonti citate.")
 
 
 class InvalidSynthesis(ModelUnavailable):
