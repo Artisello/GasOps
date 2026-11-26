@@ -13,7 +13,6 @@ from .models import utc_now
 from .visuals import BLUE, TEAL, kpi_grid, local_time, mini_chart, plot
 
 STATE = "gme_private_market_v2"
-OWNER = "gme_private_owner"
 CACHE_TIME = timedelta(minutes=15)
 CACHE_SIZE = 12
 DEMO_STATE = "gme_demo_results"
@@ -44,12 +43,7 @@ PREFERRED = {"prices": "WeightedAveragePrice", "continuous": "AveragePrice", "pg
 def _private_cache():
     if not g.session_authorized():
         st.session_state.pop(STATE, None)
-        st.session_state.pop(OWNER, None)
         return None
-    owner = (st.user.get("iss"), st.user.get("sub"))
-    if st.session_state.get(OWNER) != owner:
-        st.session_state.pop(STATE, None)
-        st.session_state[OWNER] = owner
     return st.session_state.setdefault(STATE, {})
 
 
@@ -149,19 +143,6 @@ def _quota_panel(prefix):
         st.caption("Verifica " + local_time(checked))
 
 
-def _sign_in():
-    if g.credentials() is None:
-        return
-    from .access import login_configured
-    if not login_configured():
-        st.caption("Accedi ai dati GME con un account autorizzato. Configurazione OIDC richiesta.")
-    elif getattr(st.user, "is_logged_in", False):
-        st.caption("Questo account non è autorizzato a consultare i dati GME.")
-        st.button("Cambia account", key="gme_switch_account", on_click=st.logout)
-    else:
-        st.button("Accedi ai dati GME", key="gme_sign_in", on_click=st.login)
-
-
 def panel(kind=None, *, prefix="gme", day=None):
     authorized = g.session_authorized()
     if kind is not None and not authorized:
@@ -169,13 +150,9 @@ def panel(kind=None, *, prefix="gme", day=None):
     if kind is None:
         st.subheader("Mercato gas · GME")
         if authorized:
-            from .access import PRIVATE, profile
-            if profile() != PRIVATE:
-                st.button("Esci dai dati GME", key="gme_sign_out", on_click=st.logout)
             kind = st.selectbox("Dataset", tuple(g.DATASETS),
                                 format_func=lambda k: g.DATASETS[k].label, key="gme_dataset")
         else:
-            _sign_in()
             kind = st.radio("Analisi", g.DEMO_KINDS, format_func=lambda k: g.DATASETS[k].label,
                             horizontal=True, key="gme_view", label_visibility="collapsed")
     spec = g.DATASETS[kind]

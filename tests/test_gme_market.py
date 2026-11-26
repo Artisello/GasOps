@@ -32,14 +32,14 @@ def test_envelope_bounded_and_case_insensitive():
 
 
 def test_public_default_blocks_fetch(monkeypatch):
-    monkeypatch.setattr("gasops_app.access.authorized_identity",lambda:False)
+    monkeypatch.setenv("GASOPS_PROFILE", "public_demo")
     def forbidden(*a,**kw):raise AssertionError("no network")
     with pytest.raises(ValueError,match="privato"):g.fetch_private("prices",DAY,DAY,"x","y",transport=forbidden)
 
 
 def test_demo_views_are_offline(monkeypatch):
     from streamlit.testing.v1 import AppTest
-    monkeypatch.setattr("gasops_app.access.authorized_identity",lambda:False)
+    monkeypatch.setenv("GASOPS_PROFILE", "public_demo")
     app=AppTest.from_string("from gasops_app.gme_market_page import panel\npanel()").run()
     assert not app.exception and not app.get("file_uploader")
     for kind in g.DEMO_KINDS:

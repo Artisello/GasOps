@@ -1,16 +1,16 @@
 # API GME
 
-Fonte: Gestore dei Mercati Energetici S.p.A. [Manuale tecnico, §`1–5](https://gme.mercatoelettrico.org/Portals/0/Documents/it-IT/20251015Manuale_tecnico_API.pdf), [Manuale utente, `§4–5](https://gme.mercatoelettrico.org/Portals/0/Documents/it-IT/20251015Manuale_Utente_API.pdf), [condizioni API, artt. 5–6 bis](https://www.mercatoelettrico.org/Portals/0/Documents/it-IT/20261013CONDIZIONI_GENERALI_API.pdf).
+Fonte: Gestore dei Mercati Energetici S.p.A. [Manuale tecnico, §§1–5](https://gme.mercatoelettrico.org/Portals/0/Documents/it-IT/20251015Manuale_tecnico_API.pdf), [Manuale utente, §§4–5](https://gme.mercatoelettrico.org/Portals/0/Documents/it-IT/20251015Manuale_Utente_API.pdf), [condizioni API, artt. 5–6 bis](https://www.mercatoelettrico.org/Portals/0/Documents/it-IT/20261013CONDIZIONI_GENERALI_API.pdf).
 
 ## Attivazione e verifica
 
-- La sezione `[gme]` nei Secrets Streamlit abilita l’API per gli account autorizzati sia nel layout demo sia nel Workbench. Impostare `username`, `password` e `base_url = "https://api.mercatoelettrico.org/request"`. Il precedente flag di attivazione GME è superato.
-- Configurare OIDC in `[auth]` e l’issuer e i soggetti autorizzati in `GASOPS_AUTH_ISSUER` e `GASOPS_PRIVATE_SUBJECTS`. Nella demo il pulsante **Accedi ai dati GME** è nella vista **Mercato gas**. L’accesso al Workbench usa sempre il suo profilo dedicato. La licenza standard GME è personale, informativa e privata. Per la redistribuzione valgono le condizioni GME e le autorizzazioni applicabili. [Configurazione OIDC di Streamlit](https://docs.streamlit.io/develop/concepts/connections/authentication).
+- Impostare il profilo server `GASOPS_PROFILE=private_demo` solo dopo aver verificato il controllo degli accessi a monte per tutte le connessioni al deployment Streamlit, WebSocket incluse. In Streamlit si può impostare `GASOPS_PROFILE = "private_demo"` alla radice dei Secrets, prima delle sezioni. Il profilo `private_workbench` usa l’autenticazione Workbench esistente. Il profilo pubblico, il profilo di test e i profili assenti o sconosciuti lasciano disponibili gli esempi sintetici.
+- Configurare la sezione `[gme]` nei Secrets Streamlit con `username`, `password` e `base_url = "https://api.mercatoelettrico.org/request"`. Questa sezione abilita l’acquisizione nelle viste GME dei deployment privati configurati. Limitare l’uso dell’account GME al perimetro autorizzato.
 - Aprire **Mercato e previsioni → Mercato gas**, scegliere un dataset, il segmento se previsto e fino a 31 giorni conclusi. **Carica dall’API** controlla la quota prima del download. **Quote** mostra consumi e limiti su richiesta. Gli estratti JSON/XML autorizzati restano importabili manualmente.
 - Per una verifica locale, nella directory dell’app con i Secrets disponibili, usare un breve periodo storico.
 
 ~~~sh
-python -m gasops_app.gme_api igi 2026-11-17 2026-11-18 --authorized-private-use
+GASOPS_PROFILE=private_demo python -m gasops_app.gme_api igi 2026-11-17 2026-11-18 --authorized-private-use
 ~~~
 
 Il comando controlla autenticazione, quote e schema. Stampa il numero di record validati e il segmento. Il test con credenziali richiede un’installazione autorizzata che le abbia disponibili in locale.

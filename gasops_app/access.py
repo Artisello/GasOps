@@ -10,16 +10,20 @@ from time import time
 
 PUBLIC = "public_demo"
 PRIVATE = "private_workbench"
+PRIVATE_DEMO = "private_demo"
 TEST = "test"
 
 
 def profile():
     value = os.getenv("GASOPS_PROFILE", PUBLIC).strip().lower()
-    return value if value in (PUBLIC, PRIVATE, TEST) else PUBLIC
+    return value if value in (PUBLIC, PRIVATE, PRIVATE_DEMO, TEST) else PUBLIC
 
 
 def demo_layout():
-    return profile() != PRIVATE and os.getenv("GASOPS_APP_MODE", "demo").strip().lower() != "workbench"
+    current = profile()
+    return current == PRIVATE_DEMO or (
+        current != PRIVATE and os.getenv("GASOPS_APP_MODE", "demo").strip().lower() != "workbench"
+    )
 
 
 def authorized_identity():
