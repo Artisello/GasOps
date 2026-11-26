@@ -4,13 +4,13 @@ Fonte: Gestore dei Mercati Energetici S.p.A. [Manuale tecnico, §§1–5](https:
 
 ## Attivazione e verifica
 
-- Impostare il profilo server `GASOPS_PROFILE=private_demo` solo dopo aver verificato il controllo degli accessi a monte per tutte le connessioni al deployment Streamlit, WebSocket incluse. In Streamlit si può impostare `GASOPS_PROFILE = "private_demo"` alla radice dei Secrets, prima delle sezioni. Il profilo `private_workbench` usa l’autenticazione Workbench esistente. Il profilo pubblico, il profilo di test e i profili assenti o sconosciuti lasciano disponibili gli esempi sintetici.
-- Configurare la sezione `[gme]` nei Secrets Streamlit con `username`, `password` e `base_url = "https://api.mercatoelettrico.org/request"`. Questa sezione abilita l’acquisizione nelle viste GME dei deployment privati configurati. Limitare l’uso dell’account GME al perimetro autorizzato.
-- Aprire **Mercato e previsioni → Mercato gas**, scegliere un dataset, il segmento se previsto e fino a 31 giorni conclusi. **Carica dall’API** controlla la quota prima del download. **Quote** mostra consumi e limiti su richiesta. Gli estratti JSON/XML autorizzati restano importabili manualmente.
+- Configurare `[gme]` nei Secrets Streamlit con `username`, `password` e `base_url = "https://api.mercatoelettrico.org/request"`. Le viste GME usano questa configurazione in ogni layout.
+- Configurare le credenziali sul deployment autorizzato. Per l’uso personale previsto dalla licenza standard GME, il controllo degli accessi è a monte di Streamlit, WebSocket incluse.
+- Aprire **Mercato e previsioni → Mercato gas**, scegliere un dataset, il segmento se previsto e fino a 31 giorni conclusi. **Carica dall’API** controlla la quota prima del download. **Quote** mostra consumi e limiti su richiesta. Gli estratti JSON/XML reali sono importabili manualmente. In assenza di dati la vista rimanda agli esiti ufficiali.
 - Per una verifica locale, nella directory dell’app con i Secrets disponibili, usare un breve periodo storico.
 
 ~~~sh
-GASOPS_PROFILE=private_demo python -m gasops_app.gme_api igi 2026-11-17 2026-11-18 --authorized-private-use
+python -m gasops_app.gme_api igi 2026-11-17 2026-11-18 --authorized-private-use
 ~~~
 
 Il comando controlla autenticazione, quote e schema. Stampa il numero di record validati e il segmento. Il test con credenziali richiede un’installazione autorizzata che le abbia disponibili in locale.
@@ -40,6 +40,6 @@ Le unità riportate derivano dai campi del manuale, dal [glossario GME](https://
 - Simulazione rischi calibra i percentili delle variazioni IGI giornaliere sul periodo antecedente agli ultimi sette giorni e li verifica sul periodo tenuto fuori. I buchi interrompono le variazioni D−1. Si tratta di un test retrospettivo su una copia acquisita. Lo schema non fornisce timestamp di pubblicazione o versioni storiche per una verifica point-in-time.
 - Assistente AI include una consultazione locale degli indicatori acquisiti. Gli estratti GME restano fuori dai prompt, dai provider AI e dalle previsioni operative.
 
-I risultati sono conservati solo nella sessione autorizzata. La stessa richiesta può riutilizzare l’estratto per 15 minuti. Il client centralizza JWT, timeout e quota per account. Rinnova il JWT prima della scadenza, ripete una lettura transitoria delle quote al massimo una volta e sospende le richieste su HTTP 429. I contatori GME possono conservare l’ultimo valore dopo la chiusura della finestra. Il client usa gli orari restituiti dal servizio per riconoscere le finestre già concluse. Un aggiornamento fallito o una risposta vuota lasciano consultabile l’ultima copia valida con la relativa data di acquisizione.
+I risultati sono conservati solo nella sessione Streamlit. La stessa richiesta può riutilizzare l’estratto per 15 minuti. Il client centralizza JWT, timeout e quota per account. Rinnova il JWT prima della scadenza, ripete una lettura transitoria delle quote al massimo una volta e sospende le richieste su HTTP 429. I contatori GME possono conservare l’ultimo valore dopo la chiusura della finestra. Il client usa gli orari restituiti dal servizio per riconoscere le finestre già concluse. Un aggiornamento fallito o una risposta vuota lasciano consultabile l’ultima copia valida con la relativa data di acquisizione.
 
 Lo smoke test del 26 novembre 2026 ha verificato autenticazione e quote e validato estratti con record per IGI, parametri di sbilanciamento, negoziazione continua, curve, aste MGAS e MGS. Gli intervalli campione di MPL e PGR hanno restituito risposte valide senza record.

@@ -6,7 +6,7 @@ import json
 import zipfile
 import zlib
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal as D, InvalidOperation
 from hashlib import sha256
 from xml.etree import ElementTree
@@ -23,7 +23,6 @@ MAX_DAYS = 31
 FIRST_DAY = date(2000, 1, 1)
 EUR_MWH = "€/MWh"
 SPOT = ("MGP-GAS", "MI-GAS")
-DEMO_KINDS = ("prices", "mgs", "mpl")
 
 
 @dataclass(frozen=True)
@@ -93,11 +92,8 @@ DATASETS = {
 }
 
 
-def session_authorized():
-    # The private demo relies on upstream access control. The Workbench
-    # enforces its existing authentication at the application entry point.
-    from .access import PRIVATE, PRIVATE_DEMO, profile
-    return profile() in (PRIVATE, PRIVATE_DEMO)
+def api_configured():
+    return credentials() is not None
 
 
 def credentials():
@@ -301,29 +297,8 @@ def study_prices(row, title_volume, rate, history=None, *, ordinary=True):
                             row["MaxPurchaseSRGPrice"], row["MinSaleSRGPrice"], rate, history, ordinary=ordinary)
 
 
-def demo(kind, cutoff):
-    def day(i):
-        return int((cutoff - timedelta(days=i)).strftime("%Y%m%d"))
-    if kind == "prices":
-        rows = [dict(FlowDate=day(i), MaxPurchaseSRGPrice=47+i, MinSaleSRGPrice=40+i,
-                     WeightedAveragePrice=43+i, MGASVolumes=12000+i*1000) for i in range(7)]
-    elif kind == "mgs":
-        rows = [dict(FlowDate=day(i), StorageCompany="DEMO-HS", Type=t, Price=42+i,
-                     Volumes=1000+i*100, SRGPurchases=600, SRGSales=0, Participants=4)
-                for i in range(7) for t in ("Bilanciamento", "Neutralità")]
-    elif kind == "mpl":
-        rows = [dict(SessionDate=day(i), GasDay=day(i), Reason="Bilanciamento", Type="Acquisto",
-                     OfferPoint="DEMO-PUNTO", Price=45+i, Volumes=800, SRGVolumes=600, Participants=3)
-                for i in range(7)]
-    else:
-        raise ValueError("Demo GME non disponibile per il dataset.")
-    return dict(parse(json.dumps(rows).encode(), kind, cutoff), synthetic=True, origin="demo")
-
-
 def fetch_private(kind, first, last, login, password, *, transport=None):
     """Compatibility entry point for authorized callers of the original importer."""
-    if not session_authorized():
-        raise ValueError("Accesso privato autorizzato non configurato.")
     from .gme_api import Client
     from .gas_calendar import closed_gas_day
     from .models import utc_now

@@ -222,18 +222,12 @@ def _account(username, password, base_url):
     return Client(username, password, base_url)
 
 
-def _secrets_client():
+def session_client():
     values = market.credentials()
     if values is None:
         raise GMEError("Configurazione GME assente o incompleta nei Secrets.")
     with ACCOUNT_LOCK:
         return _account(values[0], values[1], _endpoint(values[2]))
-
-
-def session_client():
-    if not market.session_authorized():
-        raise GMEError("GME è disponibile nei deployment privati configurati.")
-    return _secrets_client()
 
 
 def main():

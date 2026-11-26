@@ -15,7 +15,6 @@ from .visuals import BLUE, TEAL, kpi_grid, local_time, mini_chart, plot
 STATE = "gme_private_market_v2"
 CACHE_TIME = timedelta(minutes=15)
 CACHE_SIZE = 12
-DEMO_STATE = "gme_demo_results"
 FIELDS = {
     "MaxPurchaseSRGPrice": "Massimo acquisto SRG", "MinSaleSRGPrice": "Minimo vendita SRG",
     "WeightedAveragePrice": "Prezzo medio di remunerazione", "MGASVolumes": "Volumi MGAS",
@@ -40,29 +39,27 @@ FIELDS = {
 PREFERRED = {"prices": "WeightedAveragePrice", "continuous": "AveragePrice", "pgr": "RemunerationPrice"}
 
 
-def _private_cache():
-    if not g.session_authorized():
-        st.session_state.pop(STATE, None)
-        return None
-    return st.session_state.setdefault(STATE, {})
+def _session_cache():
+    cache = st.session_state.setdefault(STATE, {})
+    if not g.api_configured():
+        for key in tuple(cache):
+            if cache[key]["origin"] == "api":
+                del cache[key]
+    return cache
 
 
 def snapshot(kind, segment=None, *, api_only=False):
-    cache = _private_cache()
-    if cache is None:
-        return None
-    item = cache.get((kind, segment or g.DATASETS[kind].segments[0]))
+    item = _session_cache().get((kind, segment or g.DATASETS[kind].segments[0]))
     return item if item and (not api_only or item["origin"] == "api") else None
 
 
 def _save(item):
-    cache = _private_cache()
-    if cache is not None:
-        key = item["kind"], item["segment"]
-        cache.pop(key, None)
-        cache[key] = item
-        if len(cache) > CACHE_SIZE:
-            del cache[next(iter(cache))]
+    cache = _session_cache()
+    key = item["kind"], item["segment"]
+    cache.pop(key, None)
+    cache[key] = item
+    if len(cache) > CACHE_SIZE:
+        del cache[next(iter(cache))]
 
 
 def _label(field, spec, *, units=True):
@@ -72,9 +69,6 @@ def _label(field, spec, *, units=True):
 
 
 def _credit(item):
-    if item["synthetic"]:
-        st.caption("Demo sintetica · valori di esempio.")
-        return
     source = g.DATASETS[item["kind"]].source_url(item["segment"])
     caption = (f"Fonte: {g.SOURCE} · {item['segment']} · "
                f"[{g.DATASETS[item['kind']].name}]({source})")
@@ -144,60 +138,43 @@ def _quota_panel(prefix):
 
 
 def panel(kind=None, *, prefix="gme", day=None):
-    authorized = g.session_authorized()
-    if kind is not None and not authorized:
-        return
     if kind is None:
         st.subheader("Mercato gas · GME")
-        if authorized:
-            kind = st.selectbox("Dataset", tuple(g.DATASETS),
-                                format_func=lambda k: g.DATASETS[k].label, key="gme_dataset")
-        else:
-            kind = st.radio("Analisi", g.DEMO_KINDS, format_func=lambda k: g.DATASETS[k].label,
-                            horizontal=True, key="gme_view", label_visibility="collapsed")
+        kind = st.selectbox("Dataset", tuple(g.DATASETS),
+                            format_func=lambda k: g.DATASETS[k].label, key="gme_dataset")
     spec = g.DATASETS[kind]
     cutoff = closed_gas_day(utc_now())
     segment = spec.segments[0]
-    if authorized and len(spec.segments) > 1:
+    if len(spec.segments) > 1:
         segment = st.selectbox("Segmento", spec.segments, key=prefix+"_segment_"+kind)
-    if authorized:
-        if g.credentials() is not None:
-            item = _acquisition(kind, segment, prefix, cutoff, day)
-        else:
-            item = snapshot(kind, segment)
-            st.caption("Configura la sezione GME nei Secrets per acquisire dati dall’API.")
-        if prefix == "gme":
-            with st.expander("Importa estratto autorizzato"):
-                file = st.file_uploader("JSON, XML o risposta API JSON", type=["json", "xml"],
-                                        key=f"gme_file_{kind}_{segment}")
-                if st.button("Valida estratto", key=f"gme_import_{kind}_{segment}") and file is not None:
-                    try:
-                        if file.size > g.MAX_BYTES:
-                            raise ValueError("Estratto GME oltre 4 MiB.")
-                        item = g.parse(file.getvalue(), kind, cutoff, segment=segment)
-                    except ValueError as error:
-                        st.warning(str(error))
-                    else:
-                        _save(item)
+    if g.api_configured():
+        item = _acquisition(kind, segment, prefix, cutoff, day)
     else:
-        _private_cache()
-        st.caption("Esempi sintetici dei mercati del gas.")
-        if st.button("Mostra demo", key="gme_demo"):
-            st.session_state.setdefault(DEMO_STATE, {})[kind] = g.demo(kind, cutoff)
-        item = st.session_state.get(DEMO_STATE, {}).get(kind)
+        item = snapshot(kind, segment)
+        if item is None:
+            st.info("Fonte API GME non configurata. Consulta gli esiti ufficiali o importa un estratto.")
+
+    if prefix == "gme":
+        with st.expander("Importa estratto GME"):
+            file = st.file_uploader("JSON, XML o risposta API JSON", type=["json", "xml"],
+                                    key=f"gme_file_{kind}_{segment}")
+            if st.button("Valida estratto", key=f"gme_import_{kind}_{segment}") and file is not None:
+                try:
+                    if file.size > g.MAX_BYTES:
+                        raise ValueError("Estratto GME oltre 4 MiB.")
+                    item = g.parse(file.getvalue(), kind, cutoff, segment=segment)
+                except ValueError as error:
+                    st.warning(str(error))
+                else:
+                    _save(item)
     if item is not None:
         _credit(item)
         if prefix == "gme" and st.button("Rimuovi estratto", key="gme_clear_"+kind):
-            if authorized:
-                _private_cache().pop((kind, segment), None)
-            else:
-                st.session_state[DEMO_STATE].pop(kind, None)
+            _session_cache().pop((kind, segment), None)
             st.rerun()
         _results(item, prefix=prefix, day=day)
-    else:
-        st.caption("Nessun estratto caricato. Consulta gli esiti ufficiali o acquisisci un periodo.")
     if prefix == "gme":
-        with st.expander("Fonti e accesso"):
+        with st.expander("Fonti"):
             st.markdown(f"[Riferimento GME]({spec.source_url(segment)}) · "
                         f"[Manuale API]({g.MANUAL}) · [Condizioni GME]({g.TERMS})")
 
@@ -292,7 +269,7 @@ def _series(rows, spec, field, item, key):
 
 
 def overview_kpis(day):
-    if not g.session_authorized():
+    if not g.api_configured():
         return
     cards = []
     for kind, field, caption in (("igi", "Price", "IGI · GME"),
@@ -384,7 +361,7 @@ def risk():
 
 def assistant():
     st.subheader("Indicatori GME · consultazione locale")
-    cache = _private_cache()
+    cache = _session_cache()
     available = [key for key, item in (cache or {}).items() if item["origin"] == "api" and item["rows"]]
     if not available:
         st.caption("Carica un estratto in Mercato gas prima di consultare gli indicatori.")
