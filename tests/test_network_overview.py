@@ -8,6 +8,7 @@ import pytest
 import requests
 from streamlit.testing.v1 import AppTest
 
+from gasops_app.system_status_page import ARCHIVE_KEY
 from gasops_app import italian_network_page as view, session
 from gasops_app.italian_network_map import deck, label_layout
 
@@ -32,7 +33,9 @@ def test_both_home_modes_open_map_and_side_panel_without_api_calls(monkeypatch,t
         calls.append(kw)
         return original(*a,**kw)
     monkeypatch.setattr(view.st,"pydeck_chart",capture)
-    app=AppTest.from_file(ROOT/"app.py",default_timeout=30).run()
+    app=AppTest.from_file(ROOT/"app.py",default_timeout=30)
+    app.session_state[ARCHIVE_KEY] = True
+    app.run()
     assert not app.exception and app.title[0].value == "I.G.O.R. — Sistema Gas Italiano"
     assert len(app.get("deck_gl_json_chart")) == 1 and calls[0]["height"] == 500
     assert "overview" in calls[0]["key"] and callable(calls[0]["on_select"])
@@ -122,7 +125,9 @@ def test_history_reserves_date_axis_space_and_uses_dark_theme(monkeypatch,tmp_pa
         figures.append(fig)
         original(fig,**kw)
     monkeypatch.setattr(view,"plot",plot)
-    app=AppTest.from_string("from gasops_app.italian_network_page import panel\npanel()",default_timeout=30).run()
+    app=AppTest.from_string("from gasops_app.italian_network_page import panel\npanel()",default_timeout=30)
+    app.session_state[ARCHIVE_KEY] = True
+    app.run()
     assert not app.exception
     fig=figures[0]
     assert fig.layout.margin.b >= 50 and fig.layout.xaxis.automargin
@@ -162,7 +167,9 @@ def test_crowded_labels_are_decluttered_without_moving_the_markers():
 
 def test_overview_exposes_same_operational_history_and_keeps_missing_values_missing(monkeypatch,tmp_path):
     offline(monkeypatch,tmp_path)
-    app=AppTest.from_string("from gasops_app.italian_network_page import panel\npanel(mode='overview')",default_timeout=30).run()
+    app=AppTest.from_string("from gasops_app.italian_network_page import panel\npanel(mode='overview')",default_timeout=30)
+    app.session_state[ARCHIVE_KEY] = True
+    app.run()
     assert not app.exception
     assert [t.label for t in app.tabs] == ["Dati","Storico","Eventi","Fonti"]
     assert app.selectbox(key="net_overview_indicator").value == "Physical Flow"

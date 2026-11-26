@@ -117,7 +117,7 @@ def _inventory_rows(text, platform):
     return data
 
 
-def parse_agsi(text, acquired, *, scope, cached=False, failed=False):
+def parse_agsi(text, acquired, *, scope, cached=False, failed=False, first=None, last=None):
     data=_inventory_rows(text,"AGSI")
     today=acquired.astimezone(ROME).date()
     rows={}
@@ -125,7 +125,7 @@ def parse_agsi(text, acquired, *, scope, cached=False, failed=False):
         if str(item["code"]).upper()!=scope:
             raise SourceSchemaError("Perimetro AGSI non riconosciuto.")
         day=date.fromisoformat(item["gasDayStart"])
-        if not today-timedelta(days=91)<=day<today:
+        if not (first or today-timedelta(days=91)) <= day <= (last or today-timedelta(days=1)):
             raise SourceSchemaError("Giorno-gas AGSI fuori intervallo.")
         status=item["status"]
         if status not in ("C","E","N"):
@@ -149,22 +149,8 @@ def parse_agsi(text, acquired, *, scope, cached=False, failed=False):
             "platform":"AGSI+",**attribution("AGSI+")}
 
 
-def load_agsi(store,api_key,scope="IT",*,now=None,refresh=False):
-    if scope not in ("IT","DE","EU") or not api_key or not api_key.strip():
-        raise ValueError("Chiave AGSI o perimetro non valido.")
-    now=now or utc_now()
-    today=now.astimezone(ROME).date()
-    last=today-timedelta(days=1)
-    params={"from":(last-timedelta(days=89)).isoformat(),"to":last.isoformat(),"size":100,"page":1}
-    params.update({"country":scope} if scope!="EU" else {"type":"eu"})
-    def parse(text,acquired,**kwargs):
-        return parse_agsi(text,acquired,scope=scope,**kwargs)
-    result=retrieve(store,key="agsi-public-v2-"+scope,name="GIE AGSI+",url=AGSI_URL,
-                    parse=parse,ttl=timedelta(hours=24),params=params,
-                    attempts=1,headers={"x-key":api_key.strip(),"Accept":"application/json"},
-                    timeout=(5,20),diagnostics=True,refresh=refresh)
-    return result if result.get("cached") or result.get("failed") else {
-        **result,"first":date.fromisoformat(params["from"]),"last":date.fromisoformat(params["to"])}
+def load_agsi(store,api_key,scope="IT",*,now=None,refresh=False,first=None,last=None):
+    return _load_inventory(store, api_key, "AGSI+", scope, now, refresh, first, last)
 
 
 def jarvis_template():
@@ -219,7 +205,7 @@ def parse_jarvis(content:bytes, *, now=None):
     return {"versions":versions,"latest":latest,"sha256":sha256(content).hexdigest()}
 
 
-def parse_alsi(text, acquired, *, scope, cached=False, failed=False):
+def parse_alsi(text, acquired, *, scope, cached=False, failed=False, first=None, last=None):
     """LNG liquid volume remains separate from energy; no assumed conversion factor."""
     data=_inventory_rows(text,"ALSI")
     today=acquired.astimezone(ROME).date()
@@ -228,7 +214,7 @@ def parse_alsi(text, acquired, *, scope, cached=False, failed=False):
         if str(item["code"]).upper()!=scope:
             raise SourceSchemaError("Perimetro ALSI non riconosciuto.")
         day=date.fromisoformat(item["gasDayStart"])
-        if not today-timedelta(days=91)<=day<today:
+        if not (first or today-timedelta(days=91)) <= day <= (last or today-timedelta(days=1)):
             raise SourceSchemaError("Giorno-gas ALSI fuori intervallo.")
         status=item.get("status")
         if status not in (None,"C","E","N"):
@@ -260,21 +246,35 @@ def parse_alsi(text, acquired, *, scope, cached=False, failed=False):
             "platform":"ALSI",**attribution("ALSI")}
 
 
-def load_alsi(store,api_key,scope="IT",*,now=None,refresh=False):
-    if scope not in ("IT","EU") or not api_key or not api_key.strip():
-        raise ValueError("Chiave ALSI o perimetro non valido.")
-    now=now or utc_now()
-    last=now.astimezone(ROME).date()-timedelta(days=1)
-    params={"from":(last-timedelta(days=89)).isoformat(),"to":last.isoformat(),"size":100,"page":1}
-    params.update({"country":"IT"} if scope=="IT" else {"type":"eu"})
-    def parse(text,acquired,**kwargs):
-        return parse_alsi(text,acquired,scope=scope,**kwargs)
-    result=retrieve(store,key="alsi-public-v2-"+scope,name=GIE_CREDIT["ALSI"],url=ALSI_SOURCE+"api",
-                    parse=parse,ttl=timedelta(hours=24),params=params,
-                    attempts=1,headers={"x-key":api_key.strip(),"Accept":"application/json"},
-                    timeout=(5,20),diagnostics=True,refresh=refresh)
-    return result if result.get("cached") or result.get("failed") else {
-        **result,"first":date.fromisoformat(params["from"]),"last":date.fromisoformat(params["to"])}
+def load_alsi(store,api_key,scope="IT",*,now=None,refresh=False,first=None,last=None):
+    return _load_inventory(store, api_key, "ALSI", scope, now, refresh, first, last)
+
+
+def _load_inventory(store, api_key, platform, scope, now, refresh, first, last):
+    storage = platform == "AGSI+"
+    if scope not in (("IT","DE","EU") if storage else ("IT","EU")) or not api_key or not api_key.strip():
+        raise ValueError("Chiave GIE o perimetro non valido.")
+    now = now or utc_now()
+    latest = now.astimezone(ROME).date()-timedelta(days=1)
+    ranged = first is not None or last is not None
+    last = last or latest
+    first = first or last-timedelta(days=89)
+    if not 0 <= (last-first).days < 90 or last > latest:
+        raise ValueError("Periodo GIE non valido.")
+    params = {"from":first.isoformat(),"to":last.isoformat(),"size":100,"page":1}
+    params.update({"country":scope} if scope!="EU" else {"type":"eu"})
+    parser = parse_agsi if storage else parse_alsi
+    kind = "agsi" if storage else "alsi"
+    key = f"{kind}-public-range-v1:{scope}:{first}:{last}" if ranged else f"{kind}-public-v2-{scope}"
+    def parse(text, acquired, **kwargs):
+        data = parser(text, acquired, scope=scope, first=first if ranged else None,
+                      last=last if ranged else None, **kwargs)
+        return {**data,"first":first,"last":last} if ranged else data
+    result = retrieve(store,key=key,name=GIE_CREDIT[platform],url=AGSI_URL if storage else ALSI_SOURCE+"api",
+        parse=parse,ttl=timedelta(hours=24),params=params,attempts=1,
+        headers={"x-key":api_key.strip(),"Accept":"application/json"},timeout=(5,20),
+        diagnostics=True,refresh=refresh)
+    return result if result.get("cached") or result.get("failed") else {**result,"first":first,"last":last}
 
 
 IIP_PAGE_SIZE = 20

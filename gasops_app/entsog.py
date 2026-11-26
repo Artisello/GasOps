@@ -5,7 +5,7 @@ No supply, storage capacity, trading prices or official national coverage are in
 Live endpoint contract must be verified before claiming successful deployment.
 """
 from calendar import monthrange
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 import json
 import math
@@ -41,6 +41,7 @@ class Month:
     valid_slots: int = 0
     expected_slots: int = 0
     metadata_warning: bool = False
+    revisions: dict = field(default_factory=dict)
 
 
 def _start(day):
@@ -138,7 +139,14 @@ def parse_month(payload: dict, first: date, last: date, retrieved_at: datetime,
                 raise SourceSchemaError("Flusso ENTSOG non valido.")
             number/=1_000_000
         # Conflicting releases remain missing, never pick an arbitrary version.
-        grouped.setdefault(key,set()).add(number)
+        raw_revision = item.get("lastUpdateDateTime", item.get("lastUpdateDate"))
+        try:
+            stamp = datetime.fromisoformat(raw_revision.replace("Z", "+00:00"))
+            if stamp.tzinfo is None or stamp > retrieved_at:
+                stamp = None
+        except (AttributeError, ValueError):
+            stamp = None
+        grouped.setdefault(key,set()).add((stamp,number))
         flag=notes.setdefault(day,set())
         if metadata_warning:
             flag.add("metadati_totale_discordante")
@@ -146,10 +154,15 @@ def parse_month(payload: dict, first: date, last: date, retrieved_at: datetime,
         flag.add(status.replace(" ","_")[:80])
         if naive or end_naive:
             flag.add("timestamp_senza_offset_allineato")
-    values={}
+    values,revisions={},{}
     for key, candidates in grouped.items():
-        if len(candidates)==1:
-            values[key]=next(iter(candidates))
+        ordered = all(stamp is not None for stamp,_ in candidates)
+        latest = max(stamp for stamp,_ in candidates) if ordered else None
+        amounts = {value for stamp,value in candidates if not ordered or stamp == latest}
+        if latest is not None:
+            revisions[key] = latest
+        if len(amounts)==1:
+            values[key]=next(iter(amounts))
         else:
             values[key]=None
             notes[key[0]].add("versioni_in_conflitto")
@@ -169,7 +182,7 @@ def parse_month(payload: dict, first: date, last: date, retrieved_at: datetime,
     if not any(all(values.get((day,field)) is not None for field in FIELDS)
                for day in notes):
         raise SourceSchemaError("Nessun giorno con i tre aggregati ENTSOG completi.")
-    return Month(values,notes,retrieved_at,cached,failed,complete,len(expected),metadata_warning)
+    return Month(values,notes,retrieved_at,cached,failed,complete,len(expected),metadata_warning,revisions)
 
 
 def _last_completed(now: datetime) -> date:
@@ -191,10 +204,18 @@ def month_windows(last: date, months: int=MAX_MONTHS):
 def combine(months: list[Month], first: date, last: date) -> Bundle:
     if not months:
         raise SourceUnavailable("ENTSOG non disponibile; scegli Eurostat o l’archivio locale.")
-    data,notes={},{}
+    data,notes,revisions={},{},{}
     for month in months:
-        data.update(month.values)
         notes.update(month.flags)
+        for key,value in month.values.items():
+            edition = month.revisions.get(key)
+            known = revisions.get(key)
+            if known is not None and (edition is None or edition<known):
+                continue
+            if known is not None and edition==known and value!=data[key]:
+                value = None
+                notes.setdefault(key[0],set()).add("versioni_in_conflitto")
+            data[key],revisions[key] = value,edition
     periods=pd.date_range(first,last,freq="D")
     rows=[]
     latest=None
@@ -233,13 +254,45 @@ def query_params(first: date, last: date):
             "timeZone":"CET","limit":500}
 
 
+RANGE_CACHE = "entsog-srg-window-v1:"
+
+
+def load_range(store, first, last, *, now=None, refresh=False):
+    if not 0 <= (last-first).days < 31 or last > _last_completed(now or utc_now()):
+        raise SourceSchemaError("Seleziona da 1 a 31 giorni gas conclusi.")
+    def parse(text, acquired, **kwargs):
+        return parse_month(json.loads(text),first,last,acquired,allow_partial=True,**kwargs)
+    return retrieve(store,key=f"{RANGE_CACHE}{first}:{last}",name="ENTSOG · prelievi SRG",
+        url=URL,params=query_params(first,last),parse=parse,ttl=timedelta(hours=12),
+        attempts=1,timeout=(5,20),diagnostics=True,refresh=refresh)
+
+
+def cached_ranges(store, first, last, now):
+    """Read only validated SRG windows overlapping the requested interval."""
+    results = []
+    for key,_,size in store.cached_entries(RANGE_CACHE,window=(first,last),limit=24):
+        if size>1_000_000:
+            continue
+        try:
+            left,right = map(date.fromisoformat,key[len(RANGE_CACHE):].split(":"))
+            at,raw = store.cached(key)
+            acquired = datetime.fromisoformat(at)
+            if acquired.tzinfo is None or acquired>now:
+                continue
+            results.append((left,right,parse_month(json.loads(raw),left,right,acquired,cached=True,allow_partial=True)))
+        except (ValueError,TypeError,KeyError):
+            continue
+    return results
+
+
 def load(store: Store, *, refresh=False, now: datetime|None=None, months=MAX_MONTHS) -> tuple[Bundle,str|None]:
     """Fetch bounded monthly windows sequentially; cache completed older months.
 
     Refresh current and preceding month only. Stop after an unavailable older
     month rather than hammering the public API. No silent synthetic fallback.
     """
-    last=_last_completed(now or utc_now())
+    now = now or utc_now()
+    last=_last_completed(now)
     loaded=[]
     warnings=[]
     earliest=last.replace(day=1)
@@ -261,10 +314,17 @@ def load(store: Store, *, refresh=False, now: datetime|None=None, months=MAX_MON
         earliest=first
         if month.expected_slots and month.valid_slots<month.expected_slots:
             warnings.append(f"{first:%m/%Y}: copertura parziale ENTSOG {month.valid_slots}/{month.expected_slots} valori giorno-settore; soltanto i giorni completi contribuiscono al totale.")
+    monthly_count = len(loaded)
+    windows = cached_ranges(store,last-timedelta(days=89),last,now) if store is not None else []
+    if windows:
+        earliest = min(earliest,*(first for first,_,_ in windows))
+        loaded = sorted((*loaded,*(window for _,_,window in windows)),key=lambda item:item.retrieved_at)
+        if not monthly_count and not refresh:
+            warnings.clear()
     if not loaded:
         raise SourceUnavailable("ENTSOG non disponibile. " + " ".join(warnings))
     bundle=combine(loaded,earliest,last)
-    if len(loaded)<months:
+    if monthly_count<months:
         warnings.append("Storico parziale: nessuna sostituzione con dati di esempio.")
     if any(m.metadata_warning for m in loaded):
         warnings.append("ENTSOG: totale dichiarato discordante; verificati i singoli valori ricevuti. Completezza delle eventuali revisioni non certificata.")

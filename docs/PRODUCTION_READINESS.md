@@ -22,13 +22,19 @@ Target: independent public demonstration, not production Snam operations. No off
 | Dependencies | Manual audit and resolved inventory | Pending |
 | Public demo | Nine routes, desktop/mobile, dual sessions | Pending deployed smoke |
 | Public providers | Current authorized source response and attribution | Partial; previously tested contracts vary |
-| Jarvis/GME | Native public formats and permission | Manual/link-only |
+| Jarvis/GME | Authorized native sources | Jarvis uploads, GME background API in active sessions |
 | Terna/GIE | Real authenticated tests and terms | Pending operator |
 | Regulations and settlement | Current editions, independently reconciled examples | Study only |
 | Monitoring | Enabled job and protected archive with recovery test | Opt-in, not activated here |
 | Formal production use | Snam owner review, access model, security/compliance and operational acceptance | Not certified |
 
 Release only a clearly labelled demo after gates relevant to the demo pass. A real operational deployment needs an authorized environment, access control, independent validation, data retention and support ownership. Do not erase or modify existing data as part of this checklist.
+
+## Operational sources in Overview and Security of Supply
+
+Overview and the existing operational views read the validated SQLite cache and submit background work on demand or when evidence is due. A cold start requests 90 completed Italian gas days. Requests for the most recent seven days take precedence. The ENTSOG network worker processes every verified direction with bounded date windows, timeouts and pacing. National AGSI+/ALSI reuse the configured GIE key. Incremental runs refresh the recent window after 12 hours for ENTSOG/SRG and 24 hours for GIE. Selecting an uncached date requests that date. After a timeout or quota error the last validated copy remains available with its acquisition time. Failed recent requests are eligible again after 15 minutes. Use a persistent volume for `GASOPS_STATE_DIR` to retain SQLite state across deployment restarts. [ENTSOG API guide](https://transparency.entsog.eu/api/archiveDirectories/8/api-manual/ENTSOG_TP_API_UserManual_v3.0.pdf).
+
+The default date is the latest completed gas day with at least 80% of the best observed coverage in the visible history. This compares valid point directions, SRG sector totals and available GIE aggregates. Balance components use the selected gas day with Europe/Rome boundaries, including 23/25-hour days. The storage stock KPI can show an earlier date explicitly. Use **Fonti operative → Consulta lo snapshot storico** for the bundled archive. The map refresh includes all verified points for the selected period and the selected infrastructure's optional details.
 
 ## 23 November 2026 hardening: scope and contracts
 
@@ -52,13 +58,13 @@ Primary status precedence: unavailable measure → failed refresh with retained 
 
 Cache thresholds stay separate from tolerated observation age: 12 hours for ENTSOG/ARERA/Terna diagnostic rows, 24 hours for GIE inventories, six hours for weather outlook and 24 hours for archived weather. A three-day observation allowance never extends a provider's 24-hour cache threshold. The final freshness/source-health regressions cover this independently (**51 passed** locally).
 
-Provider capabilities extend the existing Fonti e API catalog, without a second connector registry. Configuration, successful last explicit reachability/schema check, usable observations, period, acquisition and limitations are separate columns. No live check means **Verifica live pendente**, not connected/validated. Public archives (including MASE) remain historical; Jarvis and GME remain manual/link-only in the public profile. Live authenticated GIE/Terna validation remains pending operator access.
+Provider capabilities extend the existing Fonti e API catalog, without a second connector registry. Configuration, successful last explicit reachability/schema check, usable observations, period, acquisition and limitations are separate columns. No live check means **Verifica live pendente**, not connected/validated. Public archives (including MASE) remain historical; Jarvis uses authorized imports. GME uses the configured API with a session-local cache. AGSI+ and ALSI were verified against the Italian aggregates. Live Terna validation remains pending operator access.
 
 ### Loading and usability
 
 - Route modules and statistical/document-search libraries load on demand; formulas and parameters are unchanged. Empty PDF workspaces do not import the text-indexing library.
 - Public repository PDF metadata is cheap to show; “Apri PDF pubblici” authorizes indexing. The index is then reused across reruns and public sessions. Private/session PDFs never enter that cache.
-- Remote archive refresh and GIE acquisitions require explicit controls. Switching a provider/filter does not fetch. Market source rendering reads only validated existing cache; “Aggiorna dati” authorizes acquisition. An expired local copy retains its original timestamp and is not reported as a failed request when no request occurred.
+- Remote archive refresh and IIP/other GIE perimeters require explicit controls. National AGSI+/ALSI use the shared background reader described above. Market source rendering reads only validated existing cache; “Aggiorna dati” authorizes acquisition. An expired local copy retains its original timestamp and is not reported as a failed request when no request occurred.
 - Opening the assistant prepares controls only; it no longer runs a forecast/report or chooses a remote model. Existing starters, reports, exports and explicit AI activation remain available.
 
 ### Reproducible acceptance

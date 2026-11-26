@@ -8,7 +8,7 @@ from streamlit.testing.v1 import AppTest
 
 from gasops_app import italian_network_page as view, session
 from gasops_app.system_status import build_status
-from gasops_app.system_status_page import DAY_KEY, SELECTED_DAY
+from gasops_app.system_status_page import ARCHIVE_KEY, DAY_KEY, SELECTED_DAY
 
 ROOT = Path(__file__).resolve().parents[1]
 NOW = datetime(2026,11,22,12,tzinfo=timezone.utc)
@@ -29,7 +29,9 @@ def offline(monkeypatch, tmp_path):
 @pytest.mark.parametrize("mode", ["demo", "workbench"])
 def test_system_status_has_four_kpis_nine_components_and_keeps_demo_separate(offline, monkeypatch, mode):
     monkeypatch.setenv("GASOPS_APP_MODE", mode)
-    app = AppTest.from_file(ROOT/"app.py", default_timeout=30).run()
+    app = AppTest.from_file(ROOT/"app.py", default_timeout=30)
+    app.session_state[ARCHIVE_KEY] = True
+    app.run()
     assert not app.exception
     assert app.title[0].value == "I.G.O.R. — Sistema Gas Italiano"
     bodies = [h.proto.body for h in app.get("html")]
@@ -55,6 +57,7 @@ def test_finding_opens_verified_point_with_same_day_and_preserves_evidence(offli
     status = build_status(n, snapshots, {}, NOW, interruptions=(view.bundled_interruptions(),))
     finding = next(f for f in status.attention if f.rule == "capacity_utilization")
     app = AppTest.from_file(ROOT/"app.py", default_timeout=30)
+    app.session_state[ARCHIVE_KEY] = True
     app.session_state["unrelated_evidence"] = {"sha":"keep"}
     app.run()
     app.button(key="system_attention_"+finding.id).click().run()
@@ -66,7 +69,9 @@ def test_finding_opens_verified_point_with_same_day_and_preserves_evidence(offli
 
 def test_selected_day_survives_date_threshold_reruns_and_return_from_map(offline, monkeypatch):
     monkeypatch.setenv("GASOPS_APP_MODE", "demo")
-    app = AppTest.from_file(ROOT/"app.py", default_timeout=30).run()
+    app = AppTest.from_file(ROOT/"app.py", default_timeout=30)
+    app.session_state[ARCHIVE_KEY] = True
+    app.run()
     chosen = date(2026,11,19)
     app.date_input(key=DAY_KEY).set_value(chosen).run()
     assert not app.exception and app.session_state[SELECTED_DAY] == chosen
@@ -83,10 +88,32 @@ def test_selected_day_survives_date_threshold_reruns_and_return_from_map(offline
 
 def test_active_day_is_labeled_and_map_drilldown_uses_last_completed_day(offline, monkeypatch):
     monkeypatch.setenv("GASOPS_APP_MODE", "demo")
-    app = AppTest.from_file(ROOT/"app.py", default_timeout=30).run()
+    app = AppTest.from_file(ROOT/"app.py", default_timeout=30)
+    app.session_state[ARCHIVE_KEY] = True
+    app.run()
     app.date_input(key=DAY_KEY).set_value(date(2026,11,22)).run()
     assert not app.exception
     assert any("Giorno gas attivo" in h.proto.body for h in app.get("html"))
     assert any("0/9 componenti" in c.value for c in app.caption)
     app.button(key="net_overview_open").click().run()
     assert not app.exception and app.date_input(key="net_period").value[-1] == date(2026,11,21)
+
+
+def test_cold_overview_does_not_implicitly_render_bundled_evidence(offline, monkeypatch):
+    scheduled = []
+    monkeypatch.setattr(view.acquisition, "schedule", lambda *a, **kw: scheduled.append(kw))
+    app = AppTest.from_file(ROOT/"app.py", default_timeout=30).run()
+    assert not app.exception and app.date_input(key=DAY_KEY).value == date(2026,11,21)
+    assert any("0/9 componenti" in c.value for c in app.caption)
+    assert scheduled and "first" not in scheduled[0]
+    app.checkbox(key=ARCHIVE_KEY+"_overview").check().run()
+    assert not app.exception and app.date_input(key=DAY_KEY).value == date(2026,11,20)
+    assert any("Snapshot storico incluso" in c.value for c in app.caption)
+    app.checkbox(key=ARCHIVE_KEY+"_overview").uncheck().run()
+    picked = date(2026,10,24)
+    app.date_input(key=DAY_KEY).set_value(picked).run()
+    assert not app.exception
+    assert scheduled[-1]["first"] == scheduled[-1]["last"] == picked
+    assert any("25 ore" in c.value for c in app.caption)
+    app.button(key="ops_default_day").click().run()
+    assert app.date_input(key=DAY_KEY).value == date(2026,11,21)

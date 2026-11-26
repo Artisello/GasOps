@@ -1,5 +1,7 @@
 """GME workspace and session-only observations shared with existing views."""
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
+from threading import BoundedSemaphore
 from decimal import Decimal as D
 
 import pandas as pd
@@ -10,10 +12,16 @@ from . import gme_market as g
 from .gas_calendar import closed_gas_day
 from .italiano import data_it
 from .models import utc_now
+from .public_data import network_allowed
 from .visuals import BLUE, TEAL, kpi_grid, local_time, mini_chart, plot
 
 STATE = "gme_private_market_v2"
-CACHE_TIME = timedelta(minutes=15)
+REFRESH_STATE = "gme_automatic_refresh_v1"
+RECENT_TTL = timedelta(hours=1)
+HISTORICAL_TTL = timedelta(hours=12)
+ERROR_TTL = timedelta(minutes=30)
+_WORKER = ThreadPoolExecutor(max_workers=1, thread_name_prefix="gasops-gme")
+_SLOT = BoundedSemaphore()
 CACHE_SIZE = 12
 FIELDS = {
     "MaxPurchaseSRGPrice": "Massimo acquisto SRG", "MinSaleSRGPrice": "Minimo vendita SRG",
@@ -79,62 +87,103 @@ def _credit(item):
     st.caption(caption)
 
 
-def _acquisition(kind, segment, prefix, cutoff, day=None):
+def _window(kind, segment, ending, days):
+    return kind, segment, max(g.FIRST_DAY, ending-timedelta(days=days-1)), ending
+
+
+def _submit(window, cutoff):
     from .gme_api import session_client
-    previous = snapshot(kind, segment)
-    context = f"{prefix}_{kind}_{segment}" + (f"_{day.isoformat()}" if day else "")
-    with st.expander("Carica dati GME", expanded=previous is None):
-        spec = g.DATASETS[kind]
-        ending = min(day or cutoff, cutoff)
-        period = st.date_input("Periodo · " + FIELDS[spec.date_field].lower(),
-                               value=(max(g.FIRST_DAY, ending - timedelta(days=6)), ending), min_value=g.FIRST_DAY,
-                               max_value=cutoff, format="DD/MM/YYYY", key=context+"_period")
-        key = context+"_notice"
-        controls, quota = st.columns([2, 1])
-        if controls.button("Carica dall’API", type="primary", key=context+"_fetch"):
-            try:
-                if not isinstance(period, tuple) or len(period) != 2:
-                    raise ValueError("Seleziona l’inizio e la fine dell’intervallo.")
-                first, last = period
-                g.validate_window(kind, segment, first, last, cutoff)
-                if (previous and previous["origin"] == "api" and previous["first"] == first
-                        and previous["last"] == last and utc_now() - previous["acquired"] < CACHE_TIME):
-                    st.session_state[key] = ("caption", "Copia della sessione già aggiornata.")
-                else:
-                    with st.spinner("Acquisizione GME…"):
-                        refreshed = session_client().fetch(kind, segment, first, last, cutoff)
-                    if not refreshed["rows"] and previous and previous["rows"]:
-                        st.session_state[key] = ("warning", "Nessuna osservazione nel nuovo periodo · ultima copia conservata.")
-                    else:
-                        _save(refreshed)
-                        st.session_state[key] = ("caption", f"{len(refreshed['rows'])} osservazioni validate.")
-            except ValueError as error:
-                message = str(error) + (" · ultima copia conservata." if previous else "")
-                st.session_state[key] = ("warning", message)
-        with quota, st.popover("Quote", width="stretch"):
-            _quota_panel(prefix)
-        if key in st.session_state:
-            severity, notice = st.session_state[key]
-            getattr(st, severity)(notice)
-        if kind == "pgr":
-            st.caption("PGR indicato come inattivo nel manuale API. La disponibilità dipende dalla fonte.")
-    return snapshot(kind, segment)
+    if not _SLOT.acquire(blocking=False):
+        return None
+    try:
+        future = _WORKER.submit(session_client().fetch, *window, cutoff)
+    except Exception:
+        _SLOT.release()
+        raise
+    future.add_done_callback(lambda _: _SLOT.release())
+    return future
 
 
-def _quota_panel(prefix):
-    from .gme_api import QUOTAS, session_client
-    key = prefix + "_gme_quota"
-    if st.button("Controlla quote", key=key):
+def _next_window(windows, cache, attempts, now, cutoff):
+    for kind, segment, first, last in windows:
+        item = cache.get((kind,segment))
+        covered = item and item["origin"]=="api" and item["first"]<=first<=last<=item["last"]
+        if covered:
+            first, last = item["first"], item["last"]
+        window = kind, segment, first, last
+        ttl = RECENT_TTL if last >= cutoff-timedelta(days=6) else HISTORICAL_TTL
+        checked, error = attempts.get(window, (None,None))
+        if checked and ((error and now-checked<ERROR_TTL) or (covered and now-checked<ttl)):
+            continue
+        if covered and not error and now-item["acquired"]<ttl:
+            continue
+        return window
+    return None
+
+
+def _finished(window, result, attempts):
+    # Preserve the previous edition if the publisher returns an empty response.
+    previous = snapshot(*window[:2], api_only=True)
+    error = None
+    try:
+        item = result.result()
+        if item["rows"] or not previous or not previous["rows"]:
+            _save(item)
+        else:
+            error = "Nessuna osservazione nel nuovo periodo."
+    except ValueError as exc:
+        error = str(exc)
+    attempts[window] = (utc_now(),error)
+    if len(attempts)>32:
+        del attempts[next(iter(attempts))]
+
+
+@st.fragment(run_every=15)
+def _automatic_sources(windows):
+    if not g.api_configured() or not windows:
+        st.session_state.pop(REFRESH_STATE, None)
+        return
+    state = st.session_state.setdefault(REFRESH_STATE, {"attempts":{}})
+    attempts = state["attempts"]
+    if state.get("working"):
+        window, job = state["working"]
+        if not job.done():
+            st.caption("Acquisizione GME in corso.")
+            return
+        state.pop("working")
+        _finished(window,job,attempts)
+        st.rerun()
+    now = utc_now()
+    cutoff = closed_gas_day(now)
+    window = _next_window(windows,_session_cache(),attempts,now,cutoff)
+    if window and network_allowed():
         try:
-            st.session_state[key+"_result"] = (session_client().quotas(), utc_now())
-        except ValueError as error:
-            st.warning(str(error))
-    state = st.session_state.get(key+"_result")
-    if state:
-        quotas, checked = state
-        st.dataframe([{"Quota": label, "Utilizzo corrente": quotas[field][0], "Limite": quotas[field][1]}
-                      for field, _, label in QUOTAS], hide_index=True)
-        st.caption("Verifica " + local_time(checked))
+            job = _submit(window,cutoff)
+        except ValueError as exc:
+            attempts[window] = (now,str(exc))
+        else:
+            if job is not None:
+                state["working"] = (window,job)
+                st.caption("Acquisizione GME in corso.")
+                return
+    for request in windows:
+        errors = [error for key, (_,error) in attempts.items()
+                  if key[:2]==request[:2] and key[2]<=request[2]<=request[3]<=key[3]]
+        if errors and errors[-1]:
+            st.caption(g.DATASETS[request[0]].label + " · " + errors[-1])
+
+
+def _panel_period(kind, segment, prefix, cutoff, day):
+    spec = g.DATASETS[kind]
+    ending = min(day or cutoff,cutoff)
+    _,_,first,last = _window(kind,segment,ending,31 if kind in ("igi","prices") else 7)
+    context = f"{prefix}_{kind}_{segment}" + (f"_{day.isoformat()}" if day else "")
+    period = st.date_input("Periodo · "+FIELDS[spec.date_field].lower(),value=(first,last),
+        min_value=g.FIRST_DAY,max_value=cutoff,format="DD/MM/YYYY",key=context+"_period")
+    if len(period)!=2 or not 0 <= (period[1]-period[0]).days < 31:
+        st.caption("Seleziona un intervallo fino a 31 giorni.")
+        return None
+    return period
 
 
 def panel(kind=None, *, prefix="gme", day=None):
@@ -148,33 +197,34 @@ def panel(kind=None, *, prefix="gme", day=None):
     if len(spec.segments) > 1:
         segment = st.selectbox("Segmento", spec.segments, key=prefix+"_segment_"+kind)
     if g.api_configured():
-        item = _acquisition(kind, segment, prefix, cutoff, day)
+        period = _panel_period(kind,segment,prefix,cutoff,day)
+        if period:
+            _automatic_sources(((kind,segment,*period),))
+        item = snapshot(kind,segment,api_only=True)
+        if item:
+            _credit(item)
+            if period:
+                rows = tuple(row for row in item["rows"] if
+                             period[0].isoformat() <= row[spec.date_field] <= period[1].isoformat())
+                _results({**item,"rows":rows,"first":max(period[0],item["first"]),
+                          "last":min(period[1],item["last"])},prefix=prefix,day=day)
+        if kind == "pgr":
+            st.caption("PGR indicato come inattivo nel manuale API.")
     else:
-        item = snapshot(kind, segment)
-        if item is None:
-            st.info("Fonte API GME non configurata. Consulta gli esiti ufficiali o importa un estratto.")
-
+        st.info("Fonte API GME non configurata. Consulta gli esiti ufficiali.")
     if prefix == "gme":
-        with st.expander("Importa estratto GME"):
-            file = st.file_uploader("JSON, XML o risposta API JSON", type=["json", "xml"],
-                                    key=f"gme_file_{kind}_{segment}")
-            if st.button("Valida estratto", key=f"gme_import_{kind}_{segment}") and file is not None:
+        with st.expander("Fonti e quote"):
+            if g.api_configured():
+                from .gme_api import QUOTAS, session_client
                 try:
-                    if file.size > g.MAX_BYTES:
-                        raise ValueError("Estratto GME oltre 4 MiB.")
-                    item = g.parse(file.getvalue(), kind, cutoff, segment=segment)
-                except ValueError as error:
-                    st.warning(str(error))
-                else:
-                    _save(item)
-    if item is not None:
-        _credit(item)
-        if prefix == "gme" and st.button("Rimuovi estratto", key="gme_clear_"+kind):
-            _session_cache().pop((kind, segment), None)
-            st.rerun()
-        _results(item, prefix=prefix, day=day)
-    if prefix == "gme":
-        with st.expander("Fonti"):
+                    quota = session_client().last_quota
+                except ValueError:
+                    quota = None
+                if quota is not None:
+                    counts,checked = quota
+                    st.caption("Quote verificate alle "+local_time(checked))
+                    st.dataframe([{"Quota":label,"Uso":counts[field][0],"Limite":counts[field][1]}
+                                  for field,_,label in QUOTAS],hide_index=True,width="stretch")
             st.markdown(f"[Riferimento GME]({spec.source_url(segment)}) · "
                         f"[Manuale API]({g.MANUAL}) · [Condizioni GME]({g.TERMS})")
 
@@ -268,24 +318,66 @@ def _series(rows, spec, field, item, key):
         plot(figure.update_layout(height=280), key+"_series")
 
 
+def _prices(day, *, include_extremes=False):
+    fields = [("igi","Price","IGI · GME"),("prices","WeightedAveragePrice","Prezzo medio di remunerazione · GME")]
+    if include_extremes:
+        fields.extend(("prices",field,FIELDS[field]) for field in ("MaxPurchaseSRGPrice","MinSaleSRGPrice"))
+    cards = []
+    for kind, field, label in fields:
+        item = snapshot(kind,api_only=True)
+        if not item:
+            continue
+        rows = [row for row in item["rows"] if row["FlowDate"]==day.isoformat() and row[field] is not None]
+        if len(rows)!=1:
+            continue
+        row = rows[0]
+        product = row.get("Product")
+        previous = next((r[field] for r in item["rows"] if r["FlowDate"]==(day-timedelta(days=1)).isoformat()
+                         and r.get("Product")==product),None)
+        metadata = [product,data_it(day),f"Acquisito {local_time(item['acquired'])}"]
+        if previous is not None:
+            delta = format(row[field]-previous,"+.3f").replace(".",",")
+            metadata.append(f"{delta} €/MWh su D−1")
+        cards.append((label,row[field],g.EUR_MWH," · ".join(filter(None,metadata)),3,""))
+    return cards
+
+
+def _headline_windows(day):
+    ending = min(day,closed_gas_day(utc_now()))
+    return tuple(_window(kind,g.DATASETS[kind].segments[0],ending,31) for kind in ("igi","prices"))
+
+
 def overview_kpis(day):
     if not g.api_configured():
         return
-    cards = []
-    for kind, field, caption in (("igi", "Price", "IGI · GME"),
-                                 ("prices", "WeightedAveragePrice", "Prezzo medio di remunerazione · GME")):
-        item = snapshot(kind, api_only=True)
-        if item is None:
-            continue
-        rows = [row for row in item["rows"] if row["FlowDate"] == day.isoformat() and row[field] is not None]
-        if len(rows) == 1:
-            row = rows[0]
-            metadata = " · ".join(part for part in (row.get("Product"), data_it(day),
-                         f"Acquisito {local_time(item['acquired'])}") if part)
-            cards.append((caption, row[field], g.EUR_MWH, metadata, 3, ""))
+    st.markdown("**Prezzi gas**")
+    _automatic_sources(_headline_windows(day))
+    cards = _prices(day,include_extremes=True)
     if cards:
         kpi_grid(cards)
         st.caption("Fonte: " + g.SOURCE)
+    else:
+        st.caption("Nessun prezzo GME disponibile per il giorno gas selezionato.")
+
+
+def daily_context(period):
+    """Pair a dated Italian operating readout with market evidence in the browser."""
+    if not g.api_configured():
+        return
+    try:
+        day = date.fromisoformat(period or "")
+    except (TypeError,ValueError):
+        return
+    if not g.FIRST_DAY<=day<=closed_gas_day(utc_now()):
+        return
+    with st.expander("Prezzi GME del giorno gas · consultazione locale"):
+        _automatic_sources(_headline_windows(day))
+        cards = _prices(day)
+        if cards:
+            kpi_grid(cards)
+            st.caption("Fonte: " + g.SOURCE)
+        else:
+            st.caption("Nessun prezzo GME disponibile per "+data_it(day)+".")
 
 
 def balancing(day):
@@ -327,6 +419,8 @@ def _valuation(item, day, key, balance=None):
 
 
 def settlement(balance):
+    if g.api_configured():
+        _automatic_sources((_headline_windows(balance.day)[1],))
     item = snapshot("prices", api_only=True)
     if not item or not any(row["FlowDate"] == balance.day.isoformat() for row in item["rows"]):
         return
@@ -338,9 +432,10 @@ def settlement(balance):
 def risk():
     from .gme_analysis import price_backtest
     st.subheader("Rischio prezzo IGI")
+    _automatic_sources((_headline_windows(closed_gas_day(utc_now()))[0],))
     item = snapshot("igi", api_only=True)
     if not item or not item["rows"]:
-        st.info("Carica fino a 31 giorni IGI in Mercato gas per calibrare il rischio prezzo.")
+        st.info("Serie IGI in attesa di osservazioni validate.")
         return
     _credit(item)
     product = st.selectbox("Prodotto IGI", sorted({row["Product"] for row in item["rows"]}), key="gme_risk_product")
@@ -361,10 +456,11 @@ def risk():
 
 def assistant():
     st.subheader("Indicatori GME · consultazione locale")
+    _automatic_sources(_headline_windows(closed_gas_day(utc_now())))
     cache = _session_cache()
     available = [key for key, item in (cache or {}).items() if item["origin"] == "api" and item["rows"]]
     if not available:
-        st.caption("Carica un estratto in Mercato gas prima di consultare gli indicatori.")
+        st.caption("Indicatori disponibili dopo l’acquisizione automatica.")
         return
     kind, segment = st.selectbox("Indicatore", available,
                                  format_func=lambda key: g.DATASETS[key[0]].label + " · " + key[1],

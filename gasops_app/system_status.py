@@ -212,16 +212,19 @@ def _inventory(state, platform, column, day, now, policy, *, unit="GWh/d", previ
     if acquired is None or acquired > now:
         return absent
     dates = frame.gas_day.map(_day)
-    target = max((d for d in dates if d is not None and d <= day), default=None) if previous else day
-    matches = frame.loc[dates == target] if target is not None else frame.iloc[:0]
-    if matches.empty:
+    targets = sorted({d for d in dates if d is not None and d<=day},reverse=True) if previous else (day,)
+    for target in targets:
+        matches = frame.loc[dates==target]
+        candidates = {(_number(r.get(column)),str(r.get("status","non indicato"))) for _,r in matches.iterrows()}
+        if len(candidates)>1 and not previous:
+            return _missing(day, code, label, "Pubblicazioni giornaliere in conflitto", unit=unit, scope="Italia")
+        if len(candidates)==1:
+            value,status = next(iter(candidates))
+            if value is not None and status!="N":
+                break
+    else:
         return absent
-    candidates = {(_number(r.get(column)), str(r.get("status", "non indicato"))) for _, r in matches.iterrows()}
-    if len(candidates) != 1:
-        return _missing(day, code, label, "Pubblicazioni giornaliere in conflitto", unit=unit, scope="Italia")
-    value, status = next(iter(candidates))
-    if value is None or status == "N":
-        return absent
+    acquired = result.get("acquired_by_day",{}).get(target,acquired)
     if unit == "GWh/d" and target > closed_gas_day(now) and status != "E":
         return absent
     stale = bool(result.get("failed") or saved.get("error") or now-acquired > timedelta(hours=policy.inventory_ttl_hours))
@@ -237,24 +240,27 @@ def _demand(state, day, now, inspections, policy):
     from .live_sources import BUNDLES, validated_inspection
     bundle = state.get(BUNDLES, {}).get("daily")
     source_id, label = "ENTSOG:SRG:sectors", "ENTSOG · prelievi SRG"
-    missing = lambda: _missing(day, source_id, label, "Prelievi settoriali SRG non disponibili", scope="SRG · tre aggregati")
+    missing = lambda expected: _missing(day, source_id, label, "Prelievi settoriali SRG non disponibili",
+                                        expected=expected,scope="SRG · tre aggregati")
     if (day > closed_gas_day(now) or bundle is None or bundle.origin.url != ENTSOG or bundle.origin.archive
             or bundle.origin.kind not in (Kind.LIVE, Kind.HISTORICAL) or bundle.origin.retrieved_at > now):
-        return (missing(), missing(), missing()), None
+        return tuple(missing(expected) for expected in (3,2,1)), None
     try:
         checked = validated_inspection(bundle, now, "daily", inspections=inspections)
     except (ValueError, TypeError, KeyError):
-        return (missing(), missing(), missing()), None
+        return tuple(missing(expected) for expected in (3,2,1)), None
     frame, source = checked.usable, bundle.origin
     def measure(fields):
         if pd.Timestamp(day) not in frame.index or not set(fields) <= set(source.fields):
-            return missing()
+            return missing(len(fields))
         values = [_number(frame.loc[pd.Timestamp(day), f]) for f in fields]
         if any(v is None for v in values):
-            return missing()
-        return Measure(sum(values), "GWh/d", day, source_id, label, source.published_at, source.retrieved_at,
+            return missing(len(fields))
+        retrieved = state.get("srg_window_acquisitions",{}).get(day,source.retrieved_at)
+        failed = state.get("operational_connections",{}).get("srg",{}).get("failed")
+        return Measure(sum(values), "GWh/d", day, source_id, label, source.published_at, retrieved,
             "historical" if day < closed_gas_day(now) else "observed",
-            "stale" if source.refresh_failed or now-source.retrieved_at > timedelta(hours=policy.network_ttl_hours) else "fresh",
+            "stale" if failed or source.refresh_failed or now-retrieved > timedelta(hours=policy.network_ttl_hours) else "fresh",
             Coverage(len(fields), len(fields)), "SRG · aggregati settoriali",
             ("Perimetro SRG, non domanda nazionale certificata",), (bundle.fingerprint,))
     conventional = measure(("distribution_gwh", "industry_gwh"))
@@ -303,6 +309,28 @@ def _event_records(network, state, interruptions, day, now):
     return tuple(events), Coverage(len(queried & expected), len(expected)), unresolved
 
 
+def _best_day(days, observations, demand_frame, state, now, closed, policy):
+    """Latest day with at least 80% of the best observed same-day coverage."""
+    if not days:
+        return closed
+    scores = dict.fromkeys(days,0)
+    points = {(o.gas_day,o.point_direction) for o in observations if o.gas_day in scores
+        and o.indicator=="Physical Flow" and o.value is not None
+        and o.quality_status not in ("conflict","N/A","unaligned")}
+    for day,_ in points:
+        scores[day] += 1
+    if demand_frame is not None:
+        for stamp,row in demand_frame.iterrows():
+            if stamp.date() in scores:
+                scores[stamp.date()] += sum(pd.notna(row.get(field)) for field in ("distribution_gwh","industry_gwh","power_gwh"))
+    for platform,column,unit in (("AGSI+","stock_twh","TWh"),("ALSI","sendout_gwh_d","GWh/d")):
+        for day in days:
+            if _inventory(state,platform,column,day,now,policy,unit=unit).value is not None:
+                scores[day] += 1
+    best = max(scores.values())
+    return max(day for day,score in scores.items() if 5*score>=4*best)
+
+
 def build_status(network, snapshots, state, now, *, gas_day=None, interruptions=(), policy=None):
     """Normalize only evidence in memory; preserve missing values and timestamps."""
     if _stamp(now) is None:
@@ -327,7 +355,7 @@ def build_status(network, snapshots, state, now, *, gas_day=None, interruptions=
                     days.add(candidate)
                     break
     latest_day = max(days, default=None)
-    day = gas_day if gas_day is not None else latest_day or closed
+    day = gas_day if gas_day is not None else _best_day(days,observations,demand_frame,state,now,closed,policy)
     if not isinstance(day, date) or isinstance(day, datetime) or day > active:
         raise ValueError("Giorno gas futuro o non valido")
     categories = {i.id:i.category for i in network.infrastructure}

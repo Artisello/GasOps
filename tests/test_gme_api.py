@@ -1,9 +1,10 @@
 """Mocked protocol, quota and UI smoke tests. No outside calls."""
+from concurrent.futures import Future
 import base64
 import io
 import json
 import zipfile
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 import requests
@@ -12,6 +13,7 @@ from streamlit.testing.v1 import AppTest
 
 from gasops_app import access
 from gasops_app import gme_api as api, gme_market as g
+from gasops_app import gme_market_page as page
 from gasops_app.gme_market_page import STATE
 
 DAY = date(2026, 11, 17)
@@ -179,46 +181,54 @@ def test_api_access_depends_only_on_secrets_and_data_stays_in_the_session(monkey
     else:
         monkeypatch.setenv("GASOPS_PROFILE", profile)
     _configured_gme(monkeypatch)
-    transport = _Transport(_auth(),_Response(_quota()),_data(),_Response(_quota()),_Response({},503))
+    now = datetime(2026,11,18,12,tzinfo=timezone.utc)
+    clock = [now]
+    prices = _Response(_response([{"FlowDate":20261117,"WeightedAveragePrice":42}]))
+    transport = _Transport(_auth(),_Response(_quota()),_data(),_Response(_quota()),prices,
+                           _Response(_quota()),_Response({},503),_Response(_quota()),prices)
     client = _client(transport)
     monkeypatch.setattr(api,"_account",lambda *args:client)
-    script = ("from gasops_app.gme_market_page import overview_kpis, panel\n"
-              "from datetime import date\npanel()\noverview_kpis(date(2026, 11, 17))")
+    monkeypatch.setattr(page,"utc_now",lambda:clock[0])
+
+    def complete(window, cutoff):
+        job = Future()
+        try:
+            job.set_result({**api.session_client().fetch(*window,cutoff),"acquired":clock[0]})
+        except ValueError as error:
+            job.set_exception(error)
+        return job
+
+    monkeypatch.setattr(page,"_submit",complete)
+    script = ("from gasops_app.gme_market_page import overview_kpis\n"
+              "from datetime import date\noverview_kpis(date(2026,11,17))")
     app = AppTest.from_string(script).run()
-    assert len(app.selectbox(key="gme_dataset").options) == len(g.DATASETS)
-    app.selectbox(key="gme_dataset").set_value("igi").run()
-    app.date_input[0].set_value((DAY,DAY)).run()
-    assert not app.exception and not transport.calls
-    app.button(key="gme_igi_IGI_fetch").click().run()
-    assert not app.exception and app.session_state[STATE][("igi","IGI")]["origin"] == "api"
-    assert any(c.value == "Fonte: " + g.SOURCE for c in app.caption)
-    app.button(key="gme_igi_IGI_fetch").click().run()
-    assert len(transport.calls) == 3
-    other_session = AppTest.from_string(script).run()
-    assert not other_session.exception and other_session.session_state[STATE] == {}
-    assert len(transport.calls) == 3
-    app.date_input[0].set_value((DAY-timedelta(days=1),DAY)).run()
-    app.button(key="gme_igi_IGI_fetch").click().run()
-    assert not app.exception and ("igi","IGI") in app.session_state[STATE]
-    assert any("ultima copia conservata" in w.value for w in app.warning)
-    monkeypatch.setattr(st, "secrets", {})
+    assert not app.exception and not app.button and not app.get("file_uploader")
+    assert len(transport.calls)==3
+    app.run().run()
+    assert not app.exception and len(transport.calls)==5
+    assert set(app.session_state[STATE])=={("igi","IGI"),("prices","GAS")}
+    assert any(c.value=="Fonte: "+g.SOURCE for c in app.caption)
     app.run()
-    assert not app.exception and app.session_state[STATE] == {}
-    assert not any(g.SOURCE in c.value for c in app.caption)
-    assert any("non configurata" in info.value for info in app.info)
+    assert len(transport.calls)==5
+    clock[0] += page.RECENT_TTL+timedelta(seconds=1)
+    app.run().run().run()
+    assert not app.exception and len(transport.calls)==9
+    assert app.session_state[STATE][("igi","IGI")]["acquired"]==now
+    assert any("HTTP 503" in c.value for c in app.caption)
+    assert AppTest.from_string("import streamlit as st\nfrom gasops_app.gme_market_page import snapshot\n"
+                               "st.write(snapshot('igi'))").run().session_state[STATE]=={}
+    monkeypatch.setattr(st,"secrets",{})
+    app.run()
+    assert not app.exception and not any(g.SOURCE in c.value for c in app.caption)
 
 
-def test_missing_api_configuration_still_allows_real_file_import(monkeypatch):
-    _configured_gme(monkeypatch)
+def test_missing_api_configuration_links_to_official_results_without_upload(monkeypatch):
     monkeypatch.setattr(st, "secrets", {"gme":{"username":"fixture"}})
     monkeypatch.setattr(api, "_account", lambda *args: pytest.fail("Incomplete credentials reached client"))
-    app = AppTest.from_string("from gasops_app.gme_market_page import panel\npanel()")
-    uploaded = g.parse(b'[{"FlowDate":20261117,"WeightedAveragePrice":42}]', "prices", DAY)
-    app.session_state[STATE] = {("prices","GAS"):uploaded}
-    app.run()
-    assert not app.exception and app.get("file_uploader")
-    assert any("provenienza dichiarata" in c.value for c in app.caption)
-    assert not any("demo" in button.label.lower() or button.label == "Carica dall’API" for button in app.button)
+    app = AppTest.from_string("from gasops_app.gme_market_page import panel\npanel()").run()
+    assert not app.exception and not app.get("file_uploader")
+    assert not any("Carica dall’API" == button.label for button in app.button)
+    assert any("non configurata" in info.value for info in app.info)
     with pytest.raises(api.GMEError,match="incompleta"):
         api.session_client()
 

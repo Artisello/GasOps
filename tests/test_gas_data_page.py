@@ -106,6 +106,7 @@ def test_gie_choices_only_appear_after_real_parsed_series_are_present(offline):
 def test_map_drilldown_enters_explorer_with_same_point_and_period(offline,monkeypatch,mode):
     monkeypatch.setenv("GASOPS_APP_MODE",mode)
     app=AppTest.from_file(ROOT/"app.py",default_timeout=30).run()
+    app.session_state[network_page.ARCHIVE_KEY] = True
     app.session_state[network_page.SELECTED]="it-lng-piombino"
     app.run()
     app.button(key="net_data_explorer_overview").click().run()

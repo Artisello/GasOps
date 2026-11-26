@@ -203,6 +203,8 @@ def load_point(store, binding, first, last, *, refresh=False, now=None):
         times.append(result["acquired"])
         cached |= result["cached"]
         failed |= result["failed"]
+        if result.get("refresh_error"):
+            warnings.append(result["refresh_error"])
         if result["count"] < 200:
             partial |= result["total"] is None or result["total"] != offset + result["count"]
             break
@@ -229,7 +231,7 @@ def load_facility(store, api_key, binding, first, last, *, refresh=False):
         raise ValueError("Periodo GIE non valido")
     parser = parse_agsi if binding.provider == "AGSI+" else parse_alsi
     def parse(text, when, **kwargs):
-        result = parser(text, when, scope=binding.external_id, **kwargs)
+        result = parser(text, when, scope=binding.external_id, first=first, last=last, **kwargs)
         if not result["frame"].gas_day.between(first, last).all():
             raise SourceSchemaError("Periodo GIE estraneo alla richiesta")
         return {**result, "company_eic": binding.operator_id, "facility_eic": binding.external_id}
