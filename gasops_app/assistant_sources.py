@@ -4,8 +4,10 @@ No new providers or private records. Requirements are checked against the
 actual evidence snapshot, not against model-generated source names.
 """
 import re
+from datetime import date, timedelta
 from math import isfinite
-from .italiano import numero
+from urllib.parse import urlsplit
+from .italiano import MESI, numero
 
 MONTHLY="Eurostat / ARERA"
 DAILY="ENTSOG · SRG"
@@ -14,44 +16,121 @@ GIE=("AGSI+","ALSI","IIP")
 WEATHER="Open-Meteo"
 POWER=("Terna · elettricità","Terna · outlook")
 ACER="ACER · GNL"
+NETWORK="ENTSOG · rete italiana"
+GME="GME"
 MARKET=(MONTHLY,DAILY)
 LABELS={MONTHLY:"Eurostat",DAILY:"ENTSOG",PRICE:"ARERA",WEATHER:"Open-Meteo",
         "AGSI+":"GIE AGSI+","ALSI":"GIE ALSI","IIP":"GIE IIP",
-        POWER[0]:"Terna · consuntivi",POWER[1]:"Terna · previsioni",ACER:"ACER · GNL"}
+        POWER[0]:"Terna · consuntivi",POWER[1]:"Terna · previsioni",ACER:"ACER · GNL",NETWORK:NETWORK,GME:"GME"}
 TOPICS=(
-    (MARKET,r"\b(?:domanda|consum[oi]|preliev[oi]|demand|consumption)\b"),
     ((MONTHLY,),r"eurostat|importaz|esportaz|produzione nazionale"),
     ((DAILY,),r"entsog|\bsrg\b|giornalier|settimanal"),
-    ((PRICE,),r"arera|\bpsv\b|cmem|prezz|price"),
-    ((ACER,),r"\bacer\b|\bttf\b|prezz.*(?:gnl|lng)|(?:gnl|lng).*prezz"),
     (("AGSI+",),r"agsi|stoccagg|storage|giacenz|scorte"),
-    (("ALSI",),r"alsi|rigass|send.out|\bgnl\b|\blng\b"),
     (("IIP",),r"\biip\b|\bumm\b|indisponibil|outage"),
     (GIE,r"\bgie\b|sicurezza.*(?:fornitur|approvvigionament)"),
     ((WEATHER,),r"meteo|\bhdd\b|temperatur|climat|fredd|weather"),
-    ((POWER[0],),r"terna|elettric|termoelettric|rinnovabil|fotovoltaic|eolic|power"),
-    ((POWER[1],),r"msd1|outlook|prevision.*(?:terna|elettric|eolic)|(?:terna|elettric).*prevision"),
 )
+DATE_TEXT=r"(?<!\d)(?:\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{4})(?!\d)"
+
+
+def gme_indicators(question):
+    """Recognize the two price datasets shown in the local GME readout."""
+    igi=bool(re.search(r"\bigi\b|\big\s*index\b", question, re.I))
+    imbalance=bool(re.search(r"prezz.{0,35}sbilanciament|sbilanciament.{0,25}prezz|\bimbalance price\b",
+                              question,re.I))
+    if igi or imbalance:
+        return tuple(key for key, matched in (("igi",igi),("prices",imbalance)) if matched)
+    return ("igi","prices") if re.search(r"\bgme\b",question,re.I) else ()
+
+
+_MONTH_DATE=r"(?<!\d)(\d{1,2})\s+("+"|".join(MESI)+r")\s+(\d{4})(?!\d)"
+_RELATIVE_DAY={"ieri":-1,"oggi":0,"domani":1}
+
+
+def mentions_day(question):
+    return bool(re.search(DATE_TEXT+"|"+_MONTH_DATE+r"|\b(?:ieri|oggi|domani)\b",question,re.I))
+
+
+def query_day(question, *, today=None):
+    days=set()
+    try:
+        for raw in re.findall(DATE_TEXT,question):
+            if "/" in raw:
+                day,month,year=map(int,raw.split("/"))
+                days.add(date(year,month,day))
+            else:
+                days.add(date.fromisoformat(raw))
+        for day,month,year in re.findall(_MONTH_DATE,question,re.I):
+            days.add(date(int(year),MESI.index(month.casefold())+1,int(day)))
+    except ValueError:
+        return None
+    if today is not None:
+        days.update(today+timedelta(days=_RELATIVE_DAY[word])
+                    for word in re.findall(r"\b(?:ieri|oggi|domani)\b",question.casefold()))
+    return next(iter(days)) if len(days)==1 else None
 
 
 def requested_sources(question):
     question=question.casefold()
-    names=[]
-    for keys,pattern in TOPICS:
-        if re.search(pattern,question,re.I):
-            names.extend(keys)
-    if re.search(r"\bmercat[oi]\b|\bmarket\b|panoramica|situazione.*gas|gas.*situazione",question):
+    names=[key for keys,pattern in TOPICS if re.search(pattern,question) for key in keys]
+    gme=bool(gme_indicators(question))
+    if gme and DAILY in names and not re.search(r"entsog|preliev|consum|domanda",question):
+        names.remove(DAILY)
+    lng=bool(re.search(r"\b(?:gnl|lng)\b",question))
+    price=bool(re.search(r"prezz|price|quotaz|differenziale",question))
+    acer=bool(re.search(r"\b(?:acer|ttf)\b",question)) or (lng and price)
+    if re.search(r"\b(?:arera|psv)\b|cmem",question) or (price and not (acer or gme)):
+        names.append(PRICE)
+    if acer:
+        names.append(ACER)
+    if re.search(r"alsi|rigass|send.out|terminal|inventari",question) or (lng and not price):
+        names.append("ALSI")
+    if gme:
+        names.append(GME)
+    demand=bool(re.search(r"\b(?:domanda|consum[oi]|preliev[oi]|demand|consumption)\b",question))
+    other=bool(re.search(r"consum[oi] elettric|domanda elettric|electricity demand|preliev[oi] (?:da|dagli|di) stocc",question))
+    if demand and not other:
+        explicit=set(names)&set(MARKET)
+        if not explicit:
+            names.extend((DAILY,) if mentions_day(question) else MARKET)
+    power=bool(re.search(r"terna|elettric|termoelettric|rinnovabil|fotovoltaic|eolic|power",question))
+    outlook=bool(re.search(r"msd1|outlook|previ[ds].*(?:terna|elettric|eolic)|(?:terna|elettric|eolic).*previ[ds]",question))
+    if power and (not outlook or re.search(r"consuntiv|osservat|misurat",question)):
+        names.append(POWER[0])
+    if outlook:
+        names.append(POWER[1])
+    if re.search(r"\b(?:panoramica|situazione|quadro)\b.{0,35}\b(?:mercato|gas)\b",question) and not names:
         names.extend((MONTHLY,DAILY,PRICE,ACER,*GIE,WEATHER,*POWER))
-    # Explicit questions about forecasts should consider both observed demand
-    # and drivers, not invent a causal link to the current weather outlook.
-    if re.search(r"prevision.*(?:gas|domanda|consum)|(?:gas|domanda|consum).*prevision",question):
+    if not other and re.search(r"prevision.*(?:gas|domanda|consum)|(?:gas|domanda|consum).*prevision",question):
         names.extend((MONTHLY,DAILY,WEATHER,*POWER))
+    if re.search(r"fluss|capacità|portata|transito|ingress|frontier|uscit",question):
+        from .assistant_network import relevant
+        if relevant(question):
+            names.append(NETWORK)
+            if DAILY in names and not re.search(r"preliev|consum|domanda",question):
+                names.remove(DAILY)
     return tuple(dict.fromkeys(names))
+
+
+def useful_source(item):
+    return item.get("status") in (None,"available","partial") and any(
+        item.get(key) is not None and item[key]!={} and item[key]!=[]
+        for key in ("value","values","points","received_records"))
+
+
+def safe_source_url(value):
+    if not isinstance(value,str) or any(char.isspace() or char in "()\\<>" for char in value):
+        return None
+    try:
+        url=urlsplit(value)
+        return value if url.scheme=="https" and url.hostname and not url.username and not url.password else None
+    except ValueError:
+        return None
 
 
 def add_price_source(public):
     """Expose nested ARERA as a distinct, date-specific citation target."""
-    if MONTHLY not in public:return public
+    if PRICE in public or MONTHLY not in public:return public
     monthly=public[MONTHLY]
     price=monthly.get("price")
     if isinstance(price,dict):
@@ -67,7 +146,8 @@ def complete_requirements(public,requested):
     for key in requested:
         if key not in public:
             public[key]={"source":LABELS.get(key,key),"status":"unavailable",
-                         "reason":"Fonte non disponibile per questa analisi o disattivata."}
+                         "reason":("Indicatori GME consultabili nella vista locale." if key==GME else
+                                   "Fonte non disponibile per questa analisi o disattivata.")}
     return public
 
 
@@ -82,7 +162,7 @@ def missing_citations(refs,required):
 def source_evidence(key,item):
     """Human-readable observations from validated snapshots, never model output."""
     status=item.get("status")
-    if status!="available":
+    if status not in ("available","partial"):
         return item.get("reason") or ("Ultimo dato non recente." if status=="stale" else "Dato non disponibile.")
     values=item.get("values",{})
     def fmt(value,decimals=1):
@@ -127,8 +207,19 @@ def source_evidence(key,item):
             parts=[str(val)+" record UMM (non eventi) · "+str(item.get("coverage","copertura non indicata"))]
         if item.get("request_from") and item.get("request_to"):
             parts.append(str(item["request_from"])+" – "+str(item["request_to"]))
+    elif key==NETWORK:
+        measures=(("flow_gwh_d","Flusso fisico","GWh/g"),("technical_gwh_d","Capacità tecnica","GWh/g"),
+                  ("available_gwh_d","Capacità disponibile pubblicata","GWh/g"),
+                  ("change_gwh_d","Variazione D−1","GWh/g"),("utilization_pct","Utilizzo","%"))
+        for label,row in values.items():
+            data=[name+" "+value+" "+unit for field,name,unit in measures if (value:=fmt(row.get(field))) is not None]
+            if data:
+                parts.append(label+" · "+", ".join(data))
+        if item.get("coverage"):
+            parts.append(item["coverage"])
     elif key==ACER:
-        for field,label in (("eu","Prezzo GNL UE"),("benchmark","Differenziale GNL–TTF")):
+        for field,label in (("eu","Prezzo GNL UE"),("nwe","Prezzo GNL Nord-Ovest"),
+                            ("south","Prezzo GNL Sud"),("benchmark","Differenziale GNL–TTF")):
             row=values.get(field,{})
             val=fmt(row.get("value"),2)
             if row.get("status")=="available" and val is not None:
@@ -158,6 +249,9 @@ def source_rows(run):
     # Consulted and cited are distinct; never infer that a source was used
     # merely because it was collected.
     return [{"key":key,"source":item.get("source",key),"status":item.get("status","non indicato"),
-             "period":item.get("gas_day") or item.get("period") or item.get("from") or item.get("acquired"),
-             "cited":key in cited,"required":key in required,"evidence":source_evidence(key,item)}
+             "period":item.get("gas_day") or item.get("period") or item.get("from"),
+             "acquired":item.get("acquired"),"scope":item.get("scope"),
+             "url":safe_source_url(item.get("source_url") or item.get("url")),
+             "limitation":item.get("limitation"),"cited":key in cited,
+             "required":key in required,"evidence":source_evidence(key,item)}
             for key,item in public.items()]

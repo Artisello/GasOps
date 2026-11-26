@@ -6,6 +6,7 @@ from .italiano import ESITI, GRANULARITA, GRAVITA, MODALITA, TIPI
 from .models import AGENT_LABELS, Run
 from .executive_briefing import management_readout
 from .ai_response import SECTION_TITLES, reference_labels
+from .assistant_sources import source_rows
 
 
 def _plain(text: str) -> str:
@@ -40,15 +41,20 @@ def markdown(run: Run, reviewed: dict[str, str]) -> str:
             refs=", ".join(AGENT_LABELS[name] for name in run.interpretation_sources)
             lines.extend(["", _plain(run.interpretation), f"Strumenti consultati · {refs}"])
 
-    public=run.assumptions.get("public_operational_context") or {}
-    if public:
+    sources=source_rows(run)
+    if sources:
         lines.extend(["", "## Contesto operativo pubblico", ""])
-        for name,item in public.items():
-            status={"available":"Disponibile","stale":"Non recente","unavailable":"Non disponibile"}.get(item.get("status"),"Stato non indicato")
-            lines.append(f"- **{_plain(str(item.get('source',name)))}** · {status} · {_plain(str(item.get('gas_day') or item.get('period') or item.get('acquired') or 'data non indicata'))}")
-            if item.get("limitation") or item.get("reason"):
-                lines.append(f"  - {_plain(str(item.get('limitation') or item.get('reason')))}")
-        lines.append("Indicatori e metadati completi nelle ipotesi dell’analisi. Nessun record UMM originale.")
+        for row in sources:
+            status={"available":"Disponibile","partial":"Parziale","stale":"Non recente",
+                    "unavailable":"Non disponibile"}.get(row["status"],"Stato non indicato")
+            label=_plain(str(row["source"]))
+            if row["url"]:
+                label=f"[{label}]({row['url']})"
+            metadata=(status,row["scope"],row["period"],"Acquisita "+row["acquired"] if row["acquired"] else None)
+            lines.append("- "+label+" · "+" · ".join(_plain(str(part)) for part in metadata if part))
+            lines.append("  - "+_plain(row["evidence"]))
+            if row["limitation"]:
+                lines.append("  - "+_plain(row["limitation"]))
 
     lines.extend(["", "## Riscontri degli agenti", ""])
     for agent, result in run.results.items():

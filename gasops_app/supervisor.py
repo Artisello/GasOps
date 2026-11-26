@@ -149,7 +149,8 @@ def execute(
     review_count = sum(finding.severity in {"high", "medium"} for finding in run.findings)
     if review_count:
         summary.append(f"Revisione richiesta per {review_count} rilievi.")
-    run.summary = " ".join(summary)
+    if summary:
+        run.summary = " ".join(summary)
 
     if reasoner and run.mode == "LLM-assisted":
         try:

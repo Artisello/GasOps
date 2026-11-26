@@ -10,10 +10,10 @@ import requests
 
 from .models import Agent, Result, Run, Citation
 from .market import demand_trend_question, demand_readout
-from .assistant_sources import citation_requirements, missing_citations
+from .assistant_sources import citation_requirements, missing_citations, query_day
 from .supervisor import Call, Tool, ModelUnavailable
-from .ai_response import (compact_context, parse_sections, SECTION_TITLES, reference_index,
-                          normalize_references, InvalidSynthesis)
+from .ai_response import (model_context, parse_sections, SECTION_TITLES, reference_index,
+                          normalize_references, verify_measurements, InvalidSynthesis)
 
 SYSTEM = """You are the I.G.O.R. supervisor for read-only analytical screening. Write explanations in Italian. Select only tools
 needed for the request and only use scenario adjustments expressly given by the operator. The tools
@@ -247,7 +247,8 @@ class CompatibleReasoner:
                               "Select any additional dependency needed. Leave tool calls empty if sufficient."})
         return self._tool_calls(self._chat(self.messages, remaining), remaining)
 
-    def interpret(self, question: str, results: Mapping[Agent, Result], *, context=None, executive=False, repair=False, source_requirements=()) -> tuple[str | None, list[Agent]]:
+    def interpret(self, question: str, results: Mapping[Agent, Result], *, context=None, executive=False, repair=False,
+                  source_requirements=(), as_of=None) -> tuple[str | None, list[Agent]]:
         # Synthesis is standalone: executed evidence already contains the tool results.
         # Do not resend routing history, tool schemas, or duplicate tool messages.
         self.last_sections=[]
@@ -257,7 +258,7 @@ class CompatibleReasoner:
             # Their full results remain in the local, explicitly labelled section.
             for agent in (Agent.SCENARIO,Agent.SETTLEMENT,Agent.REGULATORY):
                 allowed.pop(agent.value,None)
-        public=compact_context(context or {})
+        public=model_context(context or {})
         if executive:
             # Unrelated annual benchmarks invite invalid price comparisons.
             public.pop("Benchmark storici",None)
@@ -269,6 +270,21 @@ class CompatibleReasoner:
             concise=demand_readout(facts,grain)
             if concise and Agent.MARKET.value in allowed:
                 allowed[Agent.MARKET.value]["summary"]=concise
+        day=query_day(question,today=as_of)
+        forecast=results.get(Agent.FORECAST)
+        if forecast and forecast.status=="completed" and Agent.FORECAST.value in allowed:
+            series=forecast.values.get("forecast",{})
+            points=series.get("points",[])
+            projection=allowed[Agent.FORECAST.value]
+            if day:
+                points=[point for point in points if point.get("period")==day.isoformat()]
+                projection["summary"]=("Proiezione del modello per il giorno richiesto."
+                                       if points else "Nessuna previsione per il giorno richiesto.")
+            projection["projection"]={
+                "kind":"forecast","model":series.get("model"),"unit":"GWh",
+                "points":[{key:p[key] for key in ("period","estimate","lower_80","upper_80") if key in p}
+                          for p in points[:3]],
+            }
         valid_ids=[agent.value for agent,result in results.items()
                    if agent.value in allowed and result.evidence and result.status in ("completed","review")]
         if not valid_ids and not public:
@@ -277,9 +293,11 @@ class CompatibleReasoner:
         codes,aliases=reference_index(valid_ids,public)
         # Bind each identifier to its actual evidence in the input. Keep
         # canonical names accepted for older providers, without fuzzy matching.
-        evidence=json.dumps({"question":question,"verified_tool_results":allowed,
-                             "public_operational_context":public,"reference_ids":codes},
-                            ensure_ascii=False,separators=(",",":"),allow_nan=False)
+        payload={"question":question,"verified_tool_results":allowed,
+                 "public_operational_context":public,"reference_ids":codes}
+        if day:
+            payload["requested_day"]=day.isoformat()
+        evidence=json.dumps(payload,ensure_ascii=False,separators=(",",":"),allow_nan=False)
         target=1350 if executive else 650 if narrow else min(2000,1200+100*len(required))
         # The provider completion cap already bounds the response. A stricter
         # editorial target should not discard an otherwise valid answer.
@@ -290,14 +308,16 @@ class CompatibleReasoner:
                      " Sezioni pertinenti (preferisci questo ordine): "+", ".join(ids)+
                      f". Obiettivo {target} caratteri di testo; massimo {limit}. Titoli separati dal testo. "
                      "Ogni sezione cita almeno un codice esatto presente in reference_ids (A1, S1 ecc.). "
-                     "Le fonti mancanti supportano solo limiti o verifiche. Niente riferimenti inventati.")
+                     "Copia i valori con la loro unità dalle fonti citate nella stessa sezione. "
+                     "Le fonti mancanti supportano limiti e verifiche. Inizia dalla risposta al quesito. "
+                     "Se il giorno richiesto è scoperto, dichiara la lacuna. Riporta valori di altri periodi soltanto con il loro periodo esplicito.")
         if narrow:
             instruction+=" Rispondi in 2–4 frasi: domanda osservata e variazioni; separa bilancio mensile Eurostat e prelievi giornalieri ENTSOG, specificando date e perimetri; non equipararli. Nessun riepilogo di prezzi, scorte o norme non richieste."
         if repair:
             instruction=(template+"\nRecupero formato: restituisci solo JSON valido con chiavi interpretation (testo italiano), "
                          "references (lista di codici da reference_ids). "
                          f"Obiettivo {target} caratteri; usa brevi paragrafi e solo verifiche pertinenti; "
-                         "nessun riferimento inventato, nessun dato mancante trasformato in zero.")
+                         "copia quantità e unità dalle fonti citate.")
             if narrow:
                 instruction+=" Domanda osservata, confronto e periodo; distingui le frequenze."
         if required:
@@ -325,6 +345,7 @@ class CompatibleReasoner:
             sections,refs=parse_sections(parsed["sections"],ids,valid_ids,source_ids,limit,aliases=aliases)
             if missing_citations(refs,required):
                 raise InvalidSynthesis("Sintesi AI priva di riferimenti alle fonti pertinenti.")
+            verify_measurements(sections,allowed,public)
             self.last_sections=sections
             narrative="\n\n".join(SECTION_TITLES[section["id"]]+": "+section["text"] for section in sections)
             return narrative,[Agent(ref) for ref in refs if ref in valid_ids]
@@ -335,6 +356,7 @@ class CompatibleReasoner:
         refs=normalize_references(parsed.get("references"),aliases)
         if missing_citations(refs,required):
             raise InvalidSynthesis("Sintesi AI priva di riferimenti alle fonti pertinenti.")
+        verify_measurements([{"text":narrative,"references":refs}],allowed,public)
         cited=[Agent(ref) for ref in refs if ref in valid_ids]
         # Preserve public source references in the compatibility format too.
         if repair or any(ref in source_ids for ref in refs):
@@ -396,7 +418,8 @@ class CompatibleReasoner:
         return answer.strip(),list(dict.fromkeys(refs))
 
     def summarize(self, run: Run) -> tuple[str | None, list[Agent]]:
-        args={"context":run.assumptions.get("public_operational_context"),
+        from .gas_calendar import ROME
+        args={"as_of":run.started_at.astimezone(ROME).date(),"context":run.assumptions.get("public_operational_context"),
               "executive":bool(run.assumptions.get("full_briefing")),
               "source_requirements":run.assumptions.get("assistant_source_requirements",[])}
         try:

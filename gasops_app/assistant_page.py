@@ -1,4 +1,5 @@
 """Session-scoped analytical assistant. No new provider or document permissions."""
+from datetime import datetime
 import json
 import logging
 
@@ -75,17 +76,26 @@ def _source_evidence_panel(report):
     # Other acquired sources remain in the existing details expander.
     selected=[row for row in rows if row["required"] or row["cited"]]
     if not selected:return
-    by_status={"available":"Disponibile","stale":"Non recente","unavailable":"Non disponibile"}
+    by_status={"available":"Disponibile","partial":"Parziale","stale":"Non recente","unavailable":"Non disponibile"}
     cited=sum(row["cited"] for row in selected)
     title=f"Fonti pertinenti · {len(selected)}"
     if report.mode=="LLM-assisted":
         title+=f" · {cited} citate dall’AI"
-    with st.expander(title,expanded=True):
+    with st.expander(title,expanded=bool(report.assumptions.get("source_lookup")) or len(selected)<=3):
         for row in selected:
             status=by_status.get(row["status"],row["status"])
-            period=str(row["period"] or "")[:10]
-            st.caption(" · ".join(x for x in (row["source"],period,status,"Citata" if row["cited"] else "") if x))
+            detail=[str(row["source"]),row["scope"],row["period"],status,"Citata" if row["cited"] else None]
+            if row["acquired"]:
+                try:
+                    detail.append("Acquisita "+local_time(datetime.fromisoformat(row["acquired"])))
+                except (ValueError,TypeError):
+                    pass
+            if row["url"]:
+                detail.append("[Fonte ufficiale]("+row["url"]+")")
+            st.caption(" · ".join(str(part) for part in detail if part))
             st.text(row["evidence"])
+            if row["limitation"]:
+                st.caption(row["limitation"])
 
 
 def _report(report:Run,selection):
@@ -97,11 +107,19 @@ def _report(report:Run,selection):
     if report.assumptions.get("scope_unavailable"):
         st.info(report.summary)
         return
-    st.text(f"{report.source.name} · {TIPI[report.source.kind]} · periodo {period}")
-    if report.assumptions.get("requested_country")=="DE":
-        st.caption("Perimetro della domanda: Germania · selezione automatica per questa analisi. Prezzo THE e dati di bilanciamento effettivi non integrati.")
-    if (not report.assumptions.get("requested_country") and (not selection.bundle or report.input_sha256!=selection.bundle.fingerprint)) or report.assumptions.get("model")!=selection.model:
-        st.warning("Questo risultato usa dati o un modello previsionale diversi dalla selezione corrente. Esegui una nuova analisi per aggiornarlo.")
+    lookup=bool(report.assumptions.get("source_lookup"))
+    if lookup:
+        if requested_day:=report.assumptions.get("requested_day"):
+            st.caption("Data richiesta · "+requested_day)
+        if not report.assumptions.get("public_operational_context") and not report.assumptions.get("gme_request"):
+            st.info(report.summary)
+    else:
+        st.text(f"{report.source.name} · {TIPI[report.source.kind]} · periodo {period}")
+        if report.assumptions.get("requested_country")=="DE":
+            st.caption("Perimetro Germania · bilancio mensile Eurostat.")
+        if (not report.assumptions.get("requested_country") and (not selection.bundle or
+                report.input_sha256!=selection.bundle.fingerprint)) or report.assumptions.get("model")!=selection.model:
+            st.warning("Questo risultato usa dati o un modello previsionale diversi dalla selezione corrente. Esegui una nuova analisi per aggiornarlo.")
     for warning in report.warnings:
         st.warning(warning)
     if report.source.refresh_failed:
@@ -109,15 +127,18 @@ def _report(report:Run,selection):
     if inferred:
         st.markdown("**Risposta AI**")
         ai_readout(report)
-    else:
+    elif not lookup:
         if report.mode!="Deterministic" and not report.warnings:
             st.warning("Nessuna risposta AI generata; risultati locali.")
         st.markdown("**Report di calcolo (senza AI)**")
         if not report.results:
             st.text(report.summary or "Nessun risultato disponibile.")
     _source_evidence_panel(report)
-    if (report.source.grain=="daily" and not report.source.archive and
-            report.source.kind in (Kind.LIVE,Kind.HISTORICAL) and report.assumptions.get("requested_country","IT")=="IT"):
+    if gme:=report.assumptions.get("gme_request"):
+        from .gme_market_page import assistant_prices
+        assistant_prices(gme,report.started_at)
+    elif not lookup and (report.source.grain=="daily" and not report.source.archive and
+                         report.source.kind in (Kind.LIVE,Kind.HISTORICAL) and report.assumptions.get("requested_country","IT")=="IT"):
         from .gme_market_page import daily_context
         daily_context(report.source.latest_period)
     if Agent.REGULATORY in report.results:
@@ -264,7 +285,7 @@ def assistant_page():
         if col.button(label,key="assistant_starter_"+label,width="stretch",disabled=disabled,help=question):
             shortcut=question
     full=controls[3].button("Genera bollettino locale" if local else "Genera bollettino AI",key="assistant_briefing",type="secondary",width="stretch",disabled=disabled)
-    question=None if local else st.chat_input("Chiedi qualcosa sul mercato del gas…",key="assistant_question",max_chars=600,disabled=disabled)
+    question=None if local else st.chat_input("Chiedi un indicatore, una data o un confronto…",key="assistant_question",max_chars=600)
     requested=DAILY_BRIEFING if full else shortcut or (question.strip() if question else "")
     history_slot=st.container()
     answer_slot=st.container()
@@ -292,7 +313,7 @@ def assistant_page():
             if generated:
                 _remember(generated)
             else:
-                st.error("Analisi non riuscita. Verifica il modello o le fonti; nessuna risposta AI generata." if not local else "Report locale non disponibile. Verifica le fonti.")
+                st.error("Analisi non riuscita. Verifica le fonti o specifica un indicatore." if not local else "Report locale non disponibile. Verifica le fonti.")
     with history_slot:
         previous=_history(local)
     with answer_slot:

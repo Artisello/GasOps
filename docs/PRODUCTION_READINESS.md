@@ -66,6 +66,8 @@ Provider capabilities extend the existing Fonti e API catalog, without a second 
 - Public repository PDF metadata is cheap to show; “Apri PDF pubblici” authorizes indexing. The index is then reused across reruns and public sessions. Private/session PDFs never enter that cache.
 - Remote archive refresh and IIP/other GIE perimeters require explicit controls. National AGSI+/ALSI use the shared background reader described above. Market source rendering reads only validated existing cache; “Aggiorna dati” authorizes acquisition. An expired local copy retains its original timestamp and is not reported as a failed request when no request occurred.
 - Opening the assistant prepares controls only; it no longer runs a forecast/report or chooses a remote model. Existing starters, reports, exports and explicit AI activation remain available.
+- Domande mirate come «CMEM,m del 21/10/2026», «differenziale GNL–TTF in Europa» o «flusso in ingresso a Tarvisio» selezionano la fonte pertinente. Il flusso di un punto usa le osservazioni ENTSOG verificate già in cache, con giorno gas e direzione. Le date esplicite richiedono lo stesso giorno o il mese di competenza della fonte.
+- L’assistente verifica le quantità con unità riconosciute rispetto alle evidenze della sezione citata. Dopo un tentativo di correzione, conserva i dati validati e i link alle fonti. Le richieste IGI e prezzi di sbilanciamento GME sono consultabili localmente, fuori dal prompt e dall’esportazione dei valori.
 
 ### Reproducible acceptance
 
