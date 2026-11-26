@@ -220,9 +220,16 @@ def assistant_page():
     from .workspace import picker
     header("Assistente AI","")
     modes=["Assistente operativo","Analista dati","Report locali"]
+    from .gme_market import session_authorized as gme_authorized
+    if gme_authorized():
+        modes.append("Indicatori GME")
     default=0 if reasoner() or ai_configured() else 2
     view=picker("Modalità assistente",modes,index=default,key="assistant_view",
                 labels={"Assistente operativo":"Chiedi all’AI","Analista dati":"Esplora i dati","Report locali":"Report senza AI"})
+    if view=="Indicatori GME":
+        from .gme_market_page import assistant
+        assistant()
+        return
     if view=="Analista dati":
         from .data_analyst_page import panel
         panel()

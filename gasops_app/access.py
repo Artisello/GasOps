@@ -22,9 +22,8 @@ def demo_layout():
     return profile() != PRIVATE and os.getenv("GASOPS_APP_MODE", "demo").strip().lower() != "workbench"
 
 
-def private_access():
-    if profile() != PRIVATE:
-        return False
+def authorized_identity():
+    """Verify an allowlisted identity independently of the active layout."""
     import streamlit as st
     try:
         user = st.user
@@ -36,6 +35,22 @@ def private_access():
         return bool(issuer and subjects and user.is_logged_in and user.get("iss") == issuer
                     and user.get("sub") in subjects and isfinite(expires) and expires > time())
     except (AttributeError, KeyError, TypeError, ValueError, FileNotFoundError):
+        return False
+
+
+def private_access():
+    return profile() == PRIVATE and authorized_identity()
+
+
+def login_configured():
+    from importlib.util import find_spec
+    if not (os.getenv("GASOPS_AUTH_ISSUER", "").strip()
+            and os.getenv("GASOPS_PRIVATE_SUBJECTS", "").strip() and find_spec("authlib")):
+        return False
+    import streamlit as st
+    try:
+        return bool(st.secrets.get("auth"))
+    except (FileNotFoundError, KeyError, ValueError):
         return False
 
 
@@ -58,13 +73,7 @@ def guard_application():
     import streamlit as st
     st.title("Accesso riservato")
     st.info("Questo Workbench richiede un account autorizzato.")
-    try:
-        from importlib.util import find_spec
-        configured = bool(st.secrets.get("auth") and os.getenv("GASOPS_AUTH_ISSUER")
-                          and os.getenv("GASOPS_PRIVATE_SUBJECTS") and find_spec("authlib"))
-    except (FileNotFoundError, KeyError):
-        configured = False
-    if configured:
+    if login_configured():
         if st.button("Accedi", type="primary"):
             st.login()
     else:

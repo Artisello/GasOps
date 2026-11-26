@@ -123,7 +123,7 @@ def panel(*, source_controls=None):
     if section=="Grafici":
         _charts(daily,prefix)
     elif section=="Giornata":
-        _day_detail(daily,rows,user,prefix)
+        _day_detail(daily,rows,user,prefix,imported=not example)
     elif section=="Riconciliazione":
         from .reconciliation_page import daily_panel
         daily_panel(rows,user,year,month,uploaded["sha"])
@@ -200,7 +200,7 @@ def _queue(daily,summary,prefix,example):
         st.caption("Nessuna giornata corrispondente al filtro.")
 
 
-def _day_detail(daily,rows,user,prefix):
+def _day_detail(daily,rows,user,prefix,*,imported=False):
     options=[row["day"] for row in daily]
     if st.session_state.get("daily_desk_day") not in options:
         st.session_state.pop("daily_desk_day",None)
@@ -227,6 +227,11 @@ def _day_detail(daily,rows,user,prefix):
                            "Vendita (€/MWh)":str(row.sell) if row.sell is not None else "—",
                            "DS (MWh)":str(row.imbalance),"Flusso (€)":str(row.cash) if row.cash is not None else "—"}
                       for row in versions],hide_index=True,width="stretch")
+        if imported and detail["closed"] and versions[-1].stage == "definitive":
+            from .gme_market import session_authorized as gme_authorized
+            if gme_authorized():
+                from .gme_market_page import settlement
+                settlement(versions[-1])
     else:
         st.caption("Nessuna versione acquisita per questa giornata.")
 
