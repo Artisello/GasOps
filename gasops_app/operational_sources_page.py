@@ -220,10 +220,8 @@ def _inventory_panel(platform,loader,key):
         scope=st.selectbox("Area geografica",["IT","EU"],format_func=scope_label,key=platform+"_scope")
     _credit(platform)
     if scope=="IT":
-        from .balancing_cockpit import inventory_state
-        from .gas_calendar import closed_gas_day
-        from .gas_data import cached_sources
-        from .operational_acquisition import HISTORY_DAYS, journal, schedule
+        from .gas_data import cached_national_inventory
+        from .operational_acquisition import journal, schedule
         from .operational_progress import watch
         now,store = utc_now(),database()
         connections = journal(store).get("connections",{})
@@ -232,15 +230,12 @@ def _inventory_panel(platform,loader,key):
             clicked=st.button("Aggiorna dati",key=platform+"_IT_load",disabled=not key)
         job=schedule(store,None,now,api_key=key,sources=(source,),force=clicked)
         watch(store,job,connections)
-        day=closed_gas_day(now)
-        _,rows,_,_=cached_sources(store,None,now,day-timedelta(days=HISTORY_DAYS-1),day,inventory_platform=platform)
-        previous=st.session_state.get(platform+"_IT",{})
-        if previous.get("result"):
-            rows.append((platform,None,"IT",previous["result"],bool(previous.get("error"))))
-        selected=inventory_state({"inventory":rows},st.session_state,None,history=True)
-        result=selected.get(platform+"_IT",{}).get("result")
-        if result and connections.get(source,{}).get("failed"):
-            result={**result,"failed":True}
+        state = platform+"_IT"
+        result = cached_national_inventory(store,platform,now)
+        if result:
+            st.session_state[state] = {"result":result}
+        else:
+            result = st.session_state.get(state,{}).get("result")
     else:
         if not key:
             return

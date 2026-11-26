@@ -225,6 +225,23 @@ def _inventory_rows(items,network,now,first,last):
     return output
 
 
+def cached_national_inventory(store, platform, now):
+    """Italy inventory shared by the operational, briefing and analytics views."""
+    from .balancing_cockpit import inventory_state
+    from .gas_calendar import closed_gas_day
+    from .operational_acquisition import HISTORY_DAYS, journal
+    day = closed_gas_day(now)
+    _,rows,_,_ = cached_sources(store,None,now,day-timedelta(days=HISTORY_DAYS-1),day,
+                                inventory_platform=platform)
+    state = inventory_state({"inventory":rows},{},None,history=True)
+    result = state.get(platform+"_IT",{}).get("result")
+    if result and not result["frame"].empty:
+        source = "agsi" if platform=="AGSI+" else "alsi"
+        health = journal(store).get("connections",{}).get(source,{})
+        return {**result,"failed":bool(result["failed"] or health.get("failed"))}
+    return None
+
+
 def source_context(network,bundled,state,now,*,store=None,first=None,last=None,interruptions=()):
     """Load existing evidence once for readers sharing the same bounded window."""
     first,last=_window(first,last,now)
