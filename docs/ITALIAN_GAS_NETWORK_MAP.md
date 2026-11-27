@@ -231,3 +231,8 @@ Per i nodi privi di associazioni operative la scheda presenta geografia, proveni
 ## Linguaggio visivo delle direzioni
 
 Le viste operative riutilizzano `direction_ui`: ↘ ingresso nella rete italiana, ↗ uscita e ↔ punto bidirezionale secondo i binding ENTSOG confermati. Le frecce sono simboli semantici, non orientamenti geografici, velocità o direzioni dedotte dei gasdotti. I rombi delle frontiere in Sistema e Flussi conservano il pieno/contorno relativo alla disponibilità dei dati e incorporano un glifo direzionale; in Attenzione la simbologia degli avvisi resta prioritaria. Tooltip, etichette, selettori e legenda condividono la stessa semantica. I riquadri bidirezionali mostrano separatamente i due flussi fisici del giorno gas, con N/D distinto da zero e direzione consultata evidenziata. Non vengono sommate le direzioni né alterati i dati esportati.
+
+
+### Indicatori nella vista Flussi
+
+Un solo selettore contestuale consente Volume (dimensione fissa per classe GWh/d), Variazione D−1 (segno e colore, stesso punto e direzione) oppure Utilizzo capacità (percentuale rispetto a capacità tecnica firm confrontabile). Le soglie di utilizzo sono descrittive (<30%, 30–<60%, 60–<90%, ≥90%), non una valutazione automatica della sicurezza. I valori mancanti sono indicati N/D con contorno grigio, non zero. Il colore indica la variazione o la classe soltanto nella rispettiva lettura; legenda e tooltip cambiano insieme. Il conteggio di copertura si riferisce ai punti mostrati e alla direzione rappresentata, non a tutti i punti nazionali. Selezione, filtri, geometrie e giorno gas non cambiano al passaggio di indicatore. Nessun dato viene attribuito ai segmenti schematici.
