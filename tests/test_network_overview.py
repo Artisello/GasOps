@@ -377,3 +377,43 @@ def test_mode_switch_removes_previous_storage_and_resets_details(monkeypatch,tmp
         spec=json.loads(app.get("deck_gl_json_chart")[0].proto.json)
         points=next(l["data"] for l in spec["layers"] if l["id"]=="infrastructure-points")
         assert not next(r for r in points if r["infra_id"]=="INET_SR_37")["active"]
+
+
+@pytest.mark.parametrize("identifier,label,has_selector",[
+    ("INET_BP_12","Solo uscita",False),
+    ("INET_BP_65","Solo ingresso",False),
+    ("INET_BP_78","Bidirezionale",True),
+])
+def test_overview_displays_verified_direction_class(monkeypatch,tmp_path,identifier,label,has_selector):
+    offline(monkeypatch,tmp_path)
+    app=AppTest.from_string("from gasops_app.italian_network_page import panel\npanel(mode='overview')",default_timeout=30)
+    app.session_state[ARCHIVE_KEY]=True
+    app.session_state[view.SELECTED]=identifier
+    app.run()
+    assert not app.exception
+    assert any(label+" · Direzioni censite ENTSOG" in c.value for c in app.caption)
+    assert any(w.key=="net_overview_direction" for w in app.radio)==has_selector
+    scene=json.loads(app.get("deck_gl_json_chart")[0].proto.json)
+    points=next(l["data"] for l in scene["layers"] if l["id"]=="infrastructure-points")
+    assert next(p for p in points if p["infra_id"]==identifier)["safe_status"]==label+" · ENTSOG"
+
+
+def test_overview_renders_map_before_market_kpis(monkeypatch,tmp_path):
+    from gasops_app import system_status_page as system
+    offline(monkeypatch,tmp_path)
+    calls=[]
+    original_map,original_metrics=view.render_map,system.metrics
+    def map_first(*a,**kw):
+        calls.append("map")
+        return original_map(*a,**kw)
+    def metrics_after(*a,**kw):
+        calls.append("metrics")
+        return original_metrics(*a,**kw)
+    monkeypatch.setattr(view,"render_map",map_first)
+    monkeypatch.setattr(system,"metrics",metrics_after)
+    app=AppTest.from_string("from gasops_app.italian_network_page import panel\npanel(mode='overview')",default_timeout=30)
+    app.session_state[ARCHIVE_KEY]=True
+    app.run()
+    assert not app.exception
+    assert calls==["map","metrics"]
+    assert not any(c.value.startswith("Riferimenti: ") for c in app.caption)
