@@ -59,7 +59,7 @@ def _overview(pack, *, network=True):
     if network:
         from .italian_network_page import panel
         with st.container(key="network_home_title"):
-            st.title("I.G.O.R. — Sistema Gas Italiano")
+            st.title("I.G.O.R. - Sistema Gas Italiano")
         panel(mode="overview")
         st.divider()
         st.subheader("Prova con un esempio")

@@ -85,7 +85,7 @@ async function main(){
    console.log((route||'/')+': PASS');
   }
   const a=await newPage(),b=await newPage();
-  await open(a,'','I.G.O.R. — Sistema Gas Italiano');
+  await open(a,'','I.G.O.R. - Sistema Gas Italiano');
   await a.locator('[data-testid="stDeckGlJsonChart"] canvas').waitFor();
   await a.locator('[data-testid="stDeckGlJsonChart"] canvas').scrollIntoViewIfNeeded();
   await delay(400);
@@ -112,7 +112,7 @@ async function main(){
   await a.getByRole('radio',{name:'Flussi',exact:true}).press('ArrowRight');
   await a.getByRole('radio',{name:'Attenzione',exact:true}).waitFor();
   assert(await a.getByRole('radio',{name:'Attenzione',exact:true}).isChecked());
-  await open(b,'','I.G.O.R. — Sistema Gas Italiano');
+  await open(b,'','I.G.O.R. - Sistema Gas Italiano');
   assert(await b.getByRole('radio',{name:'Sistema',exact:true}).isChecked());
   report.checks.push({check:'independent_map_modes_and_keyboard',status:'PASS'});
   await a.bringToFront();
@@ -171,13 +171,13 @@ async function main(){
   assert.equal(await a.getByTestId('stException').count(),0);
   await a.screenshot({path:path.join(output,'market-desktop.png'),fullPage:true});
   report.checks.push({check:'explicit_market_forecast',status:'PASS'});
-  await open(a,'','I.G.O.R. — Sistema Gas Italiano');
+  await open(a,'','I.G.O.R. - Sistema Gas Italiano');
   await a.getByRole('button',{name:'Esplora la rettifica',exact:true}).click();
   await a.waitForURL('**/demo');
   assert(await a.getByRole('radio',{name:'Rettifiche',exact:true}).isChecked());
   report.checks.push({check:'example_card_opens_exact_case',status:'PASS'});
   const mobile=await newPage(390,844);
-  await open(mobile,'','I.G.O.R. — Sistema Gas Italiano');
+  await open(mobile,'','I.G.O.R. - Sistema Gas Italiano');
   await mobile.locator('[data-testid="stDeckGlJsonChart"] canvas').waitFor();
   assert(await mobile.evaluate(()=>document.body.scrollWidth<=innerWidth));
   await mobile.screenshot({path:path.join(output,'overview-mobile.png'),fullPage:true});
@@ -204,7 +204,7 @@ async function main(){
   report.checks.push({check:'mobile_workspace_targets_and_reflow',status:'PASS'});
   if(args['workbench-url']){
    const workbench=await newPage();
-   await open(workbench,'','I.G.O.R. — Sistema Gas Italiano',args['workbench-url']);
+   await open(workbench,'','I.G.O.R. - Sistema Gas Italiano',args['workbench-url']);
    await workbench.locator('[data-testid="stDeckGlJsonChart"] canvas').waitFor();
    report.checks.push({check:'workbench_overview',status:'PASS'});
   }

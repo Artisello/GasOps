@@ -33,7 +33,7 @@ def test_system_status_has_four_kpis_nine_components_and_keeps_demo_separate(off
     app.session_state[ARCHIVE_KEY] = True
     app.run()
     assert not app.exception
-    assert app.title[0].value == "I.G.O.R. — Sistema Gas Italiano"
+    assert app.title[0].value == "I.G.O.R. - Sistema Gas Italiano"
     bodies = [h.proto.body for h in app.get("html")]
     grid = next(h for h in bodies if 'class="gas-kpi-grid"' in h)
     assert grid.count('class="gas-kpi"')+grid.count('class="gas-kpi gas-kpi-missing"') == 4

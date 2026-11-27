@@ -2,13 +2,13 @@
 import streamlit as st
 
 GROUPS=(
-    ("Operatività",(3,4,8)),
-    ("Mercato",(1,2)),
-    ("Strumenti",(5,6,7)),
+    ("Operatività",("security-of-supply","balancing","ledger","kpi")),
+    ("Analisi",("market","risk")),
+    ("Strumenti",("regulatory","operations","connections","demo")),
 )
 LABELS={"security-of-supply":"Rete e forniture",
-        "balancing":"Bilanciamento e settlement",
-        "connections":"Fonti e connessioni","demo":"Esempi guidati"}
+        "balancing":"Bilanciamento",
+        "connections":"Fonti e API","demo":"Esempi guidati"}
 HINTS={"":"Azioni quotidiane, situazione del sistema e avvisi.","balancing":"Confronta flussi e nomine, verifica bilanci e rettifiche.",
        "ledger":"Esplora fatture, garanzie e scadenze con esempi dichiarati.",
        "kpi":"Segui attività, scadenze e indicatori operativi.","market":"Leggi i consumi e calcola una previsione quando serve.",
@@ -24,18 +24,27 @@ def sidebar_navigation(pages,current):
     def link(index):
         page=pages[index]
         active=page.url_path==current.url_path
-        name="home" if index==0 else f"item_{index}"
+        name="home" if page.url_path=="" else f"item_{index}"
         state="active" if active else "idle"
         with st.container(key=f"gas_nav_{name}_{state}"):
             st.page_link(page,**({"label":LABELS[page.url_path]} if page.url_path in LABELS else {}),
                          help=HINTS.get(page.url_path))
 
-    link(0)
-    for label,indices in GROUPS:
+    by_route = {page.url_path:index for index,page in enumerate(pages)}
+    if "" in by_route:
+        link(by_route[""])
+    shown = {""}
+    for label,routes in GROUPS:
+        available = [route for route in routes if route in by_route]
+        if not available:
+            continue
         st.html(f'<div class="gas-nav-group">{label}</div>')
-        for index in indices:
-            link(index)
-    if len(pages)>9:
-        st.html('<div class="gas-nav-group">Esplora</div>')
-        for index in range(9,len(pages)):
-            link(index)
+        for route in available:
+            link(by_route[route])
+            shown.add(route)
+    # New routes remain discoverable until explicitly assigned a group.
+    remaining = [route for route in by_route if route not in shown]
+    if remaining:
+        st.html('<div class="gas-nav-group">Altre funzioni</div>')
+        for route in remaining:
+            link(by_route[route])

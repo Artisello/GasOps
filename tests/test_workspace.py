@@ -24,7 +24,7 @@ def test_home_requires_no_market_or_remote_request(monkeypatch):
     monkeypatch.setattr(requests.Session,"request",forbidden)
     monkeypatch.setattr(session,"_configuration",lambda:None)
     app=AppTest.from_file(ROOT/"app.py",default_timeout=30).run()
-    assert not app.exception and app.title[0].value=="I.G.O.R. — Sistema Gas Italiano"
+    assert not app.exception and app.title[0].value=="I.G.O.R. - Sistema Gas Italiano"
     assert app.radio(key="overview_workspace").value=="Scrivania BSO"
     assert "workspace_example" in {b.key for b in app.button}
     assert not {"workspace_open_balancing","workspace_open_settlement","workspace_open_operations"} & {b.key for b in app.button}
