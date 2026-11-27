@@ -141,7 +141,9 @@ def _compare(rows,by_point,point,day):
             display["Punto"]=display.Punto.map(display_name)
             display["Tipologia"]=display["Tipologia"].map(arrow_text)
             display["Direzione dati"]=display["Direzione dati"].map(arrow_text)
-            st.dataframe(display,hide_index=True,width="stretch",height=420,
+            styled=display.style.map(lambda v: "color: #65dfbf; font-weight: 600" if str(v).startswith("↘") else
+                "color: #83b4ff; font-weight: 600" if str(v).startswith("↗") else "",subset=["Tipologia","Direzione dati"])
+            st.dataframe(styled,hide_index=True,width="stretch",height=420,
                 column_config={"Punto":st.column_config.TextColumn(width="medium"),"Tipologia":st.column_config.TextColumn(width="medium"),"Direzione dati":st.column_config.TextColumn(width="medium"),
                     **{c:st.column_config.NumberColumn(format="%.1f",width="small") for c in number_columns}})
             st.caption("GWh/d · tipologia dal catalogo verificato; una riga per direzione. N/D non equivale a zero. Ogni Δ confronta due passaggi consecutivi dello stesso giorno gas. Il CSV include fonti e versioni.")
