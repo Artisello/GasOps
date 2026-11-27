@@ -10,6 +10,7 @@ from .gas_data import collect, source_context
 from .gas_calendar import closed_gas_day, gas_day_bounds
 from .italian_network_page import assets,bundled_interruptions,SELECTED,_open_full
 from .italian_network_map import display_name
+from .italian_network import direction_name
 from .models import utc_now
 from .operational_sources import attributed_csv
 from .session import database
@@ -84,11 +85,12 @@ def _public(day_layout=None):
         retrieved_at=min(valid.retrieved_at,default=None),cached=bool(len(valid) and valid.cached.eq(True).all()),
         failed=bool(selected.failed.any()),partial=bool(selected.partial.any()))
     kpi_grid([("Posizione di sistema",position["value"],position["unit"],position["status"],1,""),
-              ("Punti confrontabili",sum(r["comparable"] for r in rows),"/ "+str(len(rows)),"Direzioni mappate · nomina, rinomina, allocazione e flusso",0,""),
+              ("Direzioni confrontabili",sum(r["comparable"] for r in rows),"/ "+str(len(rows)),"Direzioni mappate · nomina, rinomina, allocazione e flusso",0,""),
               ("Osservazioni utilizzabili",len(valid),"",freshness_label(freshness),0,"")])
     st.caption(m.ESTIMATED+" · "+position["note"])
     _workflow(m.workflow(rows))
-    options=[r["point_direction"] for r in rows if r["available"]]
+    available_assets={r["infrastructure_id"] for r in rows if r["available"]}
+    options=[r["point_direction"] for r in rows if r["infrastructure_id"] in available_assets]
     by_point={r["point_direction"]:r for r in rows}
     point=None
     if options:
@@ -96,7 +98,8 @@ def _public(day_layout=None):
         if st.session_state.get(key) not in options:
             st.session_state[key]=next((p for p in options if by_point[p]["infrastructure_id"]==st.session_state.get(SELECTED)),options[0])
         point=st.selectbox("Punto da esaminare",options,key=key,
-            format_func=lambda p:display_name(by_point[p]["point"])+" · "+("Ingresso" if by_point[p]["direction"]=="entry" else "Uscita"))
+            format_func=lambda p:display_name(by_point[p]["point"])+" · "+by_point[p]["point_type"]+
+                (" · "+direction_name(by_point[p]["direction"]) if by_point[p]["point_type"]=="Bidirezionale" else ""))
     from .gme_market import api_configured as gme_configured
     readouts = ("Riconciliazione","Pubblicazioni","Eventi","Fonti")
     if gme_configured():
@@ -128,23 +131,32 @@ def _compare(rows,by_point,point,day):
         table,detail=st.columns([2,1.1],gap="medium")
         with table:
             st.markdown("**Dalla nomina al flusso fisico**")
-            names={"point":"Punto","direction":"Direzione","Nomination":"Nomina","Renomination":"Rinomina",
+            names={"point":"Punto","point_type":"Tipologia","direction":"Direzione dati","Nomination":"Nomina","Renomination":"Rinomina",
                 "Allocation":"Allocazione","Physical Flow":"Flusso fisico","delta_renomination_nomination":"Δ rinomina",
                 "delta_allocation_renomination":"Δ allocazione","delta_physical_allocation":"Δ flusso","state":"Stato"}
-            display=pd.DataFrame(rows)[list(names)].rename(columns=names)
+            display=pd.DataFrame(rows).sort_values(["point","infrastructure_id","direction"],kind="stable")[list(names)].rename(columns=names)
             number_columns=[names[k] for k in (*m.INDICATORS,"delta_renomination_nomination","delta_allocation_renomination","delta_physical_allocation")]
             for c in number_columns:display[c]=pd.to_numeric(display[c],errors="coerce")
             display["Punto"]=display.Punto.map(display_name)
-            display["Direzione"]=display.Direzione.map({"entry":"Ingresso","exit":"Uscita"})
+            display["Direzione dati"]=display["Direzione dati"].map(direction_name)
             st.dataframe(display,hide_index=True,width="stretch",height=345,
-                column_config={"Punto":st.column_config.TextColumn(width="medium"),"Direzione":st.column_config.TextColumn(width="small"),
+                column_config={"Punto":st.column_config.TextColumn(width="medium"),"Tipologia":st.column_config.TextColumn(width="medium"),"Direzione dati":st.column_config.TextColumn(width="small"),
                     **{c:st.column_config.NumberColumn(format="%.1f",width="small") for c in number_columns}})
-            st.caption("GWh/d · stesso punto, direzione e giorno gas. Ogni Δ confronta due passaggi consecutivi. Il CSV include fonti e versioni.")
+            st.caption("GWh/d · tipologia dal catalogo verificato; una riga per direzione. N/D non equivale a zero. Ogni Δ confronta due passaggi consecutivi dello stesso giorno gas. Il CSV include fonti e versioni.")
         with detail:
             if point:
                 from .balancing_charts import point_indicators
                 plot(point_indicators(by_point[point]),key="cockpit_point_chart")
-                st.caption(display_name(by_point[point]["point"])+" · "+by_point[point]["state"])
+                st.caption(display_name(by_point[point]["point"])+" · "+by_point[point]["point_type"]+" · "+
+                    direction_name(by_point[point]["direction"])+" · "+by_point[point]["state"])
+                if by_point[point]["point_type"]=="Bidirezionale":
+                    paired=[r for r in rows if r["infrastructure_id"]==by_point[point]["infrastructure_id"]]
+                    from .italiano import numero
+                    st.caption("Flusso fisico · entrambe le direzioni (GWh/d)")
+                    cols=st.columns(2)
+                    for col,d in zip(cols,("entry","exit")):
+                        value=next((r["Physical Flow"] for r in paired if r["direction"]==d),None)
+                        col.metric(direction_name(d),numero(value,1) if value is not None else "N/D")
                 st.button("Apri punto sulla mappa",key="cockpit_map",on_click=_open_full,
                     args=(by_point[point]["infrastructure_id"],day,day,by_point[point]["direction"]))
         _export(pd.DataFrame(rows),"riconciliazione con provenienza","cockpit_reconciliation")

@@ -9,6 +9,8 @@ from .entsog_network import load_programmes,check_point
 from .entsog_vintages import STATE,SELECT,MAX_BYTES,merge,capture,points,outlook
 from .public_data import SourceUnavailable
 from .session import database
+from .italian_network import load_network_assets, verified_bindings, point_direction_labels, direction_name
+from .italian_network_map import display_name
 
 
 def panel():
@@ -31,8 +33,15 @@ def panel():
                 except (ValueError,SourceUnavailable,TypeError,KeyError):st.caption("Programmi non disponibili; dati precedenti conservati.")
         known=points(state.get(STATE,[]))
         if known:
+            network=load_network_assets()
+            types=point_direction_labels(network)
+            names={i.id:i.name for i in network.infrastructure}
+            labels={b.point_direction:display_name(names[b.infrastructure_id])+" · "+types[b.point_direction]+
+                    (" · "+direction_name(b.direction) if types[b.point_direction]=="Bidirezionale" else "")
+                    for b in verified_bindings(network)}
             preferred=state.get(SELECT)
-            state[SELECT]=st.selectbox("Punto dell’archivio",known,index=known.index(preferred) if preferred in known else 0,key="entsog_archive_point")
+            state[SELECT]=st.selectbox("Punto e direzione dell’archivio",known,index=known.index(preferred) if preferred in known else 0,
+                key="entsog_archive_point",format_func=lambda key:labels.get(key,key+" · Tipologia non verificata"))
         fact=outlook(state,utc_now())
         if fact:
             f=pd.DataFrame(fact["points"])

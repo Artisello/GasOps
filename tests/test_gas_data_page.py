@@ -142,3 +142,13 @@ def test_unavailable_focus_is_explained_before_showing_other_series(offline):
     app.run()
     assert not app.exception
     assert any("Nessuna osservazione disponibile per il punto richiesto" in c.value for c in app.caption)
+
+
+def test_explorer_exposes_verified_bidirectionality(offline):
+    app=AppTest.from_string(SCRIPT,default_timeout=30).run()
+    assert not app.exception
+    assert any("Solo ingresso · Dati: Ingresso" in c.value for c in app.caption)
+    app.selectbox(key="gas_explorer_entity").set_value("IT-TSO-0001ITP-00040entry").run()
+    assert not app.exception
+    assert any("Bidirezionale · Dati: Ingresso" in c.value for c in app.caption)
+    assert any("Direzione opposta: Uscita" in c.value for c in app.caption)

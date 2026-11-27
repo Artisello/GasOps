@@ -200,3 +200,17 @@ def test_inventory_context_withholds_tied_conflicts_and_newer_empty_window():
     empty={**b,"frame":b["frame"].iloc[:0],"acquired":NOW}
     context["inventory"].append(("ALSI",None,"IT",empty,False))
     assert m.inventory_state(context,{},DAY)["ALSI_IT"]["result"]["frame"].empty
+
+
+def test_structural_direction_type_does_not_depend_on_day_coverage(network):
+    rows=m.public_reconciliation(network,frame(network),DAY)
+    expected={"INET_BP_65":"Solo ingresso","INET_BP_12":"Solo uscita",
+              "INET_BP_78":"Bidirezionale","INET_BP_89":"Bidirezionale",
+              "INET_BP_84":"Bidirezionale","INET_BP_35":"Bidirezionale"}
+    for identifier,label in expected.items():
+        matches=[r for r in rows if r["infrastructure_id"]==identifier]
+        assert matches and {r["point_type"] for r in matches}=={label}
+        if label=="Bidirezionale":
+            assert {r["direction"] for r in matches}=={"entry","exit"}
+            assert all(r["Physical Flow"] is None for r in matches)
+    assert next(r for r in rows if r["infrastructure_id"]=="INET_BP_65")["Physical Flow"]==0
