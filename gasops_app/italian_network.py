@@ -360,6 +360,27 @@ def verified_bindings(network, identifier=None):
         and (identifier is None or b.infrastructure_id == identifier))
 
 
+def direction_label(bindings):
+    """Classify confirmed published directions, independently of daily values."""
+    directions = {b.direction for b in bindings}
+    return {frozenset({"entry"}):"Solo ingresso",
+            frozenset({"exit"}):"Solo uscita",
+            frozenset({"entry","exit"}):"Bidirezionale"}.get(frozenset(directions))
+
+
+def point_direction_labels(network):
+    """One shared structural label per verified point-direction key."""
+    by_asset = {}
+    for binding in verified_bindings(network):
+        by_asset.setdefault(binding.infrastructure_id,[]).append(binding)
+    return {b.point_direction:direction_label(bindings)
+            for bindings in by_asset.values() for b in bindings}
+
+
+def direction_name(direction):
+    return {"entry":"Ingresso","exit":"Uscita"}.get(direction,"Direzione non verificata")
+
+
 def security_entries(network):
     """Only confirmed, unambiguous border-entry assets, shared with the map."""
     categories={i.id:i.category for i in network.infrastructure}
