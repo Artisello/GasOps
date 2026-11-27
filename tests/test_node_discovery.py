@@ -1,4 +1,3 @@
-from dataclasses import replace
 from datetime import datetime,timezone
 
 import requests
@@ -56,3 +55,22 @@ def test_node_card_has_no_empty_operational_tabs(monkeypatch,tmp_path):
     assert not app.tabs
     assert any("già associati ad altre infrastrutture" in c.value for c in app.caption)
     assert any(e.label=="Identità e geografia" for e in app.expander)
+
+
+def test_catalog_refresh_is_explicit_and_updates_session(monkeypatch,tmp_path):
+    monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
+    network,_,_=view.assets()
+    calls=[]
+    def load(store,*,refresh=False):
+        calls.append(refresh)
+        return {**network.sources["opd"],"acquired":datetime(2026,11,28,tzinfo=timezone.utc),
+                "cached":False,"failed":False}
+    monkeypatch.setattr(view,"load_catalog",load)
+    app=AppTest.from_string(
+        "from gasops_app.italian_network_page import assets,_node_catalog_audit\n"
+        "_node_catalog_audit(assets()[0],{},None,False)",default_timeout=30).run()
+    assert not app.exception and not calls
+    app.button(key="net_node_catalog_refresh").click().run()
+    assert not app.exception and calls==[True]
+    assert view.NODE_CATALOG_KEY in app.session_state
+    assert any("2026-11-28" in c.value for c in app.caption)
