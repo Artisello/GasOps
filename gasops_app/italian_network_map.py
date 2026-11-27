@@ -81,6 +81,29 @@ def display_name(name):
     return name.replace("_", " – ")
 
 
+# Historical coordinates are indicative. This is a UI grouping tolerance,
+# not a statement that the facilities share equipment or a certified location.
+NEARBY_METRES = 250
+
+
+def nearby_points(network, visible):
+    """Return distinct visible point IDs within a small geographic tolerance."""
+    ids = {i.id for i in visible}
+    points = [(g.infrastructure_id, g.geometry["coordinates"]) for g in network.geography
+              if g.infrastructure_id in ids and g.geometry["type"] == "Point"]
+    groups = {identifier: [] for identifier, _ in points}
+    for index, (identifier, (lon,lat)) in enumerate(points):
+        for other, (other_lon,other_lat) in points[index+1:]:
+            if abs(lat-other_lat) > .003 or abs(lon-other_lon) > .005:
+                continue
+            dy = (other_lat-lat)*111195
+            dx = (other_lon-lon)*111195*math.cos(math.radians((lat+other_lat)/2))
+            if math.hypot(dx,dy) <= NEARBY_METRES:
+                groups[identifier].append(other)
+                groups[other].append(identifier)
+    return {identifier:tuple(sorted(others)) for identifier,others in groups.items() if others}
+
+
 def fit_italy(boundary, width, height, padding=10):
     """Fit the real country's Mercator bounds; retain islands without cropping."""
     positions = []
@@ -140,6 +163,8 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
     lookup = {g.infrastructure_id:g for g in network.geography}
     if focus_id in lookup and focus_id in {i.id for i in visible}:
         camera = focus_camera(camera, lookup[focus_id].geometry)
+    visible = tuple(visible)
+    nearby = nearby_points(network, visible)
     point_categories = {i.category for i in visible if i.category != "pipeline"}
     lines, points, highlight, labels, events, findings, quality, assumptions = [], [], [], [], [], [], [], []
     for item in visible:
@@ -195,6 +220,8 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
                 position = label_anchor(geometry)
                 labels.append({**tooltip,**label_style,"position":position,"label":display_name(item.name)})
             continue
+        if item.id in nearby:
+            tooltip["safe_summary"] += f" · {1+len(nearby[item.id])} punti vicini: clicca per scegliere"
         row = {**tooltip, "position":geometry["coordinates"], "color":COLORS[item.category],
                "category":item.category,"icon":item.category+("-outline" if intelligence is not None
                    and reading_mode != "INFRASTRUCTURE" and not info.get("available") else ""),"icon_size":ICON_SIZES[item.category],
