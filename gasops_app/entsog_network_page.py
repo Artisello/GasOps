@@ -11,6 +11,8 @@ from .public_data import SourceUnavailable, SourceSchemaError
 from .terna_charts import timeseries, day_label, acquisition_label
 from .visuals import kpi_grid, plot, info
 from .session import database
+from .italian_network import load_network_assets, verified_bindings, point_direction_labels, direction_name
+from .italian_network_map import display_name
 
 STATE="entsog_network_result_v1"
 ATTEMPT="entsog_network_attempt_v1"
@@ -23,9 +25,24 @@ def panel():
         with st.expander("Fonti e condizioni"):
             st.markdown(f"[Portale ENTSOG]({SOURCE}) · [Manuale API]({MANUAL}) · [Condizioni d'uso]({TERMS})")
             st.markdown(f"[Catalogo ufficiale operatori/punti/direzioni (CSV)]({CATALOG}) · [Riferimento mapping candidati]({PRESET_REFERENCE})")
-            st.caption("Le due preimpostazioni sono candidate da verificare con le etichette ENTSOG restituite. Per altri punti italiani/europei copia il codice ITP dal catalogo. Non sommare i lati opposti di una stessa interconnessione.")
+            st.caption("Le direzioni italiane censite sono distinte per punto e operatore; verifica le etichette ENTSOG restituite. Per altri punti italiani/europei copia la chiave completa dal catalogo. Non sommare i lati opposti di una stessa interconnessione.")
     last=_last_completed(utc_now())
-    selected=st.selectbox("Interconnessione",[*PRESETS,"Altro punto ENTSOG"],key="network_point")
+    # Keep legacy keys usable, but present all verified Italian directions.
+    network=load_network_assets()
+    bindings=verified_bindings(network)
+    types=point_direction_labels(network)
+    lookup={i.id:i for i in network.infrastructure}
+    catalog={b.point_direction:b for b in bindings}
+    presets=dict(PRESETS)
+    labels={}
+    for b in bindings:
+        existing=next((k for k,v in presets.items() if v==b.point_direction),None)
+        key=existing or b.point_direction
+        presets[key]=b.point_direction
+        labels[key]=display_name(lookup[b.infrastructure_id].name)+" · "+types[b.point_direction]+(
+            " · "+direction_name(b.direction) if types[b.point_direction]=="Bidirezionale" else "")
+    selected=st.selectbox("Interconnessione e direzione",[*presets,"Altro punto ENTSOG"],key="network_point",
+        format_func=lambda k:labels.get(k,k))
     with st.form("network_query",border=False):
         custom=st.text_input("Codice operatore-punto-direzione",placeholder="IT-TSO-0001ITP-00093entry") if selected=="Altro punto ENTSOG" else ""
         c1,c2=st.columns(2)
@@ -33,7 +50,7 @@ def panel():
         to_day=c2.date_input("A giorno gas",value=last,max_value=last)
         clicked=st.form_submit_button("Carica dati",type="primary",width="stretch")
     if clicked:
-        point=PRESETS.get(selected,custom.strip())
+        point=presets.get(selected,custom.strip())
         now=utc_now()
         previous=st.session_state.get(ATTEMPT)
         if previous is not None and now-previous<timedelta(seconds=60):
@@ -66,6 +83,10 @@ def panel():
         st.markdown("**"+(point_label or result.point)+"**")
         st.caption(operator+" · "+result.point)
     else:st.markdown("**"+result.point+"**")
+    if result.point in catalog:
+        st.caption(types[result.point]+" · Dati: "+direction_name(catalog[result.point].direction))
+    else:
+        st.caption("Tipologia non verificata nel catalogo italiano · Dati: "+direction_name("exit" if result.point.endswith("exit") else "entry" if result.point.endswith("entry") else None))
     st.caption(f"{day_label(result.first)} – {day_label(result.last)} · acquisizione {acquisition_label(result.acquired.isoformat())}"+(" · cache" if result.cached else ""))
     if not result.labels or len(result.labels)!=1:
         st.warning("Etichetta punto non disponibile o non univoca: verifica il catalogo.")
