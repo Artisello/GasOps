@@ -535,7 +535,7 @@ def overview_panel():
                         displayed=visible,reading=reading)
             else:
                 _empty_selection(reading)
-            with st.popover("Cerca infrastruttura",width="stretch"):
+            with st.popover("Cerca infrastruttura",icon=":material/search:",width="stretch"):
                 st.session_state["net_overview_infrastructure"] = identifier
                 st.selectbox("Infrastruttura",[i.id for i in sorted(choices,key=lambda i:i.name)],
                     key="net_overview_infrastructure",format_func=lambda key:_infrastructure_label(all_items[key]),
@@ -868,7 +868,7 @@ def _detail(network, item, observations, snapshots, direction, events, first, la
             _gie_detail(saved,item.id,network,first,last,mode=mode)
             from .italian_network import security_entries
             if any(b.infrastructure_id==item.id for b in security_entries(network)):
-                st.button("Stress Test su questo ingresso",key="net_stress_"+mode,
+                st.button("Stress Test su questo ingresso",icon=":material/monitoring:",key="net_stress_"+mode,
                     on_click=_open_stress,args=(item.id,last),width="stretch")
     with history_tab:
         st.caption("TREND · D-30")
@@ -889,7 +889,7 @@ def _detail(network, item, observations, snapshots, direction, events, first, la
             frame = result.get("frame",pd.DataFrame())
             field = "stock_twh" if b.provider == "AGSI+" else "sendout_gwh_d"
             can_explore |= field in frame and frame[field].notna().any()
-        st.button("Esplora questi dati",key="net_data_explorer_"+mode,on_click=open_explorer,
+        st.button("Esplora questi dati",icon=":material/query_stats:",key="net_data_explorer_"+mode,on_click=open_explorer,
                   args=(item.id,direction,first,last),kwargs={"navigate":mode=="overview"},
                   disabled=not can_explore,help="Disponibile per punti con osservazioni consultabili.")
         if binding:
