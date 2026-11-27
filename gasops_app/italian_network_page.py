@@ -81,22 +81,29 @@ def reset_filters():
 def _accept_pick(chart_key, visible_ids, mode, event=None, *, point_directions=()):
     identifier = selected_id(event if event is not None else st.session_state.get(chart_key,{}), set(visible_ids))
     if identifier:
+        previous = st.session_state.get(SELECTED)
         st.session_state[SELECTED] = identifier
         if mode in ("overview", "full"):
             st.session_state[_detail_tab_key(mode)] = (
                 "Eventi" if st.session_state.get(READING) == "ATTENTION" else "Dati"
             )
         direction = dict(point_directions).get(identifier)
+        direction_key = "net_direction" if mode == "full" else "net_overview_direction"
         if direction in ("entry","exit"):
-            st.session_state["net_direction" if mode == "full" else "net_overview_direction"] = direction
+            st.session_state[direction_key] = direction
+        elif previous != identifier and mode in ("overview","full"):
+            st.session_state.pop(direction_key,None)
         if mode == "full":
             st.session_state["net_pending_selection"] = identifier
 
 
 def _widget_selection(key):
     if st.session_state.get(key):
+        previous = st.session_state.get(SELECTED)
         st.session_state[SELECTED] = st.session_state[key]
         mode = "overview" if key == "net_overview_infrastructure" else "full"
+        if previous != st.session_state[key]:
+            st.session_state.pop("net_overview_direction" if mode == "overview" else "net_direction",None)
         st.session_state[_detail_tab_key(mode)] = (
             "Eventi" if st.session_state.get(READING) == "ATTENTION" else "Dati"
         )
@@ -803,9 +810,10 @@ def panel(mode="full"):
     network, boundary, bundled = assets()
     _initialize_layers()
     focus = st.session_state.pop(FOCUS,None)
+    if focus:
+        st.session_state["net_period"] = focus["period"]
     if focus and focus["id"] in {i.id for i in network.infrastructure}:
         st.session_state["net_pending_selection"] = focus["id"]
-        st.session_state["net_period"] = focus["period"]
         item = next(i for i in network.infrastructure if i.id == focus["id"])
         if focus.get("direction") in {b.direction for b in network.bindings_for(item.id,"ENTSOG")}:
             st.session_state["net_direction"] = focus["direction"]
