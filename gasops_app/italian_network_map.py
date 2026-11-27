@@ -36,6 +36,21 @@ ICON_MAPPING = {category:{"x":n*24,"y":0,"width":24,"height":24,"mask":True} for
 ICON_ATLAS = "data:image/svg+xml,"+quote(f'<svg xmlns="http://www.w3.org/2000/svg" width="{24*len(_ATLAS_SYMBOLS)}" height="24" fill="white">'+
     ''.join(f'<g transform="translate({n*24} 0)">{symbol}</g>' for n,symbol in enumerate(_ATLAS_SYMBOLS.values()))+'</svg>')
 MAX_ZOOM = 9
+# Fixed bins, comparable across dates.
+FLOW_SIZES = ((0, 9), (100, 12), (500, 15), (float("inf"), 18))
+
+
+def flow_icon_size(value):
+    if value is None:
+        return 9
+    return next(size for upper,size in FLOW_SIZES if abs(value) <= upper)
+
+
+def focus_camera(camera, geometry):
+    lon, lat = label_anchor(geometry)
+    return {**camera, "longitude":lon, "latitude":lat,
+            "zoom":min(MAX_ZOOM, max(camera["zoom"]+1.6, 6.4))}
+
 MARK_COLORS = {"ring":[246,146,157],"finding":[242,190,114],"quality":[180,194,211],"assumption":[255,202,110]}
 
 
@@ -119,15 +134,19 @@ def label_layout(labels, *, zoom=4, width=None, height=None, longitude=12.5, lat
 
 
 def deck(network, boundary, visible, selected=None, event_ids=(), *, observations=(), day=None, direction="entry", show_labels=True, mode="full", viewport_width=600,
-         reading_mode="INFRASTRUCTURE", intelligence=None, finding_ids=(), stable_picking=False, scenario_ids=()):
+         reading_mode="INFRASTRUCTURE", intelligence=None, finding_ids=(), stable_picking=False, scenario_ids=(), focus_id=None):
     camera = fit_italy(boundary,viewport_width,498 if mode in ("overview","scenario") else 648)
+    national_zoom = camera["zoom"]
     lookup = {g.infrastructure_id:g for g in network.geography}
+    if focus_id in lookup and focus_id in {i.id for i in visible}:
+        camera = focus_camera(camera, lookup[focus_id].geometry)
     point_categories = {i.category for i in visible if i.category != "pipeline"}
     lines, points, highlight, labels, events, findings, quality, assumptions = [], [], [], [], [], [], [], []
     for item in visible:
         geometry = lookup[item.id].geometry
         tooltip = {"infra_id":item.id, "safe_name":escape(display_name(item.name)),
-                   "safe_type":escape(CATEGORIES[item.category]), "safe_status":escape(item.status), "safe_value":""}
+                   "safe_type":escape(CATEGORIES[item.category]), "safe_status":escape(item.status), "safe_value":"",
+                   "safe_summary":"Geografia storica · seleziona per i dettagli"}
         info = intelligence.get(item.id,{}) if intelligence is not None else {}
         if intelligence is not None:
             tooltip["safe_status"] = escape(info.get("status",{}).get("status","Sola geografia")+
@@ -144,6 +163,18 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
                 if info.get("change_gwh_d") is not None:
                     text.append(f"Δ D-1: {numero(info['change_gwh_d'],1)} GWh/d")
                 tooltip["safe_value"] = "\n".join(escape(t) for t in text)
+                flow = values.get("Physical Flow")
+                summary = "Flusso: " + numero(flow,1) + " GWh/d" if flow is not None else "Flusso non disponibile"
+                tooltip["safe_summary"] = escape(text[0]+" · "+summary)
+        if reading_mode == "ATTENTION":
+            signals = []
+            if item.id in event_ids: signals.append("Avviso pubblicato")
+            if item.id in finding_ids or info.get("capacity_change_gwh_d") is not None:
+                signals.append("Indicatore I.G.O.R.")
+            if info.get("binding") and (info.get("stale") or not info.get("flow_available")):
+                signals.append("Qualità dati")
+            if signals:
+                tooltip["safe_summary"] = escape(" · ".join(signals)+" · Apri Eventi")
         label_style = {"label_size":14 if item.id == selected else 12,
                        "label_color":[192,255,234] if item.id == selected else [226,237,247],
                        "label_background":[20,54,51,245] if item.id == selected else [13,24,36,235],
@@ -154,6 +185,7 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
             value = applicable(observations,point.point_direction,day,"Physical Flow") if point else None
             if value is not None:
                 tooltip["safe_value"] = f"{numero(value,1)} GWh/d · {'ingresso' if point.direction == 'entry' else 'uscita'} · {data_it(day)}"
+                tooltip["safe_summary"] = tooltip["safe_value"]
         if geometry["type"] != "Point":
             feature = {"type":"Feature", "geometry":geometry, **tooltip,
                        "properties":{**tooltip, "color":COLORS[item.category]}}
@@ -168,9 +200,20 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
                    and reading_mode != "INFRASTRUCTURE" and not info.get("available") else ""),"icon_size":ICON_SIZES[item.category],
                "radius":RADII[item.category],"hit_radius":HIT_RADII[item.category],
                "active":True,"border":[26,42,58]}
+        # Context stays selectable, while primary points dominate visually.
+        if reading_mode in ("SYSTEM","FLOW","ATTENTION"):
+            if item.id != selected and item.category in ("power","node","compressor"):
+                row["color"] = [*row["color"],150]
+                row["icon_size"] = max(6,row["icon_size"]-3)
+            if reading_mode == "FLOW" and info.get("flow_available"):
+                row["icon_size"] = flow_icon_size(info["values"].get("Physical Flow"))
         points.append(row)
         if item.id == selected or show_labels and (item.category in ("entry", "lng") or len(point_categories) == 1):
-            labels.append({**row, **label_style,"label":display_name(item.name.split(" · ")[0].replace("FSRU ", "")),
+            name = display_name(item.name.split(" · ")[0].replace("FSRU ", ""))
+            flow = info.get("values",{}).get("Physical Flow")
+            if reading_mode == "FLOW" and info.get("flow_available") and flow is not None:
+                name += " · "+numero(flow,0)
+            labels.append({**row, **label_style,"label":name,
                            "offset":[10,-10] if item.id == selected else [10,9]})
         if item.id in event_ids:
             events.append(row)
@@ -183,12 +226,12 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
             if info.get("binding") and (info.get("stale") or not info.get("flow_available")):
                 quality.append(row)
     layers = [pdk.Layer("GeoJsonLayer", boundary, id="italy-outline", pickable=False,
-        filled=True, stroked=True, get_fill_color=[24,40,55,255], get_line_color=[109,140,158,230],
+        filled=True, stroked=True, get_fill_color=[23,40,54,255], get_line_color=[100,132,150,230],
         line_width_min_pixels=1.2,
         # Explicit sublayer colors keep Streamlit's native selection tint from
         # dimming the background or the rest of the network.
-        _sub_layer_props={"polygons-fill":{"getFillColor":[24,40,55,255]},
-                          "polygons-stroke":{"getColor":[109,140,158,230]}})]
+        _sub_layer_props={"polygons-fill":{"getFillColor":[23,40,54,255]},
+                          "polygons-stroke":{"getColor":[100,132,150,230]}})]
     if lines:
         # Visible strokes stay thin; only the invisible picking corridor widens.
         # Alpha 1 remains pickable without a visible corridor across the map.
@@ -199,8 +242,8 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
             _sub_layer_props={"linestrings":{"getColor":[91,139,181,1]}}))
         layers.append(pdk.Layer("GeoJsonLayer", {"type":"FeatureCollection", "features":lines},
             id="historical-links", pickable=False, filled=False,
-            get_line_color="properties.color", line_width_min_pixels=1.1,
-            _sub_layer_props={"linestrings":{"getColor":[*COLORS["pipeline"],255]}}))
+            get_line_color="properties.color", line_width_min_pixels=.8 if reading_mode != "INFRASTRUCTURE" else 1.1,
+            _sub_layer_props={"linestrings":{"getColor":[*(COLORS["pipeline"] if reading_mode == "INFRASTRUCTURE" else [60,103,140]),255]}}))
     if highlight:
         layers.append(pdk.Layer("GeoJsonLayer", {"type":"FeatureCollection", "features":highlight},
             id="selected-link-halo", pickable=False, filled=False, get_line_color=[101,223,191,100],
@@ -264,12 +307,14 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
             get_text_size="properties.label_size",text_size_units=pdk.types.String("pixels"),text_size_min_pixels=0 if stable_picking else 12,text_size_max_pixels=14,
             get_text_pixel_offset="properties.offset",get_text_anchor="properties.anchor",text_font_family=pdk.types.String("Arial, sans-serif"),
             text_font_weight=pdk.types.String("500"),text_character_set=pdk.types.String("auto"),text_background=True,
-            get_text_background_color="properties.label_background",text_background_padding=[0,0] if stable_picking else [5,3]))
-    return pdk.Deck(layers=layers, initial_view_state=pdk.ViewState(**camera,min_zoom=camera["zoom"]-.25,max_zoom=MAX_ZOOM,
+            get_text_background_color="properties.label_background",text_background_padding=[3,2]))
+    return pdk.Deck(layers=layers, initial_view_state=pdk.ViewState(**camera,min_zoom=national_zoom-.25,max_zoom=MAX_ZOOM,
         pitch=0,min_pitch=0,max_pitch=0),
         views=[pdk.View(type="MapView",controller={"dragPan":True,"scrollZoom":True,"doubleClickZoom":True,
             "touchZoom":True,"dragRotate":False,"touchRotate":False,"keyboard":True})],
         map_provider=None, **({} if NATIVE_BASEMAP_OMISSION else {"map_style":LOCAL_STYLE_URL}),
-        tooltip={"html":"<b>{safe_name}</b><br/>{safe_type}<br/>{safe_status}<br/>{safe_value}",
-                 "style":{"backgroundColor":"#142231", "color":"#eef5fc", "fontSize":"12px",
-                          "pointerEvents":"none","maxWidth":"240px","whiteSpace":"pre-line"}})
+        tooltip={"html":"<b>{safe_name}</b><br/>{safe_status}<br/>{safe_summary}",
+                 "style":{"backgroundColor":"#122331", "color":"#eef5fc", "fontSize":"12px",
+                          "pointerEvents":"none","maxWidth":"210px","whiteSpace":"normal",
+                          "border":"1px solid #39576b","borderRadius":"8px","padding":"8px 10px",
+                          "boxShadow":"0 4px 14px rgba(0,0,0,.24)"}})

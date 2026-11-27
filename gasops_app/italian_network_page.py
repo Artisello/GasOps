@@ -139,8 +139,14 @@ def _map_intelligence(network, visible, observations, snapshots, day, now, saved
 
 
 def _reset_view(mode):
+    st.session_state.pop("net_camera_focus_"+mode,None)
     key = "net_view_epoch_"+mode
     st.session_state[key] = st.session_state.get(key,0)+1
+
+
+def _focus_view(mode, identifier):
+    _reset_view(mode)
+    st.session_state["net_camera_focus_"+mode] = identifier
 
 
 def render_map(network, boundary, visible, identifier, *, mode, observations, day, direction="entry", events=(), show_labels=True,
@@ -155,12 +161,18 @@ def render_map(network, boundary, visible, identifier, *, mode, observations, da
     with st.container(key="network_map_frame_"+mode):
         width = _viewport_width(default=600,key="network_map_width_"+mode)
         width = width if isinstance(width,(int,float)) and not isinstance(width,bool) and 200 <= width <= 4000 else 600
+        focus = st.session_state.get("net_camera_focus_"+mode)
         st.pydeck_chart(deck(network,boundary,visible,identifier,events,observations=observations,
             day=day,direction=direction,show_labels=show_labels,mode=mode,viewport_width=width-2,
-            reading_mode=reading_mode,intelligence=intelligence,finding_ids=findings,stable_picking=True,scenario_ids=scenario_ids),key=key,
+            reading_mode=reading_mode,intelligence=intelligence,finding_ids=findings,stable_picking=True,scenario_ids=scenario_ids,focus_id=focus),key=key,
             height=500 if mode in ("overview","scenario") else 650,selection_mode="single-object",
             on_select=partial(_accept_pick,key,tuple(i.id for i in visible),mode,
                 point_directions=tuple((identifier,info["binding"].direction) for identifier,info in (intelligence or {}).items() if info.get("binding"))),**accessible)
+        if mode in ("overview","full"):
+            st.button("Centra selezione",key="net_view_focus_"+mode,icon=":material/my_location:",
+                      disabled=identifier not in {i.id for i in visible},
+                      on_click=_focus_view,args=(mode,identifier),
+                      help="Inquadra l’infrastruttura selezionata senza modificare filtri o giorno gas.")
         st.button("Vista Italia",key="net_view_reset_"+mode,on_click=_reset_view,args=(mode,),
                   help="Ripristina l’inquadratura italiana, mantenendo l’infrastruttura selezionata.")
 
@@ -169,7 +181,10 @@ def render_legend(categories, reading_mode="INFRASTRUCTURE", *, event_overlay=Fa
     labels = "".join(f'<span><img src="{legend_symbol(c)}" width="14" height="14" alt="" aria-hidden="true">{escape(CATEGORIES[c])}</span>' for c in categories)
     st.html('<div class="gas-map-legend" aria-label="Legenda della mappa">'+labels+'</div>')
     if reading_mode in ("SYSTEM","FLOW"):
-        st.caption("Simbolo pieno: dati ENTSOG sul giorno · vuoto: sola geografia / dato assente. Nessuna classe di rischio.")
+        st.caption("Pieno: dati ENTSOG · contorno: dato assente o sola geografia.")
+        if reading_mode == "FLOW":
+            st.caption("Dimensione e numero accanto al punto: flusso fisico (GWh/d). Classi: 0 · fino a 100 · fino a 500 · oltre 500. Il numero è arrotondato; non è capacità.")
+            st.caption("Gasdotti schematici: nessun flusso attribuito ai segmenti.")
     elif reading_mode == "ATTENTION":
         marks = "".join(f'<span><img src="{legend_symbol(c)}" alt="" aria-hidden="true">{label}</span>'
                         for c,label in (("ring","Evento pubblicato"),("finding","Indicatore I.G.O.R."),("quality","Dato assente / cache da aggiornare")))
@@ -403,7 +418,7 @@ def overview_panel():
         event_ids = {e["infrastructure_id"] for e in status.active_events}
         finding_ids = {f.infrastructure_id for f in status.attention if f.category not in ("quality","event") and f.infrastructure_id}
         visible = reading_infrastructure(perimeter,reading,intelligence,selected=identifier,event_ids=event_ids,finding_ids=finding_ids)
-        map_col, detail = st.columns([1,1.15],gap="medium")
+        map_col, detail = st.columns([1.25,1],gap="medium")
         with map_col:
             render_map(network,boundary,visible,identifier,mode="overview",observations=observations,day=day,direction=direction,
                 reading_mode=reading,intelligence=intelligence,events=event_ids if reading == "ATTENTION" else (),findings=finding_ids)
