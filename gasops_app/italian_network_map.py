@@ -38,6 +38,38 @@ ICON_ATLAS = "data:image/svg+xml,"+quote(f'<svg xmlns="http://www.w3.org/2000/sv
 MAX_ZOOM = 9
 # Fixed bins, comparable across dates.
 FLOW_SIZES = ((0, 9), (100, 12), (500, 15), (float("inf"), 18))
+FLOW_LENSES = ("volume", "delta", "utilization")
+DELTA_COLORS = {"up":[101,223,191], "down":[242,190,114], "flat":[161,175,192]}
+UTILIZATION_COLORS = ([111,159,208], [135,180,244], [192,170,255], [238,200,255])
+UNKNOWN_COLOR = [150,164,181]
+
+
+def flow_encoding(info, lens):
+    """Fixed scales and missing-safe encodings for one point/direction/day."""
+    flow = info.get("values",{}).get("Physical Flow")
+    if lens == "volume":
+        return {"value":flow,"size":flow_icon_size(flow),"color":None,
+                "label":numero(flow,0) if flow is not None else "N/D",
+                "summary":"Flusso: "+numero(flow,1)+" GWh/d" if flow is not None else "Flusso non disponibile"}
+    if lens == "delta":
+        value = info.get("change_gwh_d")
+        if value is not None:
+            sign = "up" if value > 0 else "down" if value < 0 else "flat"
+            magnitude = abs(value)
+            size = 9 if magnitude == 0 else 12 if magnitude <= 10 else 15 if magnitude <= 50 else 18
+            label = ("+" if value > 0 else "−" if value < 0 else "")+numero(magnitude,1)
+            return {"value":value,"size":size,"color":DELTA_COLORS[sign],"label":label,
+                    "summary":"Δ D-1: "+label+" GWh/d"}
+    elif lens == "utilization":
+        value = info.get("utilization_pct")
+        if value is not None:
+            index = 0 if value < 30 else 1 if value < 60 else 2 if value < 90 else 3
+            label = numero(value,1)+"%"
+            return {"value":value,"size":14,"color":UTILIZATION_COLORS[index],
+                    "label":label,"summary":"Utilizzo capacità: "+label}
+    return {"value":None,"size":9,"color":UNKNOWN_COLOR,"label":"N/D",
+            "summary":"Confronto D-1 non disponibile" if lens == "delta" else "Capacità non confrontabile"}
+
 
 
 def flow_icon_size(value):
@@ -54,9 +86,9 @@ def focus_camera(camera, geometry):
 MARK_COLORS = {"ring":[246,146,157],"finding":[242,190,114],"quality":[180,194,211],"assumption":[255,202,110]}
 
 
-def legend_symbol(category, *, outlined=False):
+def legend_symbol(category, *, outlined=False, neutral=False):
     """The legend and atlas use exactly the same authored SVG geometry."""
-    color = ",".join(map(str,COLORS.get(category,MARK_COLORS.get(category,[161,175,192]))))
+    color = ",".join(map(str,UNKNOWN_COLOR if neutral else COLORS.get(category,MARK_COLORS.get(category,[161,175,192]))))
     shape = _ATLAS_SYMBOLS.get(category,'<path d="M1 11h22v2H1Z"/>').replace('stroke="white"',f'stroke="rgb({color})"')
     if outlined:
         shape = f'<g fill="none" stroke="rgb({color})" stroke-width="1.8">{shape}</g>'
@@ -157,13 +189,14 @@ def label_layout(labels, *, zoom=4, width=None, height=None, longitude=12.5, lat
 
 
 def deck(network, boundary, visible, selected=None, event_ids=(), *, observations=(), day=None, direction="entry", show_labels=True, mode="full", viewport_width=600,
-         reading_mode="INFRASTRUCTURE", intelligence=None, finding_ids=(), stable_picking=False, scenario_ids=(), focus_id=None):
+         reading_mode="INFRASTRUCTURE", intelligence=None, finding_ids=(), stable_picking=False, scenario_ids=(), focus_id=None, flow_lens="volume"):
     camera = fit_italy(boundary,viewport_width,498 if mode in ("overview","scenario") else 648)
     national_zoom = camera["zoom"]
     lookup = {g.infrastructure_id:g for g in network.geography}
     if focus_id in lookup and focus_id in {i.id for i in visible}:
         camera = focus_camera(camera, lookup[focus_id].geometry)
     visible = tuple(visible)
+    flow_lens = flow_lens if flow_lens in FLOW_LENSES else "volume"
     nearby = nearby_points(network, visible)
     point_categories = {i.category for i in visible if i.category != "pipeline"}
     lines, points, highlight, labels, events, findings, quality, assumptions = [], [], [], [], [], [], [], []
@@ -191,6 +224,8 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
                 flow = values.get("Physical Flow")
                 summary = "Flusso: " + numero(flow,1) + " GWh/d" if flow is not None else "Flusso non disponibile"
                 tooltip["safe_summary"] = escape(text[0]+" · "+summary)
+                if reading_mode == "FLOW":
+                    tooltip["safe_summary"] = escape(text[0]+" · "+flow_encoding(info,flow_lens)["summary"])
         if reading_mode == "ATTENTION":
             signals = []
             if item.id in event_ids: signals.append("Avviso pubblicato")
@@ -232,14 +267,19 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
             if item.id != selected and item.category in ("power","node","compressor"):
                 row["color"] = [*row["color"],150]
                 row["icon_size"] = max(6,row["icon_size"]-3)
-            if reading_mode == "FLOW" and info.get("flow_available"):
-                row["icon_size"] = flow_icon_size(info["values"].get("Physical Flow"))
+            if reading_mode == "FLOW" and info.get("binding"):
+                encoded = flow_encoding(info,flow_lens)
+                row["icon_size"] = encoded["size"]
+                if encoded["color"] is not None:
+                    row["color"] = encoded["color"]
+                if encoded["value"] is None:
+                    row["icon"] = item.category+"-outline"
         points.append(row)
         if item.id == selected or show_labels and (item.category in ("entry", "lng") or len(point_categories) == 1):
             name = display_name(item.name.split(" · ")[0].replace("FSRU ", ""))
             flow = info.get("values",{}).get("Physical Flow")
-            if reading_mode == "FLOW" and info.get("flow_available") and flow is not None:
-                name += " · "+numero(flow,0)
+            if reading_mode == "FLOW" and info.get("binding"):
+                name += " · "+flow_encoding(info,flow_lens)["label"]
             labels.append({**row, **label_style,"label":name,
                            "offset":[10,-10] if item.id == selected else [10,9]})
         if item.id in event_ids:
