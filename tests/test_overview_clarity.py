@@ -113,3 +113,29 @@ def test_hover_values_are_readable_lines_instead_of_html_fragments():
     points=next(l["data"] for l in spec["layers"] if l["id"]=="infrastructure-points")
     text=next(p["safe_value"] for p in points if p["infra_id"]=="INET_BP_65")
     assert "\n" in text and "GWh/d" in text and "<br" not in text
+
+
+def test_legacy_infrastructure_reading_migrates_to_system(offline):
+    app=AppTest.from_string(SCRIPT,default_timeout=30)
+    app.session_state[ARCHIVE_KEY]=True
+    app.session_state[view.READING]="INFRASTRUCTURE"
+    app.run()
+    assert not app.exception
+    assert app.session_state[view.READING]=="SYSTEM"
+    assert app.radio(key="net_reading_overview").options==["Sistema","Flussi","Attenzione"]
+
+
+def test_nodes_remain_accessible_as_optional_full_map_layer(offline):
+    app=AppTest.from_string("from gasops_app.italian_network_page import panel\npanel(mode='full')",default_timeout=30)
+    app.session_state[ARCHIVE_KEY]=True
+    app.run()
+    assert not app.exception
+    assert "node" not in app.multiselect(key="net_layers").value
+    app.multiselect(key="net_layers").set_value(["node"]).run()
+    assert not app.exception
+    assert app.radio(key="net_reading_full").options==["Sistema","Flussi","Attenzione"]
+    assert app.session_state[view.SELECTED] is not None
+    spec=json.loads(app.get("deck_gl_json_chart")[0].proto.json)
+    active=[r for l in spec["layers"] if l["id"]=="infrastructure-points" for r in l["data"] if r["active"]]
+    assert len(active)==177 and all(r["category"]=="node" for r in active)
+    assert app.session_state[view.SELECTED] in {r["infra_id"] for r in active}
