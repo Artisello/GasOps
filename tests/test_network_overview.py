@@ -355,3 +355,24 @@ def test_overview_nearby_button_can_open_compressor(monkeypatch,tmp_path):
     button.click().run()
     assert not app.exception
     assert app.session_state[view.SELECTED]=="INET_CO_77"
+
+
+@pytest.mark.parametrize("layout",["overview","full"])
+def test_mode_switch_removes_previous_storage_and_resets_details(monkeypatch,tmp_path,layout):
+    offline(monkeypatch,tmp_path)
+    app=AppTest.from_string(f"from gasops_app.italian_network_page import panel\npanel(mode='{layout}')",default_timeout=30)
+    app.session_state[ARCHIVE_KEY]=True
+    app.session_state[view.SELECTED]="INET_SR_37"
+    app.run()
+    assert not app.exception
+    assert app.session_state[view.SELECTED]=="INET_SR_37"
+    widget="net_overview_infrastructure" if layout=="overview" else "net_infrastructure"
+    for reading in ("FLOW","ATTENTION"):
+        app.radio(key="net_reading_"+layout).set_value(reading).run()
+        assert not app.exception
+        assert app.session_state[view.SELECTED]!="INET_SR_37"
+        assert app.selectbox(key=widget).value==app.session_state[view.SELECTED]
+        assert app.session_state[view._detail_tab_key(layout)]==("Eventi" if reading=="ATTENTION" else "Dati")
+        spec=json.loads(app.get("deck_gl_json_chart")[0].proto.json)
+        points=next(l["data"] for l in spec["layers"] if l["id"]=="infrastructure-points")
+        assert not next(r for r in points if r["infra_id"]=="INET_SR_37")["active"]

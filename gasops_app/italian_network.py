@@ -492,17 +492,16 @@ def point_intelligence(network, identifier, observations, day, now, *, direction
 
 
 def reading_infrastructure(visible, reading_mode, intelligence, *, selected=None, event_ids=(), finding_ids=()):
-    """Modes narrow the existing filter perimeter; selection stays as context.
+    """Modes narrow the existing filter perimeter independently of selection.
 
     Pipelines are static geographic context, never a location for point flows.
     Missing telemetry is meaningful only for a point with a verified binding.
+    The selected argument is retained for compatibility; it cannot bypass filters.
     """
     if reading_mode not in READING_MODES:
         raise ValueError("Modalità di lettura non riconosciuta")
     ids = set(event_ids)|set(finding_ids)
     def include(item):
-        if item.id == selected:
-            return True
         if reading_mode == "INFRASTRUCTURE":
             return True
         if reading_mode == "SYSTEM":

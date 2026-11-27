@@ -81,22 +81,29 @@ def reset_filters():
 def _accept_pick(chart_key, visible_ids, mode, event=None, *, point_directions=()):
     identifier = selected_id(event if event is not None else st.session_state.get(chart_key,{}), set(visible_ids))
     if identifier:
+        previous = st.session_state.get(SELECTED)
         st.session_state[SELECTED] = identifier
         if mode in ("overview", "full"):
             st.session_state[_detail_tab_key(mode)] = (
                 "Eventi" if st.session_state.get(READING) == "ATTENTION" else "Dati"
             )
         direction = dict(point_directions).get(identifier)
+        direction_key = "net_direction" if mode == "full" else "net_overview_direction"
         if direction in ("entry","exit"):
-            st.session_state["net_direction" if mode == "full" else "net_overview_direction"] = direction
+            st.session_state[direction_key] = direction
+        elif previous != identifier and mode in ("overview","full"):
+            st.session_state.pop(direction_key,None)
         if mode == "full":
             st.session_state["net_pending_selection"] = identifier
 
 
 def _widget_selection(key):
     if st.session_state.get(key):
+        previous = st.session_state.get(SELECTED)
         st.session_state[SELECTED] = st.session_state[key]
         mode = "overview" if key == "net_overview_infrastructure" else "full"
+        if previous != st.session_state[key]:
+            st.session_state.pop("net_overview_direction" if mode == "overview" else "net_direction",None)
         st.session_state[_detail_tab_key(mode)] = (
             "Eventi" if st.session_state.get(READING) == "ATTENTION" else "Dati"
         )
@@ -108,15 +115,59 @@ def _infrastructure_label(item):
 
 def _reading_selection(key):
     st.session_state[READING] = st.session_state[key]
-    if key == "net_reading_overview" and st.session_state[key] == "ATTENTION":
-        st.session_state["net_attention_enter_overview"] = True
+    mode = "overview" if key == "net_reading_overview" else "full"
+    st.session_state[_detail_tab_key(mode)] = "Eventi" if st.session_state[key] == "ATTENTION" else "Dati"
+    st.session_state.pop("net_pending_selection",None)
+    _reset_view(mode)
 
 
 def _reading_items(perimeter, reading, intelligence, identifier, events, findings):
-    # Attention shows only signalled points. Pipelines are geographic context.
-    return reading_infrastructure(perimeter,reading,intelligence,
-        selected=None if reading == "ATTENTION" else identifier,
-        event_ids=events,finding_ids=findings)
+    return reading_infrastructure(perimeter,reading,intelligence,event_ids=events,finding_ids=findings)
+
+
+def _selectable_items(displayed, reading):
+    return tuple(i for i in displayed if reading not in ("FLOW","ATTENTION") or i.category != "pipeline")
+
+
+def _resolve_selection(displayed, reading, previous, events=(), findings=()):
+    choices = _selectable_items(displayed,reading)
+    if previous in {i.id for i in choices}:
+        return previous
+    if not choices:
+        return None
+    if reading == "ATTENTION":
+        return min(choices,key=lambda i:(i.id not in events,i.id not in findings,i.name,i.id)).id
+    return min(choices,key=lambda i:(i.id!="INET_BP_65",i.category!="entry",i.name,i.id)).id
+
+
+def _reconcile_map(network, perimeter, observations, snapshots, day, now, saved, previous,
+                   direction, policy, reading, events, findings, mode):
+    # Eligibility uses a verified direction with data, not a stale direction from another item.
+    intelligence = _map_intelligence(network,perimeter,observations,snapshots,day,now,saved,None,None,policy)
+    if previous in intelligence and direction in ("entry","exit"):
+        candidate = point_intelligence(network,previous,observations,day,now,direction=direction,
+            snapshots=snapshots,failures=saved.get("failures",()),ttl_hours=policy.network_ttl_hours)
+        if candidate.get("binding") and (reading!="FLOW" or candidate.get("flow_available")):
+            intelligence[previous] = candidate
+    displayed = _reading_items(perimeter,reading,intelligence,previous,events,findings)
+    identifier = _resolve_selection(displayed,reading,previous,events,findings)
+    if identifier != previous:
+        st.session_state[_detail_tab_key(mode)] = "Eventi" if reading=="ATTENTION" else "Dati"
+        if st.session_state.get("net_camera_focus_"+mode):
+            _reset_view(mode)
+    binding = intelligence.get(identifier,{}).get("binding")
+    directions = sorted({b.direction for b in verified_bindings(network,identifier)}) if identifier else []
+    direction = binding.direction if binding else (directions[0] if directions else None)
+    if reading == "FLOW" and len(directions)>1:
+        directions = [d for d in directions if d==direction or point_intelligence(network,identifier,observations,day,now,
+            direction=d,snapshots=snapshots,failures=saved.get("failures",()),ttl_hours=policy.network_ttl_hours)["flow_available"]]
+    st.session_state[SELECTED] = identifier
+    return displayed,identifier,directions,direction,intelligence
+
+
+def _empty_selection(reading):
+    st.info("Nessun punto pertinente per questa vista e il giorno selezionato." if reading in ("FLOW","ATTENTION")
+            else "Nessuna infrastruttura nei filtri selezionati.")
 
 
 def _select_related(mode, identifier):
@@ -198,7 +249,7 @@ def render_map(network, boundary, visible, identifier, *, mode, observations, da
             day=day,direction=direction,show_labels=show_labels,mode=mode,viewport_width=width-2,
             reading_mode=reading_mode,intelligence=intelligence,finding_ids=findings,stable_picking=True,scenario_ids=scenario_ids,focus_id=focus),key=key,
             height=500 if mode in ("overview","scenario") else 650,selection_mode="single-object",
-            on_select=partial(_accept_pick,key,tuple(i.id for i in visible),mode,
+            on_select=partial(_accept_pick,key,tuple(i.id for i in _selectable_items(visible,reading_mode)),mode,
                 point_directions=tuple((identifier,info["binding"].direction) for identifier,info in (intelligence or {}).items() if info.get("binding"))),**accessible)
         if mode in ("overview","full"):
             st.button("Centra selezione",key="net_view_focus_"+mode,icon=":material/my_location:",
@@ -433,38 +484,17 @@ def overview_panel():
     first = day-timedelta(days=6)
     identifier = st.session_state.get(SELECTED,st.session_state.get("net_infrastructure","INET_BP_65"))
     all_items = {i.id:i for i in network.infrastructure}
-    if identifier not in all_items:
-        identifier = "INET_BP_65"
-    st.session_state[SELECTED] = identifier
     perimeter = network.infrastructure
-    item = all_items[identifier]
-    bindings = verified_bindings(network,identifier)
-    directions = sorted({b.direction for b in bindings})
-    if st.session_state.get("net_overview_direction") not in directions:
-        st.session_state["net_overview_direction"] = "entry" if "entry" in directions else directions[0] if directions else None
     direction = st.session_state.get("net_overview_direction")
     system.header(status)
     with st.container(key="network_overview"):
         reading = _mode_selector("overview")
-        intelligence = _map_intelligence(network,perimeter,observations,snapshots,day,now,saved,identifier,direction,policy)
         event_ids = {e["infrastructure_id"] for e in status.active_events}
         finding_ids = {f.infrastructure_id for f in status.attention if f.category not in ("quality","event") and f.infrastructure_id}
-        visible = _reading_items(perimeter,reading,intelligence,identifier,event_ids,finding_ids)
-        entering_attention = st.session_state.pop("net_attention_enter_overview",False)
-        if reading == "ATTENTION" and entering_attention:
-            candidates = [i for i in visible if i.category != "pipeline"]
-            st.session_state[_detail_tab_key("overview")] = "Eventi"
-            if candidates and identifier not in {i.id for i in candidates}:
-                item = sorted(candidates,key=lambda i:(i.id not in event_ids,i.id not in finding_ids,i.name,i.id))[0]
-                identifier = item.id
-                st.session_state[SELECTED] = identifier
-                bindings = verified_bindings(network,identifier)
-                directions = sorted({b.direction for b in bindings})
-                binding = intelligence.get(identifier,{}).get("binding")
-                direction = binding.direction if binding else ("entry" if "entry" in directions else directions[0] if directions else None)
-                st.session_state["net_overview_direction"] = direction
-                intelligence = _map_intelligence(network,perimeter,observations,snapshots,day,now,saved,identifier,direction,policy)
-                visible = _reading_items(perimeter,reading,intelligence,identifier,event_ids,finding_ids)
+        visible,identifier,directions,direction,intelligence = _reconcile_map(network,perimeter,observations,
+            snapshots,day,now,saved,identifier,direction,policy,reading,event_ids,finding_ids,"overview")
+        st.session_state["net_overview_direction"] = direction
+        choices = _selectable_items(visible,reading)
         map_col, detail = st.columns([1.25,1],gap="medium")
         with map_col:
             render_map(network,boundary,visible,identifier,mode="overview",observations=observations,day=day,direction=direction,
@@ -475,14 +505,17 @@ def overview_panel():
             if len(directions)>1:
                 direction = st.radio("Direzione",directions,key="net_overview_direction",horizontal=True,
                     format_func=lambda d:"Ingresso" if d == "entry" else "Uscita",label_visibility="collapsed")
-            _detail(network,item,observations,snapshots,direction,status.active_events,first,day,saved,
-                    mode="overview",info=intelligence.get(identifier),attention=status.attention,
-                    displayed=visible,reading=reading)
+            if identifier:
+                _detail(network,all_items[identifier],observations,snapshots,direction,status.active_events,first,day,saved,
+                        mode="overview",info=intelligence.get(identifier),attention=status.attention,
+                        displayed=visible,reading=reading)
+            else:
+                _empty_selection(reading)
             with st.popover("Cerca infrastruttura",width="stretch"):
                 st.session_state["net_overview_infrastructure"] = identifier
-                st.selectbox("Infrastruttura",[i.id for i in sorted(network.infrastructure,key=lambda i:i.name)],
+                st.selectbox("Infrastruttura",[i.id for i in sorted(choices,key=lambda i:i.name)],
                     key="net_overview_infrastructure",format_func=lambda key:_infrastructure_label(all_items[key]),
-                    on_change=_widget_selection,args=("net_overview_infrastructure",))
+                    disabled=not choices,on_change=_widget_selection,args=("net_overview_infrastructure",))
     system.balance(status,compact=True)
     system.attention(status,network,_open_full,compact=True)
     st.button("Esplora la rete",icon=":material/arrow_forward:",key="net_overview_open",
@@ -777,9 +810,10 @@ def panel(mode="full"):
     network, boundary, bundled = assets()
     _initialize_layers()
     focus = st.session_state.pop(FOCUS,None)
+    if focus:
+        st.session_state["net_period"] = focus["period"]
     if focus and focus["id"] in {i.id for i in network.infrastructure}:
         st.session_state["net_pending_selection"] = focus["id"]
-        st.session_state["net_period"] = focus["period"]
         item = next(i for i in network.infrastructure if i.id == focus["id"])
         if focus.get("direction") in {b.direction for b in network.bindings_for(item.id,"ENTSOG")}:
             st.session_state["net_direction"] = focus["direction"]
@@ -842,15 +876,18 @@ def panel(mode="full"):
         operators=[None if v == "Non indicato" else v for v in st.session_state.get("net_operators",[])],
         regions=st.session_state.get("net_regions",[]), statuses=st.session_state.get("net_statuses",[]),
         event_ids=event_ids if show_events and st.session_state.get("net_only_events") else None)
-    options = [i.id for i in sorted(visible, key=lambda i:(i.category != "entry",i.name))]
     lookup = {i.id:i for i in visible}
     visible_events = [e for e in events if e["infrastructure_id"] in lookup]
-    pending = st.session_state.pop("net_pending_selection", st.session_state.get(SELECTED))
-    if pending in options:
-        st.session_state["net_infrastructure"] = pending
-    if st.session_state.get("net_infrastructure") not in options:
-        st.session_state["net_infrastructure"] = "INET_BP_65" if "INET_BP_65" in options else options[0] if options else None
-    st.session_state[SELECTED] = st.session_state.get("net_infrastructure")
+    pending = st.session_state.pop("net_pending_selection", st.session_state.get(SELECTED,st.session_state.get("net_infrastructure")))
+    operational = build_status(network,snapshots,state,now,gas_day=last,
+                               interruptions=interruption_sets,policy=policy)
+    active_event_ids = {e["infrastructure_id"] for e in operational.active_events}
+    finding_ids = {f.infrastructure_id for f in operational.attention if f.category not in ("quality","event") and f.infrastructure_id}
+    displayed,identifier,directions,direction,intelligence = _reconcile_map(network,visible,observations,
+        snapshots,last,now,saved,pending,st.session_state.get("net_direction"),policy,reading,active_event_ids,finding_ids,"full")
+    options = [i.id for i in sorted(_selectable_items(displayed,reading),key=lambda i:(i.category!="entry",i.name))]
+    st.session_state["net_infrastructure"] = identifier
+    st.session_state["net_direction"] = direction
     summary = st.container(key="network_summary")
     with st.container(key="network_explorer"):
         map_col, detail = st.columns([1,1], gap="small")
@@ -859,22 +896,12 @@ def panel(mode="full"):
         identifier = st.selectbox("Infrastruttura", options, format_func=lambda k:_infrastructure_label(lookup[k]), key="net_infrastructure",
                                  placeholder="Nessuna infrastruttura nei filtri", disabled=not options,
                                  on_change=_widget_selection,args=("net_infrastructure",))
-        points = verified_bindings(network,identifier) if identifier else ()
-        directions = sorted({b.direction for b in points})
-        if st.session_state.get("net_direction") not in directions:
-            st.session_state["net_direction"] = directions[0] if directions else None
         direction = st.selectbox("Direzione", directions, key="net_direction", disabled=not directions,
             format_func=lambda d:"Ingresso" if d == "entry" else "Uscita", placeholder="—") if directions else None
     if refresh_clicked and not archive:
         detail = (identifier,direction,first,last) if identifier else None
         job = acquisition.schedule(store,network,now,api_key=api_key,first=first,last=last,force=True,detail=detail)
     watch(store,job,connections,on_done=_publish_details)
-    operational = build_status(network,snapshots,state,now,gas_day=last,
-                               interruptions=interruption_sets,policy=policy)
-    intelligence = _map_intelligence(network,visible,observations,snapshots,last,now,saved,identifier,direction,policy)
-    active_event_ids = {e["infrastructure_id"] for e in operational.active_events}
-    finding_ids = {f.infrastructure_id for f in operational.attention if f.category not in ("quality","event") and f.infrastructure_id}
-    displayed = _reading_items(visible,reading,intelligence,identifier,active_event_ids,finding_ids)
     metrics = map_kpis(network, visible, observations, last)
     status = kpi_status(metrics,snapshots,last,now,current_day=_last_completed(now),failures=saved.get("failures",()))
     with data_status.container():
@@ -908,6 +935,8 @@ def panel(mode="full"):
             _detail(network,lookup[identifier],observations,snapshots,direction,operational.active_events,first,last,saved,
                     info=intelligence.get(identifier),attention=operational.attention,
                     displayed=displayed,reading=reading)
+        else:
+            _empty_selection(reading)
     with st.expander("Copertura e fonti"):
         _source_status(status,last)
         st.dataframe([{"Livello":CATEGORIES[c],"Mappate":metrics["categories"][c]} for c in CATEGORIES],hide_index=True)
