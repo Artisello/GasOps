@@ -9,7 +9,7 @@ import streamlit as st
 from .demo_cases import briefing, cases
 from .demo_forecast import load as load_forecast
 from .italiano import data_it, numero
-from .visuals import AMBER, BLUE, MUTED, ROSE, TEAL, chip, kpi_grid
+from .visuals import AMBER, BLUE, MUTED, ROSE, TEAL, chip, kpi_grid, header
 
 VIEWS = ("In sintesi", "Balancing", "Settlement", "Operations", "Previsioni", "Sviluppi")
 NAV = "demo_view"
@@ -22,9 +22,8 @@ def _open_example(view):
 
 
 def _heading(title, kind="Dati simulati", period="18 nov 2026 · 14:00 CET"):
-    st.html('<div class="demo-section-meta">' + chip(kind, "historical" if "pubblic" in kind else "synthetic")
-            + f'<span>{escape(period)}</span></div>')
-    st.title(title)
+    header(title,chip(kind, "historical" if "pubblic" in kind else "synthetic")
+            + f'<span>{escape(period)}</span>')
 
 
 def _chart(fig, key, unit, height=300):
@@ -276,9 +275,7 @@ def home():
 
 def page():
     from .workspace import picker
-    st.html('<div class="demo-masthead"><div class="gas-brand"><div class="gas-mark" aria-hidden="true">'
-            '<span></span><span></span><span></span></div><div><strong>I.G.O.R.</strong>'
-            '</div></div><span class="demo-masthead-note">Demo · sola lettura</span></div>')
+    st.caption("Esempi guidati · sola lettura")
     with st.container(key="demo_navigation"):
         view = picker("Esplora le potenzialità", VIEWS, key=NAV,
                       labels={"Balancing":"Bilanciamento","Settlement":"Rettifiche","Operations":"Attività e scadenze"})
