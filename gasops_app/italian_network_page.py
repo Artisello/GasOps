@@ -476,9 +476,8 @@ def overview_panel():
                 direction = st.radio("Direzione",directions,key="net_overview_direction",horizontal=True,
                     format_func=lambda d:"Ingresso" if d == "entry" else "Uscita",label_visibility="collapsed")
             _detail(network,item,observations,snapshots,direction,status.active_events,first,day,saved,
-                    mode="overview",info=intelligence.get(identifier),attention=status.attention)
-            _attention_context(identifier,visible,reading)
-            _nearby_selector(network,item,visible,"overview")
+                    mode="overview",info=intelligence.get(identifier),attention=status.attention,
+                    displayed=visible,reading=reading)
             with st.popover("Cerca infrastruttura",width="stretch"):
                 st.session_state["net_overview_infrastructure"] = identifier
                 st.selectbox("Infrastruttura",[i.id for i in sorted(network.infrastructure,key=lambda i:i.name)],
@@ -692,10 +691,13 @@ def _point_events(item, info, events, attention):
         st.caption("Qualità dati · flusso fisico non disponibile per il giorno e la direzione selezionati. Non equivale a flusso nullo.")
 
 
-def _detail(network, item, observations, snapshots, direction, events, first, last, saved, *, mode="full", info=None, attention=()):
+def _detail(network, item, observations, snapshots, direction, events, first, last, saved, *, mode="full", info=None, attention=(), displayed=None, reading="SYSTEM"):
     if mode!="overview":st.caption("IDENTITÀ")
     st.subheader(display_name(item.name))
     st.caption(" · ".join(filter(None,[CATEGORIES[item.category],item.operator,*item.regions])))
+    if displayed is not None:
+        _attention_context(item.id,displayed,reading)
+        _nearby_selector(network,item,displayed,mode)
     info = info if info is not None else point_intelligence(network,item.id,observations,last,utc_now(),
         direction=direction,snapshots=snapshots,failures=saved.get("failures",()))
     binding = info.get("binding")
@@ -904,9 +906,8 @@ def panel(mode="full"):
     with detail_content:
         if identifier:
             _detail(network,lookup[identifier],observations,snapshots,direction,operational.active_events,first,last,saved,
-                    info=intelligence.get(identifier),attention=operational.attention)
-            _attention_context(identifier,displayed,reading)
-            _nearby_selector(network,lookup[identifier],displayed,"full")
+                    info=intelligence.get(identifier),attention=operational.attention,
+                    displayed=displayed,reading=reading)
     with st.expander("Copertura e fonti"):
         _source_status(status,last)
         st.dataframe([{"Livello":CATEGORIES[c],"Mappate":metrics["categories"][c]} for c in CATEGORIES],hide_index=True)
