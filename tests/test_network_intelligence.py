@@ -207,16 +207,19 @@ def test_modes_preserve_filters_period_and_selected_pipeline_without_fetches(ass
     app.selectbox(key="net_infrastructure").set_value("INET_PL_5").run()
     period = (date(2026,11,18),DAY)
     app.date_input(key="net_period").set_value(period).run()
-    chart_id = app.get("deck_gl_json_chart")[0].proto.id
     for mode in READING_MODES:
         app.radio(key="net_reading_full").set_value(mode).run()
         assert not app.exception
         assert app.session_state[view.READING] == mode
-        assert app.selectbox(key="net_infrastructure").value == "INET_PL_5"
+        if mode in ("FLOW","ATTENTION"):
+            assert app.selectbox(key="net_infrastructure").value is None
+            assert app.session_state[view.SELECTED] is None
+        else:
+            assert app.selectbox(key="net_infrastructure").value is not None
         assert app.multiselect(key="net_layers").value == ["pipeline","power"]
         assert app.multiselect(key="net_regions").value == ["Piemonte"]
         assert app.date_input(key="net_period").value == period
-        assert app.get("deck_gl_json_chart")[0].proto.id == chart_id
+        assert len(app.get("deck_gl_json_chart")) == 1
         assert not app.get("plotly_chart")  # No fabricated segment telemetry.
     # Explicit category/region filters still constrain every reading mode.
     expected = {i.id for i in filter_infrastructure(n,["pipeline","power"],regions=["Piemonte"])}
@@ -348,3 +351,23 @@ def test_gries_preview_shows_both_confirmed_directions_and_distinguishes_zero_fr
     assert "Uscita: 0,0" not in missing
     assert bidirectional_preview((entry,),rows,DAY,{}) is None
     assert "Ingresso: N/D" in bidirectional_preview(bindings,rows,DAY-timedelta(days=1),{})
+
+
+def test_reading_selection_never_overrides_mode_membership(assets):
+    n,_,_=assets
+    storage="INET_SR_37"
+    entry="INET_BP_65"
+    node="INET_N_1034"
+    items=tuple(i for i in n.infrastructure if i.id in (storage,entry,node))
+    assert {i.id for i in items}=={storage,entry,node}
+    info={entry:{"binding":object(),"flow_available":True,"stale":False}}
+    for mode,previous,expected in (
+        ("FLOW",storage,entry),("ATTENTION",storage,entry),
+        ("SYSTEM",node,entry),("INFRASTRUCTURE",storage,storage),
+        ("SYSTEM",storage,storage),("FLOW",entry,entry)):
+        findings={entry} if mode=="ATTENTION" else set()
+        displayed=reading_infrastructure(items,mode,info,selected=previous,finding_ids=findings)
+        assert view._resolve_selection(displayed,mode,previous,findings=findings)==expected
+        if mode in ("FLOW","ATTENTION"):
+            assert storage not in {i.id for i in displayed}
+    assert view._resolve_selection(reading_infrastructure(items,"ATTENTION",info),"ATTENTION",storage) is None
