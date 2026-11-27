@@ -117,3 +117,22 @@ def test_cold_overview_does_not_implicitly_render_bundled_evidence(offline, monk
     assert any("25 ore" in c.value for c in app.caption)
     app.button(key="ops_default_day").click().run()
     assert app.date_input(key=DAY_KEY).value == date(2026,11,21)
+
+
+def test_quick_day_controls_keep_calendar_and_requested_day_synchronized(offline):
+    from gasops_app.system_status_page import REQUESTED_DAY
+    from datetime import timedelta
+    app=AppTest.from_string("from gasops_app.italian_network_page import overview_panel\noverview_panel()",default_timeout=30)
+    app.session_state[ARCHIVE_KEY]=True
+    app.run()
+    assert not app.exception
+    original=app.date_input(key=DAY_KEY).value
+    app.button(key="system_day_prev").click().run()
+    assert not app.exception
+    assert app.date_input(key=DAY_KEY).value==original-timedelta(days=1)
+    assert app.session_state[REQUESTED_DAY]==app.session_state[SELECTED_DAY]==original-timedelta(days=1)
+    app.button(key="system_day_next").click().run()
+    assert not app.exception and app.date_input(key=DAY_KEY).value==original
+    app.button(key="system_day_latest").click().run()
+    assert not app.exception and app.date_input(key=DAY_KEY).value==date(2026,11,21)
+    assert app.button(key="system_day_latest").disabled

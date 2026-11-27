@@ -394,3 +394,16 @@ div[data-testid="stVerticalBlockBorderWrapper"] {border-color:var(--gas-border);
 .igor-flow-active {display:block;margin-top:.2rem;}
 .st-key-cockpit_compare [data-testid="stDataFrame"] {border-radius:var(--gas-radius);overflow:hidden;}
 @media(max-width:400px) {.igor-flow-card {padding:.5rem;} .igor-flow-value small {display:block;} .igor-direction-chip {font-size:.73rem;}}
+
+
+/* Compact quantitative legend and map-first date stepping. */
+.igor-flow-scale {display:flex;align-items:center;flex-wrap:wrap;gap:.45rem .8rem;font-size:.75rem;color:var(--gas-muted);padding:.25rem 0;}
+.igor-flow-scale strong {color:var(--gas-text);font-weight:550;}
+.igor-flow-scale span {display:inline-flex;align-items:center;gap:.35rem;white-space:nowrap;}
+.igor-flow-scale i {display:inline-block;background:var(--gas-teal);border-radius:50%;flex:none;}
+.st-key-system_status_header :is(.st-key-system_day_prev,.st-key-system_day_next,.st-key-system_day_latest) button {min-height:34px;padding:.2rem .55rem;font-size:.8rem;}
+.st-key-cockpit_reconciliation_table [data-testid="stDataFrame"] {margin-top:.15rem;}
+
+.igor-attention-summary {display:flex;flex-wrap:wrap;gap:.45rem;margin:.15rem 0;}
+.igor-attention-summary span {display:inline-flex;align-items:center;gap:.4rem;border:1px solid var(--gas-border);border-radius:var(--gas-radius);padding:.35rem .65rem;background:var(--gas-panel);color:var(--gas-muted);font-size:.78rem;}
+.igor-attention-summary strong {color:var(--gas-text);font-variant-numeric:tabular-nums;}

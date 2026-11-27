@@ -146,3 +146,21 @@ def test_cockpit_displays_structural_type_and_separate_directions(offline):
     app.selectbox(key="cockpit_point").set_value("IT-TSO-0001ITP-00136exit").run()
     assert not app.exception
     assert any("↔ Bidirezionale" in e.proto.body and "↗ Uscita" in e.proto.body for e in app.get("html"))
+
+
+def test_optional_delta_columns_preserve_reconciliation_and_export(offline,monkeypatch):
+    exports=[]
+    original=page.attributed_csv
+    def capture(result,**kwargs):
+        exports.append(result["frame"].copy())
+        return original(result,**kwargs)
+    monkeypatch.setattr(page,"attributed_csv",capture)
+    app=AppTest.from_string(SCRIPT,default_timeout=30).run()
+    assert not app.exception
+    initial=exports[-1].copy()
+    assert not app.toggle(key="cockpit_show_deltas").value
+    assert "delta_physical_allocation" in initial.columns
+    app.toggle(key="cockpit_show_deltas").set_value(True).run()
+    assert not app.exception and app.toggle(key="cockpit_show_deltas").value
+    assert initial.equals(exports[-1])
+    assert len(app.get("plotly_chart"))==1
