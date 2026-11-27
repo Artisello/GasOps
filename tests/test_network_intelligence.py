@@ -290,3 +290,51 @@ def test_full_map_handles_only_future_cache_without_displaying_readings(offline,
     app = AppTest.from_string("from gasops_app.italian_network_page import panel\npanel()",default_timeout=30).run()
     assert not app.exception and len(app.get("deck_gl_json_chart")) == 1
     assert not app.metric and any("Nessun dato operativo" in c.value for c in app.caption)
+
+
+def test_flow_lenses_distinguish_zero_missing_and_signed_variation():
+    from gasops_app.italian_network_map import flow_encoding, DELTA_COLORS, UTILIZATION_COLORS
+    info={"values":{"Physical Flow":D("0")},"change_gwh_d":D("-12.5"),"utilization_pct":D("90")}
+    assert flow_encoding(info,"volume")["value"] == 0
+    assert flow_encoding(info,"volume")["label"] == "0"
+    assert flow_encoding(info,"delta")["label"] == "−12,5"
+    assert flow_encoding(info,"delta")["color"] == DELTA_COLORS["down"]
+    assert flow_encoding(info,"delta")["size"] == 15
+    assert flow_encoding({**info,"change_gwh_d":D("12.5")},"delta")["color"] == DELTA_COLORS["up"]
+    assert flow_encoding({**info,"change_gwh_d":D(0)},"delta")["color"] == DELTA_COLORS["flat"]
+    assert flow_encoding(info,"utilization")["color"] == UTILIZATION_COLORS[-1]
+    for lens in ("volume","delta","utilization"):
+        assert flow_encoding({},lens)["value"] is None
+        assert flow_encoding({},lens)["label"] == "N/D"
+
+
+def test_flow_lens_changes_symbols_and_tooltip_not_geometry_or_picking_identity(assets):
+    n,boundary,_=assets
+    b=point(n)
+    rows=(reading(b,value="20"),reading(b,value="8",day=DAY-timedelta(days=1)),
+          reading(b,"Firm Technical","40"))
+    info=point_intelligence(n,b.infrastructure_id,rows,DAY,NOW)
+    visible=tuple(i for i in n.infrastructure if i.id==b.infrastructure_id or i.category=="pipeline")
+    specs=[]
+    for lens in ("volume","delta","utilization"):
+        spec=json.loads(deck(n,boundary,visible,b.infrastructure_id,day=DAY,reading_mode="FLOW",
+            intelligence={b.infrastructure_id:info},stable_picking=True,flow_lens=lens).to_json())
+        layers={layer["id"]:layer for layer in spec["layers"]}
+        target=next(p for p in layers["infrastructure-points"]["data"] if p["infra_id"]==b.infrastructure_id)
+        specs.append((layers,target))
+    for layers,target in specs[1:]:
+        assert target["position"] == specs[0][1]["position"]
+        assert [p["infra_id"] for p in layers["infrastructure-points"]["data"]] == [p["infra_id"] for p in specs[0][0]["infrastructure-points"]["data"]]
+        assert layers["historical-links"]["data"] == specs[0][0]["historical-links"]["data"]
+    assert "Flusso: 20,0" in specs[0][1]["safe_summary"]
+    assert "Δ D-1: +12,0" in specs[1][1]["safe_summary"]
+    assert "Utilizzo capacità: 50,0%" in specs[2][1]["safe_summary"]
+
+
+def test_map_day_step_uses_existing_overview_date_keys(monkeypatch):
+    from gasops_app.system_status_page import REQUESTED_DAY, DAY_KEY, SELECTED_DAY
+    state={"unrelated":"preserve"}
+    monkeypatch.setattr(view.st,"session_state",state)
+    view._step_map_day(DAY)
+    assert all(state[key]==DAY for key in (REQUESTED_DAY,DAY_KEY,SELECTED_DAY))
+    assert state["unrelated"]=="preserve"
