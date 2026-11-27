@@ -191,6 +191,28 @@ def _flow_lens(mode, reading_mode):
         horizontal=True,format_func=FLOW_LENS_LABELS.__getitem__)
 
 
+def _step_map_day(day):
+    from .system_status_page import REQUESTED_DAY, DAY_KEY, SELECTED_DAY
+    st.session_state[REQUESTED_DAY] = day
+    st.session_state[DAY_KEY] = day
+    st.session_state[SELECTED_DAY] = day
+
+
+def _map_day_controls(day, completed):
+    # Reuse the overview's single date selection and acquisition path.
+    prev, current, following = st.columns([1,1.3,1],vertical_alignment="center")
+    with prev:
+        st.button("−1 giorno",key="net_day_prev",width="stretch",
+                  disabled=day <= date(2000,1,1),
+                  on_click=_step_map_day,args=(day-timedelta(days=1),))
+    with current:
+        st.caption("Giorno gas · "+data_it(day))
+    with following:
+        st.button("+1 giorno",key="net_day_next",width="stretch",
+                  disabled=day >= completed,
+                  on_click=_step_map_day,args=(day+timedelta(days=1),))
+
+
 def _flow_coverage(visible, intelligence, lens, day):
     points = [intelligence.get(i.id,{}) for i in visible if intelligence.get(i.id,{}).get("binding")]
     if not points:
@@ -503,6 +525,8 @@ def overview_panel():
                 visible = _reading_items(perimeter,reading,intelligence,identifier,event_ids,finding_ids)
         map_col, detail = st.columns([1.25,1],gap="medium")
         with map_col:
+            if reading == "FLOW":
+                _map_day_controls(day,completed)
             render_map(network,boundary,visible,identifier,mode="overview",observations=observations,day=day,direction=direction,
                 reading_mode=reading,intelligence=intelligence,events=event_ids if reading == "ATTENTION" else (),findings=finding_ids)
             render_legend((c for c in CATEGORIES if any(i.category == c for i in visible)),reading,
