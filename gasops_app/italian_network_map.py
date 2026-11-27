@@ -92,7 +92,7 @@ def flow_visual(info, lens):
         return {"value":value,"label":sign+numero(value,1),"summary":sign+numero(value,1)+" "+unit,
                 "color":color,"size":16}
     color = next(color for upper,color in UTILIZATION_BANDS if value<upper)
-    return {"value":value,"label":numero(value,0)+"%","summary":numero(value,1)+"%",
+    return {"value":value,"label":numero(value,1)+"%","summary":numero(value,1)+"%",
             "color":color,"size":16}
 
 
@@ -338,7 +338,7 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
                 if visual["value"] is None and not row["icon"].endswith("-outline"):
                     row["icon"] += "-outline"
         points.append(row)
-        if item.id == selected or show_labels and (item.category in ("entry", "lng") or len(point_categories) == 1):
+        if item.id == selected or show_labels and (visual is not None or item.category in ("entry", "lng") or len(point_categories) == 1):
             name = display_name(item.name.split(" · ")[0].replace("FSRU ", ""))
             if structural and item.category=="entry":
                 name = ARROWS[structural]+" "+name
