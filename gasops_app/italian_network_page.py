@@ -112,8 +112,13 @@ def _widget_selection(key):
         )
 
 
-def _infrastructure_label(item):
-    return display_name(item.name)+" · "+CATEGORIES[item.category]
+def _infrastructure_label(item, structural=None):
+    return display_name(item.name)+" · "+(arrow_text(structural) if structural else CATEGORIES[item.category])
+
+
+def _infrastructure_labels(network, items):
+    from .italian_network import direction_label
+    return {i.id:_infrastructure_label(i,direction_label(verified_bindings(network,i.id))) for i in items}
 
 
 def _reading_selection(key):
@@ -562,6 +567,7 @@ def overview_panel():
             snapshots,day,now,saved,identifier,direction,policy,reading,event_ids,finding_ids,"overview")
         st.session_state["net_overview_direction"] = direction
         choices = _selectable_items(visible,reading)
+        search_labels = _infrastructure_labels(network,choices)
         map_col, detail = st.columns([1.45,1],gap="medium")
         with map_col:
             render_map(network,boundary,visible,identifier,mode="overview",observations=observations,day=day,direction=direction,
@@ -574,7 +580,7 @@ def overview_panel():
             with st.popover("Cerca infrastruttura",icon=":material/search:",width="stretch"):
                 st.session_state["net_overview_infrastructure"] = identifier
                 st.selectbox("Infrastruttura",[i.id for i in sorted(choices,key=lambda i:i.name)],
-                    key="net_overview_infrastructure",format_func=lambda key:_infrastructure_label(all_items[key]),
+                    key="net_overview_infrastructure",format_func=lambda key:search_labels[key],
                     disabled=not choices,on_change=_widget_selection,args=("net_overview_infrastructure",))
             if len(directions)>1:
                 direction = st.radio("Direzione da consultare",directions,key="net_overview_direction",horizontal=True,
@@ -1061,7 +1067,9 @@ def panel(mode="full"):
     finding_ids = {f.infrastructure_id for f in operational.attention if f.category not in ("quality","event") and f.infrastructure_id}
     displayed,identifier,directions,direction,intelligence = _reconcile_map(network,visible,observations,
         snapshots,last,now,saved,pending,st.session_state.get("net_direction"),policy,reading,active_event_ids,finding_ids,"full")
-    options = [i.id for i in sorted(_selectable_items(displayed,reading),key=lambda i:(i.category!="entry",i.name))]
+    choices = _selectable_items(displayed,reading)
+    search_labels = _infrastructure_labels(network,choices)
+    options = [i.id for i in sorted(choices,key=lambda i:(i.category!="entry",i.name))]
     st.session_state["net_infrastructure"] = identifier
     st.session_state["net_direction"] = direction
     summary = st.container(key="network_summary")
@@ -1069,7 +1077,7 @@ def panel(mode="full"):
         map_col, detail = st.columns([1,1], gap="small")
     detail_content = detail.container(key="network_detail", border=True)
     with detail_content:
-        identifier = st.selectbox("Infrastruttura", options, format_func=lambda k:_infrastructure_label(lookup[k]), key="net_infrastructure",
+        identifier = st.selectbox("Infrastruttura", options, format_func=lambda k:search_labels[k], key="net_infrastructure",
                                  placeholder="Nessuna infrastruttura nei filtri", disabled=not options,
                                  on_change=_widget_selection,args=("net_infrastructure",))
         if len(directions)>1:
