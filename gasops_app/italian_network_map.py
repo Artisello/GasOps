@@ -156,6 +156,14 @@ def label_layout(labels, *, zoom=4, width=None, height=None, longitude=12.5, lat
     return placed
 
 
+def direction_label(bindings):
+    """Classify confirmed ENTSOG mappings, not physical engineering capability."""
+    directions = {b.direction for b in bindings}
+    return {frozenset({"entry"}):"Solo ingresso",
+            frozenset({"exit"}):"Solo uscita",
+            frozenset({"entry","exit"}):"Bidirezionale"}.get(frozenset(directions))
+
+
 def bidirectional_preview(bindings, observations, day, info):
     """Describe verified directions and separate published physical flows for D."""
     by_direction = {b.direction:b for b in bindings}
@@ -233,16 +241,24 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
             if value is not None:
                 tooltip["safe_value"] = f"{numero(value,1)} GWh/d · {'ingresso' if point.direction == 'entry' else 'uscita'} · {data_it(day)}"
                 tooltip["safe_summary"] = tooltip["safe_value"]
-        if item.category == "entry":
-            preview = bidirectional_preview(bindings_by_id.get(item.id,()),observations,day,info)
-            if preview is not None:
-                if reading_mode == "ATTENTION":
-                    tooltip["safe_status"] = "Bidirezionale · ENTSOG"
-                else:
-                    tooltip["safe_status"] = "Bidirezionale · ENTSOG"
+        bindings = bindings_by_id.get(item.id,())
+        structural = direction_label(bindings)
+        if structural:
+            tooltip["safe_status"] = structural+" · ENTSOG"
+            if reading_mode != "ATTENTION":
+                preview = bidirectional_preview(bindings,observations,day,info)
+                if preview is not None:
                     tooltip["safe_summary"] = escape(preview)
-                    if info.get("stale"):
-                        tooltip["safe_summary"] += "\nCopia da aggiornare (direzione attiva)"
+                elif day is not None:
+                    binding = bindings[0]
+                    active = info.get("binding")
+                    flow = (info.get("values",{}).get("Physical Flow")
+                            if active and active.point_direction == binding.point_direction and info.get("day",day)==day
+                            else applicable(observations,binding.point_direction,day,"Physical Flow"))
+                    tooltip["safe_summary"] = escape(data_it(day)+" · flusso fisico\n"+
+                        (numero(flow,1)+" GWh/d" if flow is not None else "N/D"))
+                if info.get("stale"):
+                    tooltip["safe_summary"] += "\nCopia da aggiornare (direzione attiva)"
         if geometry["type"] != "Point":
             feature = {"type":"Feature", "geometry":geometry, **tooltip,
                        "properties":{**tooltip, "color":COLORS[item.category]}}
