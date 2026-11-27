@@ -176,7 +176,7 @@ def test_modes_do_not_duplicate_points_or_animate_pipeline_flows(assets):
         if mode == "ATTENTION":
             assert layers["event-rings"]["getIcon"] != layers["finding-marks"]["getIcon"]
             assert not layers["event-rings"]["pickable"] and not layers["finding-marks"]["pickable"]
-        if mode in ("SYSTEM","INFRASTRUCTURE"):
+        if mode == "SYSTEM":
             assert sum(r["category"] == "power" for r in points) == 69
 
 
@@ -363,7 +363,7 @@ def test_reading_selection_never_overrides_mode_membership(assets):
     info={entry:{"binding":object(),"flow_available":True,"stale":False}}
     for mode,previous,expected in (
         ("FLOW",storage,entry),("ATTENTION",storage,entry),
-        ("SYSTEM",node,entry),("INFRASTRUCTURE",storage,storage),
+        ("SYSTEM",node,entry),
         ("SYSTEM",storage,storage),("FLOW",entry,entry)):
         findings={entry} if mode=="ATTENTION" else set()
         displayed=reading_infrastructure(items,mode,info,selected=previous,finding_ids=findings)
@@ -371,3 +371,5 @@ def test_reading_selection_never_overrides_mode_membership(assets):
         if mode in ("FLOW","ATTENTION"):
             assert storage not in {i.id for i in displayed}
     assert view._resolve_selection(reading_infrastructure(items,"ATTENTION",info),"ATTENTION",storage) is None
+    assert node in {i.id for i in reading_infrastructure(items,"SYSTEM",info,include_nodes=True)}
+    assert reading_infrastructure(items,"INFRASTRUCTURE",info)==reading_infrastructure(items,"SYSTEM",info)
