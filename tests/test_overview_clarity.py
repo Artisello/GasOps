@@ -44,11 +44,11 @@ def test_italian_mode_labels_preserve_valid_selection_day_and_marker_identity(of
     points,_=scene()
     identities=[(r["infra_id"],r["position"]) for r in points]
     day=app.date_input(key="system_status_gas_day").value
-    for mode in ("FLOW","ATTENTION","INFRASTRUCTURE","SYSTEM"):
+    for mode in ("FLOW","ATTENTION","SYSTEM"):
         previous=app.session_state[view.SELECTED]
         app.radio(key="net_reading_overview").set_value(mode).run()
         assert not app.exception
-        assert app.radio(key="net_reading_overview").options==["Sistema","Flussi","Attenzione","Infrastrutture"]
+        assert app.radio(key="net_reading_overview").options==["Sistema","Flussi","Attenzione"]
         assert app.session_state[view.READING]==mode
         assert app.date_input(key="system_status_gas_day").value==day
         points,eligible=scene()
