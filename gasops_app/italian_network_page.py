@@ -22,7 +22,7 @@ from .italian_network import (ASSETS, CATEGORIES, applicable, filter_infrastruct
                               kpi_status, point_intelligence, verified_bindings,
                               validated_observations, reading_infrastructure, READING_MODES)
 from .italian_network_events import iip_events, verified_events, parse_interruptions
-from .italian_network_map import deck, display_name, legend_symbol
+from .italian_network_map import deck, display_name, legend_symbol, nearby_points, NEARBY_METRES
 from .italian_network_refresh import STATE
 from .italian_network_sources import decode_snapshot
 from .models import utc_now
@@ -108,6 +108,38 @@ def _infrastructure_label(item):
 
 def _reading_selection(key):
     st.session_state[READING] = st.session_state[key]
+    if key == "net_reading_overview" and st.session_state[key] == "ATTENTION":
+        st.session_state["net_attention_enter_overview"] = True
+
+
+def _reading_items(perimeter, reading, intelligence, identifier, events, findings):
+    # Attention shows only signalled points. Pipelines are geographic context.
+    return reading_infrastructure(perimeter,reading,intelligence,
+        selected=None if reading == "ATTENTION" else identifier,
+        event_ids=events,finding_ids=findings)
+
+
+def _select_related(mode, identifier):
+    _accept_pick("related", (identifier,), mode,
+        {"selection":{"objects":{"related":[{"infra_id":identifier}]}}})
+
+
+def _nearby_selector(network, item, visible, mode):
+    ids = nearby_points(network, visible).get(item.id, ())
+    if not ids:
+        return
+    lookup = {i.id:i for i in visible}
+    st.caption(f"Infrastrutture sovrapposte o vicine (entro {NEARBY_METRES} m) · scegli quale consultare.")
+    with st.container(key="network_nearby_"+mode):
+        for other in sorted((lookup[i] for i in ids), key=lambda i:(i.category,i.name,i.id)):
+            st.button(_infrastructure_label(other), key=f"net_nearby_{mode}_{other.id}",
+                on_click=_select_related,args=(mode,other.id),width="stretch")
+
+
+def _attention_context(identifier, displayed, reading):
+    if reading == "ATTENTION" and identifier not in {i.id for i in displayed}:
+        st.info("Selezione fuori dalla vista Attenzione: nessun segnale associato nel perimetro disponibile. Scegli un punto evidenziato sulla mappa.")
+
 
 
 def _mode_selector(layout):
@@ -417,7 +449,22 @@ def overview_panel():
         intelligence = _map_intelligence(network,perimeter,observations,snapshots,day,now,saved,identifier,direction,policy)
         event_ids = {e["infrastructure_id"] for e in status.active_events}
         finding_ids = {f.infrastructure_id for f in status.attention if f.category not in ("quality","event") and f.infrastructure_id}
-        visible = reading_infrastructure(perimeter,reading,intelligence,selected=identifier,event_ids=event_ids,finding_ids=finding_ids)
+        visible = _reading_items(perimeter,reading,intelligence,identifier,event_ids,finding_ids)
+        entering_attention = st.session_state.pop("net_attention_enter_overview",False)
+        if reading == "ATTENTION" and entering_attention:
+            candidates = [i for i in visible if i.category != "pipeline"]
+            st.session_state[_detail_tab_key("overview")] = "Eventi"
+            if candidates and identifier not in {i.id for i in candidates}:
+                item = sorted(candidates,key=lambda i:(i.id not in event_ids,i.id not in finding_ids,i.name,i.id))[0]
+                identifier = item.id
+                st.session_state[SELECTED] = identifier
+                bindings = verified_bindings(network,identifier)
+                directions = sorted({b.direction for b in bindings})
+                binding = intelligence.get(identifier,{}).get("binding")
+                direction = binding.direction if binding else ("entry" if "entry" in directions else directions[0] if directions else None)
+                st.session_state["net_overview_direction"] = direction
+                intelligence = _map_intelligence(network,perimeter,observations,snapshots,day,now,saved,identifier,direction,policy)
+                visible = _reading_items(perimeter,reading,intelligence,identifier,event_ids,finding_ids)
         map_col, detail = st.columns([1.25,1],gap="medium")
         with map_col:
             render_map(network,boundary,visible,identifier,mode="overview",observations=observations,day=day,direction=direction,
@@ -430,6 +477,8 @@ def overview_panel():
                     format_func=lambda d:"Ingresso" if d == "entry" else "Uscita",label_visibility="collapsed")
             _detail(network,item,observations,snapshots,direction,status.active_events,first,day,saved,
                     mode="overview",info=intelligence.get(identifier),attention=status.attention)
+            _attention_context(identifier,visible,reading)
+            _nearby_selector(network,item,visible,"overview")
             with st.popover("Cerca infrastruttura",width="stretch"):
                 st.session_state["net_overview_infrastructure"] = identifier
                 st.selectbox("Infrastruttura",[i.id for i in sorted(network.infrastructure,key=lambda i:i.name)],
@@ -639,6 +688,8 @@ def _point_events(item, info, events, attention):
         st.caption("Nessun evento associato nella copia disponibile · copertura parziale, non certifica assenza di interruzioni.")
     if info.get("stale"):
         st.caption("Qualità dati · cache da aggiornare. Non indica un’indisponibilità fisica.")
+    if info.get("binding") and not info.get("flow_available"):
+        st.caption("Qualità dati · flusso fisico non disponibile per il giorno e la direzione selezionati. Non equivale a flusso nullo.")
 
 
 def _detail(network, item, observations, snapshots, direction, events, first, last, saved, *, mode="full", info=None, attention=()):
@@ -821,7 +872,7 @@ def panel(mode="full"):
     intelligence = _map_intelligence(network,visible,observations,snapshots,last,now,saved,identifier,direction,policy)
     active_event_ids = {e["infrastructure_id"] for e in operational.active_events}
     finding_ids = {f.infrastructure_id for f in operational.attention if f.category not in ("quality","event") and f.infrastructure_id}
-    displayed = reading_infrastructure(visible,reading,intelligence,selected=identifier,event_ids=active_event_ids,finding_ids=finding_ids)
+    displayed = _reading_items(visible,reading,intelligence,identifier,active_event_ids,finding_ids)
     metrics = map_kpis(network, visible, observations, last)
     status = kpi_status(metrics,snapshots,last,now,current_day=_last_completed(now),failures=saved.get("failures",()))
     with data_status.container():
@@ -843,7 +894,7 @@ def panel(mode="full"):
                    direction=direction,events=active_event_ids if reading == "ATTENTION" else event_ids if show_events else (),
                    show_labels=show_labels,reading_mode=reading,intelligence=intelligence,findings=finding_ids)
         render_legend((c for c in CATEGORIES if any(i.category == c for i in displayed)),reading,event_overlay=show_events)
-        st.caption(f"{len(displayed)} elementi in questa lettura · {len(visible)} nel perimetro dei filtri. La selezione resta visibile come contesto.")
+        st.caption(f"{len(displayed)} elementi in questa lettura · {len(visible)} nel perimetro dei filtri. I gasdotti restano contesto geografico.")
         st.caption("Collegamenti schematici SciGRID 2021: non tracciati certificati né flussi sui gasdotti. Posizioni storiche indicative, salvo fonte del gestore.")
         st.caption("© SciGRID_gas / DLR-VE · CC BY 4.0 · INET_Raw 1.4 · confini Natural Earth, pubblico dominio")
         if not options:
@@ -854,6 +905,8 @@ def panel(mode="full"):
         if identifier:
             _detail(network,lookup[identifier],observations,snapshots,direction,operational.active_events,first,last,saved,
                     info=intelligence.get(identifier),attention=operational.attention)
+            _attention_context(identifier,displayed,reading)
+            _nearby_selector(network,lookup[identifier],displayed,"full")
     with st.expander("Copertura e fonti"):
         _source_status(status,last)
         st.dataframe([{"Livello":CATEGORIES[c],"Mappate":metrics["categories"][c]} for c in CATEGORIES],hide_index=True)
