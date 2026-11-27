@@ -40,6 +40,11 @@ FILTER_KEYS = ("net_layers", "net_operators", "net_regions", "net_statuses", "ne
 SELECTED = "italian_network_selected_v1"
 FOCUS = "italian_network_focus_v1"
 READING = "italian_network_reading_v1"
+DETAIL_TABS = ("Dati", "Storico", "Eventi", "Fonti")
+
+
+def _detail_tab_key(mode):
+    return "net_detail_tab_" + mode
 MODE_LABELS = {"SYSTEM":"Sistema","FLOW":"Flussi","ATTENTION":"Attenzione","INFRASTRUCTURE":"Infrastrutture"}
 MODE_HINTS = {"SYSTEM":"Categorie e disponibilità dei dati.",
     "FLOW":"Flussi dei punti verificati · gasdotti solo come contesto geografico.",
@@ -77,6 +82,10 @@ def _accept_pick(chart_key, visible_ids, mode, event=None, *, point_directions=(
     identifier = selected_id(event if event is not None else st.session_state.get(chart_key,{}), set(visible_ids))
     if identifier:
         st.session_state[SELECTED] = identifier
+        if mode in ("overview", "full"):
+            st.session_state[_detail_tab_key(mode)] = (
+                "Eventi" if st.session_state.get(READING) == "ATTENTION" else "Dati"
+            )
         direction = dict(point_directions).get(identifier)
         if direction in ("entry","exit"):
             st.session_state["net_direction" if mode == "full" else "net_overview_direction"] = direction
@@ -87,6 +96,10 @@ def _accept_pick(chart_key, visible_ids, mode, event=None, *, point_directions=(
 def _widget_selection(key):
     if st.session_state.get(key):
         st.session_state[SELECTED] = st.session_state[key]
+        mode = "overview" if key == "net_overview_infrastructure" else "full"
+        st.session_state[_detail_tab_key(mode)] = (
+            "Eventi" if st.session_state.get(READING) == "ATTENTION" else "Dati"
+        )
 
 
 def _infrastructure_label(item):
@@ -576,8 +589,34 @@ def _point_events(item, info, events, attention):
         if finding.observed_value is not None:
             st.caption(numero(finding.observed_value,1)+" "+finding.unit+
                 (" · soglia "+numero(finding.threshold,1) if finding.threshold is not None else ""))
-        st.caption(finding.rule+" · "+finding.source_id)
-        st.caption("Evidenze: "+(", ".join(finding.evidence_ids) or "dato atteso assente"))
+        explanations = {
+            "historical_median_deviation": "Il flusso fisico si discosta dalla mediana storica oltre la soglia configurata. Lo scarto è assoluto: non indica da solo un aumento o una riduzione.",
+            "capacity_utilization": "Il rapporto tra flusso fisico e capacità tecnica pubblicata supera la soglia configurata.",
+            "missing_expected_flow": "La copia consultata non contiene il flusso atteso. Non equivale a flusso nullo o indisponibilità fisica.",
+            "stale_critical_source": "La copia disponibile non è recente o l’aggiornamento non è riuscito.",
+        }
+        if finding.rule in explanations:
+            st.write(explanations[finding.rule])
+        if finding.baseline is not None and finding.baseline_n:
+            st.caption(f"Mediana storica: {numero(finding.baseline,1)} GWh/d · {finding.baseline_n} giorni validi")
+        source = finding.source_id.split(":",1)[0]
+        direction_label = {"entry":"Ingresso","exit":"Uscita"}.get(finding.direction)
+        st.caption(" · ".join(filter(None, (source, direction_label,
+            "Indicatore calcolato, non avviso del gestore"))))
+        ids = tuple(dict.fromkeys(finding.evidence_ids))
+        st.caption(f"Evidenze: {len(ids)} riferimenti" if ids else "Evidenze: dato atteso assente")
+        with st.expander("Evidenze tecniche e metodologia"):
+            st.text("Regola: " + finding.rule)
+            st.text("Fonte: " + finding.source_id)
+            if finding.observed_at:
+                st.caption("Pubblicazione delle evidenze: " + local_time(finding.observed_at))
+            if finding.retrieved_at:
+                st.caption("Acquisizione delle evidenze: " + local_time(finding.retrieved_at))
+            if ids:
+                st.dataframe(pd.DataFrame({"ID osservazione": ids}), hide_index=True,
+                             width="stretch", height=min(280, 38 + 35*len(ids)))
+            else:
+                st.caption("Nessun identificativo di osservazione disponibile.")
     if info.get("capacity_change_gwh_d") is not None:
         st.markdown("**Indicatore I.G.O.R. · capacità tecnica ridotta rispetto a D-1**")
         st.caption(numero(info["capacity_change_gwh_d"],1)+" GWh/d · confronto di capacità pubblicate su giorni compatibili")
@@ -594,7 +633,26 @@ def _detail(network, item, observations, snapshots, direction, events, first, la
     info = info if info is not None else point_intelligence(network,item.id,observations,last,utc_now(),
         direction=direction,snapshots=snapshots,failures=saved.get("failures",()))
     binding = info.get("binding")
-    data_tab, history_tab, events_tab, sources_tab = st.tabs(["Dati","Storico","Eventi","Fonti"])
+    # Tracked tabs permit native map callbacks to select the relevant view.
+    # Older Streamlit versions do not support stateful tabs.
+    tab_key = _detail_tab_key(mode)
+    active = st.session_state.get(tab_key, "Dati")
+    active = active if active in DETAIL_TABS else "Dati"
+    if "on_change" in signature(st.tabs).parameters:
+        st.session_state.setdefault(tab_key, active)
+        data_tab, history_tab, events_tab, sources_tab = st.tabs(
+            list(DETAIL_TABS), key=tab_key, on_change="rerun")
+    else:
+        labels = list(DETAIL_TABS)
+        if "default" in signature(st.tabs).parameters:
+            tabs = st.tabs(labels, default=active)
+        else:
+            labels.remove(active)
+            labels.insert(0, active)
+            tabs = st.tabs(labels)
+        data_tab, history_tab, events_tab, sources_tab = (
+            dict(zip(labels, tabs))[label] for label in DETAIL_TABS
+        )
     with data_tab:
         with st.container(key="network_home_point_data" if mode == "overview" else "network_point_data"):
             _operational_summary(network,item,info,compact=mode=="overview")
