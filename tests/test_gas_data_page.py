@@ -147,8 +147,8 @@ def test_unavailable_focus_is_explained_before_showing_other_series(offline):
 def test_explorer_exposes_verified_bidirectionality(offline):
     app=AppTest.from_string(SCRIPT,default_timeout=30).run()
     assert not app.exception
-    assert any("Solo ingresso · Dati: Ingresso" in c.value for c in app.caption)
+    assert any("igor-direction-chip" in e.proto.body and "↘ Solo ingresso" in e.proto.body for e in app.get("html"))
     app.selectbox(key="gas_explorer_entity").set_value("IT-TSO-0001ITP-00040entry").run()
     assert not app.exception
-    assert any("Bidirezionale · Dati: Ingresso" in c.value for c in app.caption)
-    assert any("Direzione opposta: Uscita" in c.value for c in app.caption)
+    assert any("↔ Bidirezionale" in e.proto.body and "↘ Ingresso" in e.proto.body for e in app.get("html"))
+    assert any("Direzione opposta: ↗ Uscita" in c.value for c in app.caption)
