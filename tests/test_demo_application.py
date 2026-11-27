@@ -80,6 +80,8 @@ def test_every_feature_route_is_reachable_offline_and_preserves_imports(monkeypa
         app.run()
         assert not app.exception,(path,[e.message for e in app.exception])
         assert len(app.get("page_link"))==11
+        assert len(app.title)==1,(path,[t.value for t in app.title])
+        assert app.title[0].value
         assert app.session_state["settlement_desk_csv_v1"]["sha"]==saved["sha"]
         assert app.session_state["settlement_desk_csv_v1"]["rows"]==rows
         if path=="balancing":
