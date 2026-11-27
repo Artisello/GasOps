@@ -343,7 +343,7 @@ def test_gries_preview_shows_both_confirmed_directions_and_distinguishes_zero_fr
         spec=json.loads(deck(n,boundary,tuple(i for i in n.infrastructure if i.id==identifier),
             identifier,day=DAY,observations=rows,intelligence={identifier:info},reading_mode="SYSTEM").to_json())
         target=next(l["data"][0] for l in spec["layers"] if l["id"]=="infrastructure-points")
-        assert target["safe_status"]=="Bidirezionale · ENTSOG"
+        assert target["safe_status"]=="↔ Bidirezionale · ENTSOG"
         assert "Ingresso: 213,8 GWh/d" in target["safe_summary"]
         assert "Uscita: 0,0 GWh/d" in target["safe_summary"]
         assert target["direction"]==direction
