@@ -36,7 +36,7 @@ def test_both_home_modes_open_map_and_side_panel_without_api_calls(monkeypatch,t
     app=AppTest.from_file(ROOT/"app.py",default_timeout=30)
     app.session_state[ARCHIVE_KEY] = True
     app.run()
-    assert not app.exception and app.title[0].value == "I.G.O.R. — Sistema Gas Italiano"
+    assert not app.exception and app.title[0].value == "I.G.O.R. - Sistema Gas Italiano"
     assert len(app.get("deck_gl_json_chart")) == 1 and calls[0]["height"] == 500
     assert "overview" in calls[0]["key"] and callable(calls[0]["on_select"])
     assert app.button(key="net_overview_open").label == "Esplora la rete"
