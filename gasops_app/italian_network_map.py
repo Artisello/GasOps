@@ -86,9 +86,9 @@ def focus_camera(camera, geometry):
 MARK_COLORS = {"ring":[246,146,157],"finding":[242,190,114],"quality":[180,194,211],"assumption":[255,202,110]}
 
 
-def legend_symbol(category, *, outlined=False):
+def legend_symbol(category, *, outlined=False, neutral=False):
     """The legend and atlas use exactly the same authored SVG geometry."""
-    color = ",".join(map(str,COLORS.get(category,MARK_COLORS.get(category,[161,175,192]))))
+    color = ",".join(map(str,UNKNOWN_COLOR if neutral else COLORS.get(category,MARK_COLORS.get(category,[161,175,192]))))
     shape = _ATLAS_SYMBOLS.get(category,'<path d="M1 11h22v2H1Z"/>').replace('stroke="white"',f'stroke="rgb({color})"')
     if outlined:
         shape = f'<g fill="none" stroke="rgb({color})" stroke-width="1.8">{shape}</g>'
