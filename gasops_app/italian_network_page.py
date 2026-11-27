@@ -112,8 +112,16 @@ def _widget_selection(key):
         )
 
 
-def _infrastructure_label(item):
-    return display_name(item.name)+" · "+CATEGORIES[item.category]
+def _infrastructure_label(item, structural=None):
+    return display_name(item.name)+" · "+(arrow_text(structural) if structural else CATEGORIES[item.category])
+
+
+def _infrastructure_labels(network, items):
+    from .italian_network import direction_label
+    by_asset = {}
+    for binding in verified_bindings(network):
+        by_asset.setdefault(binding.infrastructure_id,[]).append(binding)
+    return {i.id:_infrastructure_label(i,direction_label(by_asset.get(i.id,()))) for i in items}
 
 
 def _reading_selection(key):
@@ -562,6 +570,7 @@ def overview_panel():
             snapshots,day,now,saved,identifier,direction,policy,reading,event_ids,finding_ids,"overview")
         st.session_state["net_overview_direction"] = direction
         choices = _selectable_items(visible,reading)
+        search_labels = _infrastructure_labels(network,choices)
         map_col, detail = st.columns([1.45,1],gap="medium")
         with map_col:
             render_map(network,boundary,visible,identifier,mode="overview",observations=observations,day=day,direction=direction,
@@ -571,6 +580,11 @@ def overview_panel():
                 _flow_coverage(visible,intelligence,flow_lens)
             st.caption("SciGRID 2021 · collegamenti storici schematici · CC BY 4.0 · Natural Earth, pubblico dominio")
         with detail.container(key="network_home_detail"):
+            with st.popover("Cerca infrastruttura",icon=":material/search:",width="stretch"):
+                st.session_state["net_overview_infrastructure"] = identifier
+                st.selectbox("Infrastruttura",[i.id for i in sorted(choices,key=lambda i:i.name)],
+                    key="net_overview_infrastructure",format_func=lambda key:search_labels[key],
+                    disabled=not choices,on_change=_widget_selection,args=("net_overview_infrastructure",))
             if len(directions)>1:
                 direction = st.radio("Direzione da consultare",directions,key="net_overview_direction",horizontal=True,
                     format_func=arrow_text)
@@ -580,11 +594,6 @@ def overview_panel():
                         displayed=visible,reading=reading)
             else:
                 _empty_selection(reading)
-            with st.popover("Cerca infrastruttura",icon=":material/search:",width="stretch"):
-                st.session_state["net_overview_infrastructure"] = identifier
-                st.selectbox("Infrastruttura",[i.id for i in sorted(choices,key=lambda i:i.name)],
-                    key="net_overview_infrastructure",format_func=lambda key:_infrastructure_label(all_items[key]),
-                    disabled=not choices,on_change=_widget_selection,args=("net_overview_infrastructure",))
     st.button("Esplora la rete",icon=":material/arrow_forward:",key="net_overview_open",
               width="stretch",on_click=_open_full,args=(identifier,first,day,direction))
     system.metrics(status)
@@ -618,34 +627,51 @@ def _daily(observations, point, first, last, indicator):
     return days, [applicable(observations, point, d, indicator) for d in days]
 
 
-def _history(observations, point, first, last, *, mode="full"):
-    available = [name for name in INDICATORS if any(o.point_direction == point and o.indicator == name for o in observations)]
+def _history(observations, point, first, last, *, mode="full", counterpart=None, direction=None):
+    """Compare verified directions without filling gaps or combining their series."""
+    points = (point,counterpart) if counterpart and counterpart!=point else (point,)
+    available = [name for name in INDICATORS if any(o.point_direction in points and o.indicator == name for o in observations)]
     if not available:
         st.caption("Nessuna serie storica disponibile per questa direzione nel periodo.")
         return
     key = "net_indicator" if mode == "full" else "net_overview_indicator"
     if st.session_state.get(key) not in available:
         st.session_state[key] = available[0]
-    indicator = st.selectbox("Storico", available, format_func=LABELS.__getitem__, key=key)
+    indicator = st.selectbox("Indicatore storico", available, format_func=LABELS.__getitem__, key=key)
     days, values = _daily(observations, point, first, last, indicator)
     usable = [v for v in values if v is not None]
-    if not usable:
+    series = [(direction,values)]
+    if len(points)==2:
+        _, other = _daily(observations,counterpart,first,last,indicator)
+        series.append(("exit" if direction=="entry" else "entry",other))
+    if not any(v is not None for _,vs in series for v in vs):
         st.caption("Nessun valore confrontabile sull’intero giorno gas nel periodo.")
         return
-    figure = go.Figure(go.Scatter(x=days, y=[float(v) if v is not None else None for v in values],
-        mode="lines+markers", connectgaps=False, line={"color":"#65dfbf", "width":2.5},
-        marker={"size":5}, hovertemplate="%{x|%d/%m/%Y}<br>%{y:.2f} GWh/d<extra></extra>"))
-    figure.update_layout(template="plotly_dark",height=250, margin={"l":42,"r":14,"t":12,"b":52},
+    figure = go.Figure()
+    for index,(d,vs) in enumerate(series):
+        color = "#83b4ff" if d=="exit" else "#65dfbf"
+        name = arrow_text(d) if d in ("entry","exit") else LABELS[indicator]
+        figure.add_trace(go.Scatter(x=days,y=[float(v) if v is not None else None for v in vs],
+            name=name,mode="lines+markers",connectgaps=False,
+            line={"color":color,"width":2.5 if index==0 else 1.8,"dash":"solid" if index==0 else "dot"},
+            marker={"size":5},hovertemplate=name+" · %{x|%d/%m/%Y}<br>%{y:.2f} GWh/d<extra></extra>"))
+    figure.update_layout(template="plotly_dark",height=265, margin={"l":42,"r":14,"t":12,"b":48},
                          paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",
                          font={"color":"#b0bed0","family":"Arial, sans-serif","size":11},
                          yaxis={"title":"GWh/d","automargin":True},
-                         xaxis={"tickformat":"%d/%m","nticks":4,"tickangle":0,"automargin":True},showlegend=False)
-    first_valid = next(day for day,value in zip(days,values) if value is not None)
-    figure.update_xaxes(range=[first_valid-timedelta(days=1),last+timedelta(days=1)])
+                         xaxis={"tickformat":"%d/%m","nticks":5,"tickangle":0,"automargin":True},
+                         showlegend=len(series)>1,legend={"orientation":"h","y":1.02,"x":0})
+    # The entire requested window remains visible, including leading missing days.
+    figure.update_xaxes(range=[first-timedelta(days=1),last+timedelta(days=1)])
     plot(figure, key="net_entsog_history" if mode == "full" else "net_overview_entsog_history")
-    st.caption(f"{len(usable)}/{len(days)} giorni gas · 06:00–06:00 Europe/Rome")
+    if len(series)>1:
+        st.caption(" · ".join(f"{arrow_text(d)}: {sum(v is not None for v in vs)}/{len(days)} giorni gas" for d,vs in series))
+        st.caption("Linea continua: direzione consultata · tratteggiata: direzione opposta")
+    else:
+        st.caption(f"{len(usable)}/{len(days)} giorni gas · 06:00–06:00 Europe/Rome")
     if len(usable) >= 2:
-        st.caption(f"Min {numero(min(usable),1)} · Max {numero(max(usable),1)} · Media {numero(sum(usable)/len(usable),1)} GWh/d")
+        prefix = arrow_text(direction)+" · " if len(series)>1 else ""
+        st.caption(prefix+f"Min {numero(min(usable),1)} · Max {numero(max(usable),1)} · Media {numero(sum(usable)/len(usable),1)} GWh/d")
         length = len(days)
         _, prior = _daily(observations, point, first-timedelta(days=length), first-timedelta(days=1), indicator)
         if len(usable) == length and all(v is not None for v in prior):
@@ -918,7 +944,13 @@ def _detail(network, item, observations, snapshots, direction, events, first, la
     with history_tab:
         st.caption("TREND · D-30")
         if binding:
-            _history(info["records"],binding.point_direction,last-timedelta(days=29),last,mode=mode)
+            other = next((b for b in verified_bindings(network,item.id) if b.direction!=binding.direction),None)
+            history_records = info["records"]
+            if other:
+                history_records = (*history_records,*validated_observations(network,
+                    (o for o in observations if o.infrastructure_id==item.id and o.point_direction==other.point_direction),utc_now()))
+            _history(history_records,binding.point_direction,last-timedelta(days=29),last,mode=mode,
+                     counterpart=other.point_direction if other else None,direction=binding.direction)
             st.caption("Solo osservazioni già disponibili · giorni mancanti conservati, nessuna stima.")
         else:
             st.caption("Serie ENTSOG non associata. Eventuali dati GIE del singolo impianto sono nella scheda Dati.")
@@ -1038,7 +1070,9 @@ def panel(mode="full"):
     finding_ids = {f.infrastructure_id for f in operational.attention if f.category not in ("quality","event") and f.infrastructure_id}
     displayed,identifier,directions,direction,intelligence = _reconcile_map(network,visible,observations,
         snapshots,last,now,saved,pending,st.session_state.get("net_direction"),policy,reading,active_event_ids,finding_ids,"full")
-    options = [i.id for i in sorted(_selectable_items(displayed,reading),key=lambda i:(i.category!="entry",i.name))]
+    choices = _selectable_items(displayed,reading)
+    search_labels = _infrastructure_labels(network,choices)
+    options = [i.id for i in sorted(choices,key=lambda i:(i.category!="entry",i.name))]
     st.session_state["net_infrastructure"] = identifier
     st.session_state["net_direction"] = direction
     summary = st.container(key="network_summary")
@@ -1046,7 +1080,7 @@ def panel(mode="full"):
         map_col, detail = st.columns([1,1], gap="small")
     detail_content = detail.container(key="network_detail", border=True)
     with detail_content:
-        identifier = st.selectbox("Infrastruttura", options, format_func=lambda k:_infrastructure_label(lookup[k]), key="net_infrastructure",
+        identifier = st.selectbox("Infrastruttura", options, format_func=lambda k:search_labels[k], key="net_infrastructure",
                                  placeholder="Nessuna infrastruttura nei filtri", disabled=not options,
                                  on_change=_widget_selection,args=("net_infrastructure",))
         if len(directions)>1:

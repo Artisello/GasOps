@@ -430,3 +430,39 @@ def test_flow_lenses_keep_geometry_selection_and_direction(assets):
     target=next(l["data"][0] for l in scene["layers"] if l["id"]=="infrastructure-points")
     assert target["color"]==MISSING_COLOR and target["icon"].endswith("-outline")
     assert "N/D" in target["safe_summary"]
+
+
+def test_bidirectional_history_preserves_independent_series_and_missing_days(assets,monkeypatch):
+    n,_,_=assets
+    bindings=n.bindings_for("INET_BP_78","ENTSOG")
+    entry=next(b for b in bindings if b.direction=="entry")
+    exit=next(b for b in bindings if b.direction=="exit")
+    rows=(reading(entry,value="20"),reading(exit,value="0"),reading(exit,value="5",day=DAY-timedelta(days=2)))
+    first=DAY-timedelta(days=6)
+    charts=[]
+    monkeypatch.setattr(view,"plot",lambda fig,**kw:charts.append(fig.to_plotly_json()))
+    monkeypatch.setattr(view.st,"session_state",{})
+    monkeypatch.setattr(view.st,"selectbox",lambda label,options,**kw:"Physical Flow")
+    captions=[]
+    monkeypatch.setattr(view.st,"caption",captions.append)
+    view._history(rows,entry.point_direction,first,DAY,counterpart=exit.point_direction,direction="entry")
+    fig=charts[0]
+    assert len(fig["data"])==2
+    assert fig["data"][0]["name"]=="↘ Ingresso"
+    assert fig["data"][1]["name"]=="↗ Uscita"
+    assert list(fig["data"][0]["y"])==[None]*6+[20.0]
+    assert list(fig["data"][1]["y"])==[None]*4+[5.0,None,0.0]
+    assert all(not trace["connectgaps"] for trace in fig["data"])
+    assert fig["data"][0]["line"]["dash"]=="solid"
+    assert fig["data"][1]["line"]["dash"]=="dot"
+    assert fig["layout"]["xaxis"]["range"][0]==first-timedelta(days=1)
+    assert any("1/7 giorni gas" in c and "2/7 giorni gas" in c for c in captions)
+
+
+def test_search_labels_distinguish_operational_points_from_geographic_nodes(assets):
+    network,_,_=assets
+    labels=view._infrastructure_labels(network,network.infrastructure)
+    assert labels["INET_BP_78"]=="Passo Gries · ↔ Bidirezionale"
+    assert labels["INET_BP_12"]=="Bizzarone · ↗ Solo uscita"
+    assert labels["INET_BP_65"]=="Mazara del Vallo · ↘ Solo ingresso"
+    assert all("Bidirezionale" not in labels[i.id] for i in network.infrastructure if i.category=="node")

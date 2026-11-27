@@ -196,7 +196,7 @@ def main():
         period = page.locator('[data-testid="stDateInput"] input').evaluate_all('(inputs)=>inputs.map(e=>e.value).join(" – ")')
         assert any(d in period for d in ("14/11/2026","2026-11-14")) and any(d in period for d in ("20/11/2026","2026-11-20")),"Period transfer failed: "+period
         combo = page.locator(".st-key-network_detail").get_by_role("combobox").first
-        combo.fill("Tarvisio · Ingressi e uscite")
+        combo.fill("Tarvisio · ↔ Bidirezionale")
         combo.press("Enter")
         expect(page.locator(".st-key-network_detail h3")).to_have_text("Tarvisio",timeout=15000)
         page.get_by_role("tab",name="Storico",exact=True).click()
