@@ -12,7 +12,7 @@ from .commercial_controls import (BILL_REF, LNG_REF, PRICE_REF, demo_invoices,
                                   imbalance_prices, lng_deadlines, reconcile)
 from .commercial_view import reconciliation_summary, calendar_rows
 from .italiano import numero, data_it
-from .visuals import info, kpi_grid
+from .visuals import info, kpi_grid, header
 from .operations_ledger import sample_rows
 
 
@@ -144,7 +144,7 @@ def _calendar_panel(invoice_rows):
 
 
 def commercial_workbench(ledger_view):
-    st.title("Fatture e garanzie")
+    header("Fatture e garanzie", "")
     st.caption("Demo DEMO-001 e controlli su estratti autorizzati · nessuna operazione reale")
     summary_slot=st.container()
     tabs=st.tabs(["Fatture","Garanzie","Scadenze","Prezzi","Bilanci e GNL"])
