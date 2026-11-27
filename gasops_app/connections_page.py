@@ -152,8 +152,9 @@ def refresh_all(state,store,configuration,now=None,*,selected=None,network_days=
 
 
 def page():
-    st.title("Fonti e API")
-    st.caption("Importa dati reali nelle analisi, nella mappa e nell’esploratore. Le copie valide restano disponibili offline.")
+    from .visuals import header
+    header("Fonti e API", "")
+    st.caption("Acquisizione dati pubblici · ultime copie valide conservate.")
     configuration=access()
     choices=[*configuration["available"],*(["ai"] if configuration["ai"] else []),*(["documents"] if configuration["documents"] else [])]
     labels={key:name for key,name,_,_ in CATALOG}
