@@ -269,16 +269,19 @@ def render_map(network, boundary, visible, identifier, *, mode, observations, da
 
 def render_legend(categories, reading_mode="SYSTEM", *, event_overlay=False):
     categories = tuple(categories)
-    labels = "".join(f'<span><img src="{legend_symbol(c)}" width="14" height="14" alt="" aria-hidden="true">{escape(CATEGORIES[c])}</span>' for c in categories)
+    labels = "".join(f'<span><img src="{legend_symbol(c)}" width="14" height="14" alt="" aria-hidden="true">{escape(CATEGORIES[c])}</span>'
+                     for c in categories if c!="entry" or reading_mode=="ATTENTION")
+    if "entry" in categories and reading_mode!="ATTENTION":
+        labels += "".join(f'<span><img src="{legend_symbol(icon)}" alt="" aria-hidden="true">{label}</span>'
+                          for icon,label in (("entry-in","Solo ingresso"),("entry-out","Solo uscita"),("entry-both","Bidirezionale")))
     st.html('<div class="gas-map-legend" aria-label="Legenda della mappa">'+labels+'</div>')
-    if "entry" in categories:
-        st.html('<div class="igor-direction-header" aria-label="Direzioni censite ENTSOG">'+
-                "".join(direction_chip(t) for t in ("Solo ingresso","Solo uscita","Bidirezionale"))+'</div>')
     if reading_mode in ("SYSTEM","FLOW"):
         st.caption("Pieno: dati ENTSOG · contorno: dato assente o sola geografia.")
         if reading_mode == "FLOW":
-            st.caption("Dimensione e numero accanto al punto: flusso fisico (GWh/d). Classi: 0 · fino a 100 · fino a 500 · oltre 500. Il numero è arrotondato; non è capacità.")
-            st.caption("Gasdotti schematici: nessun flusso attribuito ai segmenti.")
+            scale = "".join(f'<span><i style="width:{size}px;height:{size}px" aria-hidden="true"></i>{label}</span>'
+                            for size,label in ((9,"0"),(12,"0–100"),(15,"100–500"),(18,">500")))
+            st.html('<div class="igor-flow-scale" aria-label="Classi di flusso fisico in GWh/d"><strong>Flusso · GWh/d</strong>'+scale+'</div>')
+            st.caption("Classi di dimensione: 0, oltre 0 fino a 100, oltre 100 fino a 500, oltre 500. Valori arrotondati; nessun flusso attribuito ai gasdotti.")
     elif reading_mode == "ATTENTION":
         marks = "".join(f'<span><img src="{legend_symbol(c)}" alt="" aria-hidden="true">{label}</span>'
                         for c,label in (("ring","Evento pubblicato"),("finding","Indicatore I.G.O.R."),("quality","Dato assente / cache da aggiornare")))
@@ -519,7 +522,7 @@ def overview_panel():
             snapshots,day,now,saved,identifier,direction,policy,reading,event_ids,finding_ids,"overview")
         st.session_state["net_overview_direction"] = direction
         choices = _selectable_items(visible,reading)
-        map_col, detail = st.columns([1.25,1],gap="medium")
+        map_col, detail = st.columns([1.45,1],gap="medium")
         with map_col:
             render_map(network,boundary,visible,identifier,mode="overview",observations=observations,day=day,direction=direction,
                 reading_mode=reading,intelligence=intelligence,events=event_ids if reading == "ATTENTION" else (),findings=finding_ids)
