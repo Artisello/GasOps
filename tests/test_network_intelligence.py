@@ -290,3 +290,32 @@ def test_full_map_handles_only_future_cache_without_displaying_readings(offline,
     app = AppTest.from_string("from gasops_app.italian_network_page import panel\npanel()",default_timeout=30).run()
     assert not app.exception and len(app.get("deck_gl_json_chart")) == 1
     assert not app.metric and any("Nessun dato operativo" in c.value for c in app.caption)
+
+
+def test_map_hover_targets_always_have_resolved_tooltip_fields(assets):
+    n,boundary,_=assets
+    visible=tuple(i for i in n.infrastructure if i.id=="INET_BP_65" or i.category=="pipeline")
+    spec=json.loads(deck(n,boundary,visible,"INET_BP_65",stable_picking=True).to_json())
+    layers={l["id"]:l for l in spec["layers"]}
+    assert not layers["point-labels"]["pickable"]
+    assert layers["infrastructure-points"]["pickable"]
+    assert layers["pipeline-hit-targets"]["pickable"]
+    fields={"safe_name","safe_status","safe_summary"}
+    for row in layers["infrastructure-points"]["data"]:
+        assert fields <= row.keys()
+        if not row["active"]:
+            assert all(row[field]=="" for field in fields)
+            assert row["hit_radius"]==0
+        else:
+            assert row["safe_name"] and row["safe_summary"]
+    assert all(fields <= f["properties"].keys() for f in layers["pipeline-hit-targets"]["data"]["features"])
+
+
+@pytest.mark.parametrize("record", [
+    {"infra_id":"point","active":False},
+    {"properties":{"infra_id":"point","active":False}},
+])
+def test_inactive_map_pick_cannot_change_selection(record):
+    from gasops_app.italian_network import selected_id
+    event={"selection":{"objects":{"infrastructure-points":[record]}}}
+    assert selected_id(event,{"point"}) is None
