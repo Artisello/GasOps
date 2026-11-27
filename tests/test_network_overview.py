@@ -294,7 +294,8 @@ def test_flow_sizes_are_fixed_and_tooltips_are_compact():
     from decimal import Decimal
     assert [flow_icon_size(Decimal(str(v))) for v in (0,1,100,101,500,501)] == [9,12,12,15,15,18]
     network,boundary,_=view.assets()
-    spec=json.loads(deck(network,boundary,network.infrastructure).to_json())
-    assert "{safe_summary}" in spec["tooltip"]["html"]
-    assert "{safe_value}" not in spec["tooltip"]["html"]
-    assert spec["tooltip"]["style"]["maxWidth"] == "210px"
+    scene=deck(network,boundary,network.infrastructure)
+    tooltip=scene._tooltip  # PyDeck passes tooltip separately from the deck JSON.
+    assert "{safe_summary}" in tooltip["html"]
+    assert "{safe_value}" not in tooltip["html"]
+    assert tooltip["style"]["maxWidth"] == "210px"
