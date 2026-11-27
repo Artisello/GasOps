@@ -295,7 +295,7 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
         # Visible strokes stay thin; only the invisible picking corridor widens.
         # Alpha 1 remains pickable without a visible corridor across the map.
         layers.append(pdk.Layer("GeoJsonLayer", {"type":"FeatureCollection", "features":lines},
-            id="pipeline-hit-targets", pickable=True, auto_highlight=True, highlight_color=[101,223,191,75],
+            id="pipeline-hit-targets", pickable=reading_mode not in ("FLOW","ATTENTION"), auto_highlight=True, highlight_color=[101,223,191,75],
             filled=False, get_line_color=[91,139,181,1], get_line_width=18,
             line_width_units=pdk.types.String("pixels"), line_width_min_pixels=18, line_width_max_pixels=18,
             _sub_layer_props={"linestrings":{"getColor":[91,139,181,1]}}))
@@ -353,7 +353,7 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
             point_type=pdk.types.String("icon"),icon_atlas=pdk.types.String(ICON_ATLAS),icon_mapping=ICON_MAPPING,
             get_icon=pdk.types.String(icon),get_icon_color=color,get_icon_size=size,
             icon_size_units=pdk.types.String("pixels"),icon_size_min_pixels=size,icon_size_max_pixels=size))
-    if labels:
+    if labels or stable_picking:
         labels.sort(key=lambda r:-r["label_priority"])
         arranged = label_layout(labels,zoom=camera["zoom"],width=viewport_width,
             height=498 if mode in ("overview","scenario") else 648,longitude=camera["longitude"],latitude=camera["latitude"])
