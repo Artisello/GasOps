@@ -164,3 +164,28 @@ def test_overview_system_shows_all_nodes_without_selecting_them(offline):
     app.radio(key="net_reading_overview").set_value("SYSTEM").run()
     assert not app.exception
     assert len(nodes())==177
+
+
+def test_flow_lens_is_contextual_and_retains_day_and_selection(offline):
+    app=AppTest.from_string(SCRIPT,default_timeout=30)
+    app.session_state[ARCHIVE_KEY]=True
+    app.run()
+    assert not app.exception
+    assert not any(w.key=="net_flow_lens_overview" for w in app.radio)
+    app.radio(key="net_reading_overview").set_value("FLOW").run()
+    assert not app.exception
+    initial_day=app.date_input(key="system_status_gas_day").value
+    initial_point=app.session_state[view.SELECTED]
+    assert app.radio(key="net_flow_lens_overview").options==["Volume","Variazione D−1","Utilizzo capacità"]
+    for lens in ("delta","utilization"):
+        app.radio(key="net_flow_lens_overview").set_value(lens).run()
+        assert not app.exception
+        assert app.session_state["net_flow_lens"]==lens
+        assert app.session_state[view.SELECTED]==initial_point
+        assert app.date_input(key="system_status_gas_day").value==initial_day
+    app.radio(key="net_reading_overview").set_value("SYSTEM").run()
+    assert not app.exception
+    assert not any(w.key=="net_flow_lens_overview" for w in app.radio)
+    app.radio(key="net_reading_overview").set_value("FLOW").run()
+    assert not app.exception
+    assert app.radio(key="net_flow_lens_overview").value=="utilization"
