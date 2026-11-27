@@ -72,3 +72,14 @@ Use the shared native `workspace.picker` for mutually exclusive page sections: o
 Market opening renders observed data without fitting a model. The single “Calcola previsione” action enables the estimate for the current data/model/source metadata/day; changing those inputs requires another action. Reading prices, weather or data does not fit models. Explicit comparison enables the already available estimates. A valid manually chosen model is fitted alone and reused by later comparisons; an unavailable choice keeps the existing all-model fallback. Automatic selection and all numerical methods are unchanged.
 
 Overview example cards open the exact existing demo view in one click and preserve imported evidence. Fixtures remain labelled; source/missing/stale states and the single map are retained. Browser acceptance waits for Streamlit to finish the page before testing native WebGL gestures, so early streaming frames are not mistaken for the completed UI.
+
+
+## UX Pro Max — accessibility and interaction hardening (2026-11-28)
+
+Manual review of the upstream [skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/blob/main/.claude/skills/ui-ux-pro-max/SKILL.md), [quick reference](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/blob/main/.claude/skills/ui-ux-pro-max/references/quick-reference.md) and product/UX catalogues. Financial Dashboard and Analytics Dashboard both support the existing data-dense Swiss/minimal dark system. Streamlit is not a dedicated stack in the reviewed skill; adapt web guidance instead of introducing a JS stack. CLI not executed; no upstream code or dependencies installed. No replacement of prior design decisions.
+
+- Accessibility first: preserve native controls, focus rings, keyboard-selectable map alternatives, text alongside color, warning text in full (never truncate critical data quality notes).
+- Interaction: camera actions below the canvas, no overlap with data or native map controls. Calendar and camera actions use responsive wrapping groups and 44 CSS px height as a design target; this is more generous than the web WCAG 2.2 AA 24 CSS px minimum with exceptions.
+- Responsive layout: local table overflow, readable direction/status labels, single-column narrow KPI/pair layout at 375px; no automatic motion. Secondary and primary actions retain distinct contrast and disabled semantics.
+- Data integrity: no changes to calculations, date requests, bindings, or source disclosure. Existing status message has an atomic status role, not multiple competing regions.
+- Verification: expanded static contrast checks and browser checks for mobile control geometry, target dimensions and non-overlap. These checks are not a full WCAG audit, and must be run against the actual deployment before making compliance claims.
