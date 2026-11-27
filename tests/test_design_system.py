@@ -15,7 +15,7 @@ def contrast(a,b):
 
 def test_design_tokens_text_contrast():
     css=(ROOT/"gasops_app/theme.css").read_text()
-    tokens=dict(re.findall(r"--gas-([a-z]+):\s*(#[0-9a-fA-F]{6})",css))
+    tokens=dict(re.findall(r"--gas-([a-z-]+):\s*(#[0-9a-fA-F]{6})",css))
     for bg in ("bg","panel"):
         for fg in ("text","muted","teal","blue","amber","rose"):
             assert contrast(tokens[fg],tokens[bg])>=4.5
@@ -61,3 +61,19 @@ def test_native_interaction_and_local_reflow_rules():
     assert 'background-color:var(--gas-primary-active)!important' in css
     assert "scroll-margin-block:4rem 1rem" in css
     assert "font-variant-numeric:tabular-nums" in css
+
+
+def test_operational_controls_stay_in_flow_and_warnings_are_readable():
+    css=(ROOT/"gasops_app/theme.css").read_text()
+    for selector in ("net_view_focus_","net_view_reset_"):
+        assert not re.search(r'\[class\*="st-key-'+selector+r'"\]\s*\{[^}]*position\s*:\s*absolute',css)
+    note=re.search(r'\.gas-balance-note\s*\{([^}]+)\}',css).group(1)
+    assert "line-clamp" not in note and "overflow:hidden" not in note
+    assert "var(--gas-amber)" in note
+    tokens=dict(re.findall(r"--gas-([a-z-]+):\s*(#[0-9a-fA-F]{6})",css))
+    for bg in ("bg","panel","panel-hover","selected"):
+        for fg in ("text","muted","blue","teal"):
+            assert contrast(tokens[fg],tokens[bg])>=4.5
+    assert "st-key-system_day_nav" in css
+    assert "st-key-network_camera_" in css
+    assert 'role="switch"' in css
