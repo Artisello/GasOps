@@ -10,7 +10,7 @@ from .models import utc_now
 from .italiano import data_it, numero
 from .operations_ledger import sample_rows
 from .settlement_desk_page import STATE as SETTLEMENT_STATE
-from .visuals import info, kpi_grid
+from .visuals import info, kpi_grid, header
 from .bso_kpis import (PUBLIC_MILESTONES,NEWS,CODE,JARVIS,MAX_BYTES,AREAS,
                        task_demo,balancing_demo,task_template,task_csv,parse_tasks,operations_metrics,
                        balancing_metrics,settlement_metrics,closed_gas_day,is_timed,local_day)
@@ -178,7 +178,7 @@ def _settlement(demo,now):
 def page():
     from .workspace import apply_intent, guide, picker
     apply_intent("kpi")
-    st.title("Operazioni gas")
+    header("Operazioni gas", "")
     view=picker("Vista operazioni gas",["Registro operativo","Panoramica","Monitoraggio fonti","Executive demo","Centro operativo"],
                 key="bso_view",index=1,labels={"Panoramica":"Indicatori","Registro operativo":"Agenda e scadenze","Executive demo":"Esempio completo"})
     if view=="Centro operativo":
