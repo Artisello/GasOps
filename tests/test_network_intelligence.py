@@ -457,3 +457,12 @@ def test_bidirectional_history_preserves_independent_series_and_missing_days(ass
     assert fig["data"][1]["line"]["dash"]=="dot"
     assert fig["layout"]["xaxis"]["range"][0]==first-timedelta(days=1)
     assert any("1/7 giorni gas" in c and "2/7 giorni gas" in c for c in captions)
+
+
+def test_search_labels_distinguish_operational_points_from_geographic_nodes(assets):
+    network,_,_=assets
+    labels=view._infrastructure_labels(network,network.infrastructure)
+    assert labels["INET_BP_78"]=="Passo Gries · ↔ Bidirezionale"
+    assert labels["INET_BP_12"]=="Bizzarone · ↗ Solo uscita"
+    assert labels["INET_BP_65"]=="Mazara del Vallo · ↘ Solo ingresso"
+    assert all("Bidirezionale" not in labels[i.id] for i in network.infrastructure if i.category=="node")
