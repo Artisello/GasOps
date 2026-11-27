@@ -118,7 +118,10 @@ def _infrastructure_label(item, structural=None):
 
 def _infrastructure_labels(network, items):
     from .italian_network import direction_label
-    return {i.id:_infrastructure_label(i,direction_label(verified_bindings(network,i.id))) for i in items}
+    by_asset = {}
+    for binding in verified_bindings(network):
+        by_asset.setdefault(binding.infrastructure_id,[]).append(binding)
+    return {i.id:_infrastructure_label(i,direction_label(by_asset.get(i.id,()))) for i in items}
 
 
 def _reading_selection(key):
