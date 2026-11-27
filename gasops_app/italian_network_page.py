@@ -120,7 +120,7 @@ def _reading_selection(key):
     _reset_view(mode)
 
 
-def _reading_items(perimeter, reading, intelligence, identifier, events, findings, *, include_nodes=False):
+def _reading_items(perimeter, reading, intelligence, identifier, events, findings, *, include_nodes=True):
     return reading_infrastructure(perimeter,reading,intelligence,event_ids=events,finding_ids=findings,include_nodes=include_nodes)
 
 
@@ -151,7 +151,7 @@ def _reconcile_map(network, perimeter, observations, snapshots, day, now, saved,
             snapshots=snapshots,failures=saved.get("failures",()),ttl_hours=policy.network_ttl_hours)
         if candidate.get("binding"):
             intelligence[previous] = candidate
-    displayed = flow_displayed if flow_displayed is not None else _reading_items(perimeter,reading,intelligence,previous,events,findings,include_nodes=mode=="full")
+    displayed = flow_displayed if flow_displayed is not None else _reading_items(perimeter,reading,intelligence,previous,events,findings)
     identifier = _resolve_selection(displayed,reading,previous,events,findings)
     if identifier != previous:
         st.session_state[_detail_tab_key(mode)] = "Eventi" if reading=="ATTENTION" else "Dati"
@@ -209,12 +209,13 @@ def _initialize_layers():
     # Upgrade only the previous default, preserving deliberate user filters.
     if not st.session_state.get("net_layer_defaults_p1"):
         if set(st.session_state.get("net_layers",())) == {"pipeline","entry","lng","storage","compressor"}:
-            st.session_state["net_layers"] = [c for c in CATEGORIES if c!="node"]
+            st.session_state["net_layers"] = list(CATEGORIES)
         st.session_state["net_layer_defaults_p1"] = True
-    if not st.session_state.get("net_layer_defaults_three_modes"):
-        if set(st.session_state.get("net_layers",())) == set(CATEGORIES) and st.session_state.get(READING)!="INFRASTRUCTURE":
-            st.session_state["net_layers"] = [c for c in CATEGORIES if c!="node"]
-        st.session_state["net_layer_defaults_three_modes"] = True
+    # Restore the previous default without changing other custom layer subsets.
+    if not st.session_state.get("net_layer_defaults_nodes_v1"):
+        if set(st.session_state.get("net_layers",())) == set(CATEGORIES)-{"node"}:
+            st.session_state["net_layers"] = list(CATEGORIES)
+        st.session_state["net_layer_defaults_nodes_v1"] = True
 
 
 def _map_intelligence(network, visible, observations, snapshots, day, now, saved, selected, direction, policy):
@@ -826,7 +827,7 @@ def panel(mode="full"):
         item = next(i for i in network.infrastructure if i.id == focus["id"])
         if focus.get("direction") in {b.direction for b in network.bindings_for(item.id,"ENTSOG")}:
             st.session_state["net_direction"] = focus["direction"]
-        st.session_state["net_layers"] = sorted(set(st.session_state.get("net_layers",[c for c in CATEGORIES if c!="node"]))|{item.category})
+        st.session_state["net_layers"] = sorted(set(st.session_state.get("net_layers",list(CATEGORIES)))|{item.category})
         for key in ("net_operators","net_regions","net_statuses","net_only_events"):
             st.session_state.pop(key,None)
     from .operational_sources_page import configured_key
@@ -851,7 +852,7 @@ def panel(mode="full"):
         reset_col.button("Reset filtri", on_click=reset_filters, key="net_reset", width="stretch")
     reading = _mode_selector("full")
     layer_col, event_col, filter_col = st.columns([5,1,1], vertical_alignment="bottom")
-    layer_col.multiselect("Livelli", list(CATEGORIES), default=[c for c in CATEGORIES if c!="node"],
+    layer_col.multiselect("Livelli", list(CATEGORIES), default=list(CATEGORIES),
         format_func=CATEGORIES.__getitem__, key="net_layers", placeholder="Scegli i livelli")
     show_events = event_col.toggle("Interruzioni", key="net_events", help="Avvisi associati con codici verificati; uno zero pubblicato non è un’interruzione.")
     with filter_col.popover("Filtri", width="stretch"):

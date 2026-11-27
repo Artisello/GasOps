@@ -491,7 +491,7 @@ def point_intelligence(network, identifier, observations, day, now, *, direction
         "headroom_gwh_d":headroom,"headroom_kind":"published" if headroom is not None else None}
 
 
-def reading_infrastructure(visible, reading_mode, intelligence, *, selected=None, event_ids=(), finding_ids=(), include_nodes=False):
+def reading_infrastructure(visible, reading_mode, intelligence, *, selected=None, event_ids=(), finding_ids=(), include_nodes=True):
     """Modes narrow the existing filter perimeter independently of selection.
 
     Pipelines are static geographic context, never a location for point flows.
