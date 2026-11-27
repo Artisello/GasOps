@@ -12,7 +12,7 @@ Un selettore compatto attiva una sola lettura della stessa scena PyDeck. Nessuna
 
 | Modalità | Elementi e significato |
 |---|---|
-| **Sistema** (`SYSTEM`) | Gasdotti, frontiere, GNL, stoccaggi, compressori e **69 centrali elettriche già visibili senza selezionarle**. Colori di categoria; simbolo pieno con misure ENTSOG confrontabili sul giorno, contorno quando manca il dato operativo. Nessun colore di rischio presunto. I nodi sono consultabili attivando il livello Nodi nella mappa estesa. |
+| **Sistema** (`SYSTEM`) | Gasdotti, frontiere, GNL, stoccaggi, compressori e **69 centrali elettriche già visibili senza selezionarle**. Colori di categoria; simbolo pieno con misure ENTSOG confrontabili sul giorno, contorno quando manca il dato operativo. Nessun colore di rischio presunto. Anche i 177 nodi geografici storici sono visibili per impostazione predefinita. Il livello Nodi può essere disattivato nella mappa estesa. |
 | **Flussi** (`FLOW`) | Punti con binding univoco confermato e flusso fisico valido per il giorno gas. Direzione, capacità firm tecnica/disponibile, utilizzo, variazione D-1 e stato fonte nei tooltip e nella scheda. Gasdotti statici come contesto geografico. |
 | **Attenzione** (`ATTENTION`) | Cerchio rosa: evento pubblicato con associazione verificata. Rombo ambra: indicatore I.G.O.R. calcolato, con regola/soglia/evidenze nella scheda. Cerchio grigio tratteggiato: dato atteso assente o cache da aggiornare. Una riduzione della capacità tecnica rispetto a D-1 è un confronto derivato esplicito. |
 
@@ -20,7 +20,7 @@ La selezione resta soltanto se pertinente alla lettura; in caso contrario viene 
 
 La selezione nativa memorizza indici di array: filtrare fisicamente i bersagli del mouse poteva spostare il clic su un altro impianto al cambio lettura. Ora gli indici conservano la stessa identità; i bersagli esclusi hanno raggio zero e le etichette escluse testo/dimensione nulli, senza geometria visibile o cliccabile. Simboli e anelli sono decorativi e compaiono soltanto per gli elementi effettivamente mostrati. Il backend rifiuta comunque gli identificativi fuori dal perimetro visibile. Geometrie, coordinate e camera rimangono quelle del componente esistente.
 
-La vista completa parte con tutti i livelli eccetto Nodi. Il livello Nodi può essere abilitato esplicitamente nei filtri della vista estesa; nessun asset viene eliminato dal catalogo. La migrazione conserva i sottoinsiemi personalizzati e aggiorna il precedente insieme predefinito completo, salvo la vecchia lettura Infrastrutture. Le 69 centrali rimangono visibili per impostazione predefinita.
+La vista completa parte con tutti i livelli selezionati, inclusi i nodi. Il livello Nodi può essere disattivato nei filtri della vista estesa; nessun asset viene eliminato dal catalogo. La migrazione una tantum ripristina i nodi nel precedente insieme predefinito completo senza nodi, conservando gli altri sottoinsiemi. Le 69 centrali rimangono visibili per impostazione predefinita.
 
 La scheda è condivisa tra le due viste e contiene sette sezioni: **IDENTITÀ, STATO, DATI FISICI, DATI COMMERCIALI, TREND, EVENTI, DATI E PROVENIENZA**, distribuite tra Dati, Storico, Eventi e Fonti. Sono esposte soltanto le misure pubblicate disponibili, compresi Allocation e Firm Booked quando presenti. Unità normalizzata, direzione e intervallo originale restano consultabili. Le capacità con intervallo fonte valido ma non confrontabile sul giorno sono etichettate ed escluse dai rapporti. Fonti conserva ID, pubblicazione, acquisizione, qualità, revisioni, licenza, versione e accuratezza geografica, oltre alle evidenze D-1.
 
@@ -58,7 +58,7 @@ Le chiavi dei selettori e dei grafici sono distinte tra le due viste. Selezioni,
 | Stoccaggi | 20 | Archivio storico, inclusi progetti; stato attuale non presunto |
 | Compressione | 15 | Localizzazioni storiche indicative, inclusi elementi non riconfermati |
 | Centrali elettriche a gas | 69 | Livello distinto, selezione del combustibile gas in SciGRID |
-| Nodi | 177 | Nodi storici opzionali |
+| Nodi | 177 | Nodi storici visibili per default |
 | Produzione | 0 | Nessuna localizzazione pubblica verificata incorporata |
 | **Totale** | **456** | Italia, Sicilia, Sardegna e terminali offshore pertinenti |
 
