@@ -360,3 +360,15 @@ div[data-testid="stVerticalBlockBorderWrapper"] {border-color:var(--gas-border);
  .stApp [data-testid="stRadio"] [role="radiogroup"] {column-gap:.5rem;}
  .stApp [data-testid="stRadio"] [role="radiogroup"] label {max-width:100%;}
 }
+
+
+/* Network map controls share the existing local camera, no external map service. */
+[class*="st-key-net_view_focus_"] {position:absolute!important;bottom:8px;left:8px;width:auto!important;z-index:3;}
+[class*="st-key-net_view_focus_"] button {min-height:30px;padding:.2rem .55rem;font-size:.75rem;background:#122231;border-color:#39576b;}
+[class*="st-key-net_view_focus_"] button:hover,[class*="st-key-net_view_reset_"] button:hover {border-color:var(--gas-teal);color:var(--gas-teal);}
+[class*="st-key-net_view_focus_"] button:focus-visible,[class*="st-key-net_view_reset_"] button:focus-visible {outline:2px solid var(--gas-blue);outline-offset:2px;}
+.stApp [class*="st-key-net_mode_"] [data-testid="stCaptionContainer"] {color:#b2c2d2;}
+.gas-map-legend {gap:.35rem .7rem;line-height:1.4;}
+@media(max-width:480px) {
+  [class*="st-key-net_view_focus_"] button,[class*="st-key-net_view_reset_"] button {min-height:34px;font-size:.7rem;}
+}
