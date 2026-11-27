@@ -301,7 +301,8 @@ def test_flow_sizes_are_fixed_and_tooltips_are_compact():
     tooltip=scene._tooltip  # PyDeck passes tooltip separately from the deck JSON.
     assert "{safe_summary}" in tooltip["html"]
     assert "{safe_value}" not in tooltip["html"]
-    assert tooltip["style"]["maxWidth"] == "210px"
+    assert tooltip["style"]["maxWidth"] == "240px"
+    assert tooltip["style"]["whiteSpace"] == "pre-line"
 
 
 def test_gries_nearby_facilities_have_separate_selectable_identities():
