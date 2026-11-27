@@ -403,3 +403,7 @@ div[data-testid="stVerticalBlockBorderWrapper"] {border-color:var(--gas-border);
 .igor-flow-scale i {display:inline-block;background:var(--gas-teal);border-radius:50%;flex:none;}
 .st-key-system_status_header :is(.st-key-system_day_prev,.st-key-system_day_next,.st-key-system_day_latest) button {min-height:34px;padding:.2rem .55rem;font-size:.8rem;}
 .st-key-cockpit_reconciliation_table [data-testid="stDataFrame"] {margin-top:.15rem;}
+
+.igor-attention-summary {display:flex;flex-wrap:wrap;gap:.45rem;margin:.15rem 0;}
+.igor-attention-summary span {display:inline-flex;align-items:center;gap:.4rem;border:1px solid var(--gas-border);border-radius:var(--gas-radius);padding:.35rem .65rem;background:var(--gas-panel);color:var(--gas-muted);font-size:.78rem;}
+.igor-attention-summary strong {color:var(--gas-text);font-variant-numeric:tabular-nums;}
