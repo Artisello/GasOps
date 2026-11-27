@@ -256,10 +256,11 @@ def render_map(network, boundary, visible, identifier, *, mode, observations, da
 
 
 def render_legend(categories, reading_mode="INFRASTRUCTURE", *, event_overlay=False, flow_lens="volume"):
-    labels = "".join(f'<span><img src="{legend_symbol(c)}" width="14" height="14" alt="" aria-hidden="true">{escape(CATEGORIES[c])}</span>' for c in categories)
+    neutral = reading_mode == "FLOW" and flow_lens != "volume"
+    labels = "".join(f'<span><img src="{legend_symbol(c,neutral=neutral)}" width="14" height="14" alt="" aria-hidden="true">{escape(CATEGORIES[c])}</span>' for c in categories)
     st.html('<div class="gas-map-legend" aria-label="Legenda della mappa">'+labels+'</div>')
     if reading_mode in ("SYSTEM","FLOW"):
-        st.caption("Pieno: dati ENTSOG · contorno: dato assente o sola geografia.")
+        st.caption("Pieno: metrica disponibile · contorno: N/D o sola geografia." if reading_mode == "FLOW" else "Pieno: dati ENTSOG · contorno: dato assente o sola geografia.")
         if reading_mode == "FLOW":
             if flow_lens == "delta":
                 entries = [(DELTA_COLORS["up"],"+ aumento"),(DELTA_COLORS["down"],"− diminuzione"),(DELTA_COLORS["flat"],"0 invariato")]
