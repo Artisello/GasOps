@@ -22,7 +22,8 @@ from .italian_network import (ASSETS, CATEGORIES, applicable, filter_infrastruct
                               kpi_status, point_intelligence, verified_bindings,
                               validated_observations, reading_infrastructure, READING_MODES)
 from .italian_network_events import iip_events, verified_events, parse_interruptions
-from .italian_network_map import deck, display_name, legend_symbol, nearby_points, NEARBY_METRES
+from .italian_network_map import (deck, display_name, legend_symbol, nearby_points, NEARBY_METRES,
+    FLOW_LENSES, FLOW_LENS_LABELS, flow_metric, DELTA_COLORS, UTILIZATION_BANDS, MISSING_COLOR)
 from .italian_network_refresh import STATE
 from .italian_network_sources import decode_snapshot, load_catalog
 from .node_discovery import audit_nodes
@@ -239,8 +240,36 @@ def _focus_view(mode, identifier):
     st.session_state["net_camera_focus_"+mode] = identifier
 
 
+def _remember_flow_lens(key):
+    st.session_state["net_flow_lens"] = st.session_state[key]
+
+
+def _flow_lens(layout, reading):
+    if reading!="FLOW":
+        return "volume"
+    current=st.session_state.get("net_flow_lens","volume")
+    current=current if current in FLOW_LENSES else "volume"
+    key="net_flow_lens_"+layout
+    st.session_state[key]=current
+    with st.container(key="network_flow_lens_"+layout):
+        st.radio("Indicatore flussi",FLOW_LENSES,key=key,horizontal=True,label_visibility="collapsed",
+            format_func=FLOW_LENS_LABELS.__getitem__,on_change=_remember_flow_lens,args=(key,))
+    return current
+
+
+def _flow_coverage(displayed,intelligence,lens):
+    points=[intelligence[i.id] for i in displayed if i.category!="pipeline" and
+            i.id in intelligence and intelligence[i.id].get("binding")]
+    if not points:
+        return
+    available=sum(flow_metric(info,lens) is not None for info in points)
+    stale=sum(bool(info.get("stale")) and flow_metric(info,lens) is not None for info in points)
+    st.caption(f"{available}/{len(points)} punti mostrati con indicatore disponibile"+
+               (f" · {stale} copie da aggiornare" if stale else ""))
+
+
 def render_map(network, boundary, visible, identifier, *, mode, observations, day, direction="entry", events=(), show_labels=True,
-               reading_mode="SYSTEM", intelligence=None, findings=(), scenario_ids=()):
+               reading_mode="SYSTEM", intelligence=None, findings=(), scenario_ids=(), flow_lens="volume"):
     """Native selection callback runs before the single Streamlit rerun."""
     key = f"italian_network_{mode}_deck_v2_{st.session_state.get('net_map_epoch',0)}_{st.session_state.get('net_view_epoch_'+mode,0)}"
     description = "Mappa del sistema gas italiano. Gasdotti storici schematici e impianti; seleziona con il mouse o usa la ricerca infrastruttura per leggere gli stessi dettagli."
@@ -254,7 +283,7 @@ def render_map(network, boundary, visible, identifier, *, mode, observations, da
         focus = st.session_state.get("net_camera_focus_"+mode)
         st.pydeck_chart(deck(network,boundary,visible,identifier,events,observations=observations,
             day=day,direction=direction,show_labels=show_labels,mode=mode,viewport_width=width-2,
-            reading_mode=reading_mode,intelligence=intelligence,finding_ids=findings,stable_picking=True,scenario_ids=scenario_ids,focus_id=focus),key=key,
+            reading_mode=reading_mode,intelligence=intelligence,finding_ids=findings,stable_picking=True,scenario_ids=scenario_ids,focus_id=focus,flow_lens=flow_lens),key=key,
             height=500 if mode in ("overview","scenario") else 650,selection_mode="single-object",
             on_select=partial(_accept_pick,key,tuple(i.id for i in _selectable_items(visible,reading_mode)),mode,
                 point_directions=tuple((identifier,info["binding"].direction) for identifier,info in (intelligence or {}).items() if info.get("binding"))),**accessible)
@@ -267,21 +296,31 @@ def render_map(network, boundary, visible, identifier, *, mode, observations, da
                   help="Ripristina l’inquadratura italiana, mantenendo l’infrastruttura selezionata.")
 
 
-def render_legend(categories, reading_mode="SYSTEM", *, event_overlay=False):
+def render_legend(categories, reading_mode="SYSTEM", *, event_overlay=False, flow_lens="volume"):
     categories = tuple(categories)
-    labels = "".join(f'<span><img src="{legend_symbol(c)}" width="14" height="14" alt="" aria-hidden="true">{escape(CATEGORIES[c])}</span>'
+    neutral = reading_mode=="FLOW" and flow_lens!="volume"
+    labels = "".join(f'<span><img src="{legend_symbol(c,neutral=neutral)}" width="14" height="14" alt="" aria-hidden="true">{escape(CATEGORIES[c])}</span>'
                      for c in categories if c!="entry" or reading_mode=="ATTENTION")
     if "entry" in categories and reading_mode!="ATTENTION":
-        labels += "".join(f'<span><img src="{legend_symbol(icon)}" alt="" aria-hidden="true">{label}</span>'
+        labels += "".join(f'<span><img src="{legend_symbol(icon,neutral=neutral)}" alt="" aria-hidden="true">{label}</span>'
                           for icon,label in (("entry-in","Solo ingresso"),("entry-out","Solo uscita"),("entry-both","Bidirezionale")))
     st.html('<div class="gas-map-legend" aria-label="Legenda della mappa">'+labels+'</div>')
-    if reading_mode in ("SYSTEM","FLOW"):
+    if reading_mode=="SYSTEM":
         st.caption("Pieno: dati ENTSOG · contorno: dato assente o sola geografia.")
-        if reading_mode == "FLOW":
+    elif reading_mode=="FLOW":
+        if flow_lens=="volume":
             scale = "".join(f'<span><i style="width:{size}px;height:{size}px" aria-hidden="true"></i>{label}</span>'
                             for size,label in ((9,"0"),(12,"0–100"),(15,"100–500"),(18,">500")))
-            st.html('<div class="igor-flow-scale" aria-label="Classi di flusso fisico in GWh/d"><strong>Flusso · GWh/d</strong>'+scale+'</div>')
-            st.caption("Classi di dimensione: 0, oltre 0 fino a 100, oltre 100 fino a 500, oltre 500. Valori arrotondati; nessun flusso attribuito ai gasdotti.")
+            st.html('<div class="igor-flow-scale" aria-label="Classi di flusso fisico in GWh/d"><strong>GWh/d</strong>'+scale+'</div>')
+        else:
+            classes = ([(DELTA_COLORS["down"],"− D−1"),(DELTA_COLORS["flat"],"Invariato"),(DELTA_COLORS["up"],"+ D−1")]
+                       if flow_lens=="delta" else list(zip((c for _,c in UTILIZATION_BANDS),("meno di 30%","30–59%","60–89%","≥90%"))))
+            classes.append((MISSING_COLOR,"N/D"))
+            scale = "".join(f'<span><i style="width:12px;height:12px;background:rgb({",".join(map(str,color))})" aria-hidden="true"></i>{escape(label)}</span>'
+                            for color,label in classes)
+            st.html('<div class="igor-flow-scale" aria-label="Scala indicatore"><strong>'+
+                ("GWh/d vs D−1" if flow_lens=="delta" else "Capacità tecnica firm")+'</strong>'+scale+'</div>')
+        st.caption("Valori per direzione consultata (freccia accanto al numero) · contorno grigio: N/D. Gasdotti schematici, senza valori di flusso.")
     elif reading_mode == "ATTENTION":
         marks = "".join(f'<span><img src="{legend_symbol(c)}" alt="" aria-hidden="true">{label}</span>'
                         for c,label in (("ring","Evento pubblicato"),("finding","Indicatore I.G.O.R."),("quality","Dato assente / cache da aggiornare")))
@@ -516,6 +555,7 @@ def overview_panel():
     with map_slot, st.container(key="network_overview"):
         system.header(status,include_metrics=False)
         reading = _mode_selector("overview")
+        flow_lens = _flow_lens("overview",reading)
         event_ids = {e["infrastructure_id"] for e in status.active_events}
         finding_ids = {f.infrastructure_id for f in status.attention if f.category not in ("quality","event") and f.infrastructure_id}
         visible,identifier,directions,direction,intelligence = _reconcile_map(network,perimeter,observations,
@@ -525,8 +565,10 @@ def overview_panel():
         map_col, detail = st.columns([1.45,1],gap="medium")
         with map_col:
             render_map(network,boundary,visible,identifier,mode="overview",observations=observations,day=day,direction=direction,
-                reading_mode=reading,intelligence=intelligence,events=event_ids if reading == "ATTENTION" else (),findings=finding_ids)
-            render_legend((c for c in CATEGORIES if any(i.category == c for i in visible)),reading)
+                reading_mode=reading,intelligence=intelligence,events=event_ids if reading == "ATTENTION" else (),findings=finding_ids,flow_lens=flow_lens)
+            render_legend((c for c in CATEGORIES if any(i.category == c for i in visible)),reading,flow_lens=flow_lens)
+            if reading=="FLOW":
+                _flow_coverage(visible,intelligence,flow_lens)
             st.caption("SciGRID 2021 · collegamenti storici schematici · CC BY 4.0 · Natural Earth, pubblico dominio")
         with detail.container(key="network_home_detail"):
             if len(directions)>1:
@@ -1031,10 +1073,13 @@ def panel(mode="full"):
         if metrics["mapped_points"]:
             st.caption(f"Giorno gas: {data_it(last)} · flussi aggregati dei soli ingressi di frontiera; GNL separato.")
     with map_col:
+        flow_lens = _flow_lens("full",reading)
         render_map(network,boundary,displayed,identifier,mode="full",observations=observations,day=last,
                    direction=direction,events=active_event_ids if reading == "ATTENTION" else event_ids if show_events else (),
-                   show_labels=show_labels,reading_mode=reading,intelligence=intelligence,findings=finding_ids)
-        render_legend((c for c in CATEGORIES if any(i.category == c for i in displayed)),reading,event_overlay=show_events)
+                   show_labels=show_labels,reading_mode=reading,intelligence=intelligence,findings=finding_ids,flow_lens=flow_lens)
+        render_legend((c for c in CATEGORIES if any(i.category == c for i in displayed)),reading,event_overlay=show_events,flow_lens=flow_lens)
+        if reading=="FLOW":
+            _flow_coverage(displayed,intelligence,flow_lens)
         st.caption(f"{len(displayed)} elementi in questa lettura · {len(visible)} nel perimetro dei filtri. I gasdotti restano contesto geografico.")
         st.caption("Collegamenti schematici SciGRID 2021: non tracciati certificati né flussi sui gasdotti. Posizioni storiche indicative, salvo fonte del gestore.")
         st.caption("© SciGRID_gas / DLR-VE · CC BY 4.0 · INET_Raw 1.4 · confini Natural Earth, pubblico dominio")
