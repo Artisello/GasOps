@@ -58,10 +58,8 @@ def _sas_chart(b, key, height=290):
 def _overview(pack, *, network=True):
     if network:
         from .italian_network_page import panel
-        from .workspace import render
         with st.container(key="network_home_title"):
             st.title("I.G.O.R. — Sistema Gas Italiano")
-        render(show_example=False)
         panel(mode="overview")
         st.divider()
         st.subheader("Prova con un esempio")
