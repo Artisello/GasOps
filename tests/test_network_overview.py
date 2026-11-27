@@ -391,11 +391,11 @@ def test_overview_displays_verified_direction_class(monkeypatch,tmp_path,identif
     app.session_state[view.SELECTED]=identifier
     app.run()
     assert not app.exception
-    assert any(label+" · Direzioni censite ENTSOG" in c.value for c in app.caption)
+    assert any("igor-direction-chip" in e.proto.body and label in e.proto.body for e in app.get("html"))
     assert any(w.key=="net_overview_direction" for w in app.radio)==has_selector
     scene=json.loads(app.get("deck_gl_json_chart")[0].proto.json)
     points=next(l["data"] for l in scene["layers"] if l["id"]=="infrastructure-points")
-    assert next(p for p in points if p["infra_id"]==identifier)["safe_status"]==label+" · ENTSOG"
+    assert next(p for p in points if p["infra_id"]==identifier)["safe_status"]=={"Solo ingresso":"↘","Solo uscita":"↗","Bidirezionale":"↔"}[label]+" "+label+" · ENTSOG"
 
 
 def test_overview_renders_map_before_market_kpis(monkeypatch,tmp_path):

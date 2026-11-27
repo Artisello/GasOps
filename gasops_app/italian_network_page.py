@@ -26,6 +26,7 @@ from .italian_network_map import deck, display_name, legend_symbol, nearby_point
 from .italian_network_refresh import STATE
 from .italian_network_sources import decode_snapshot, load_catalog
 from .node_discovery import audit_nodes
+from .direction_ui import arrow_text, direction_header, paired_flow_html, direction_chip
 from .public_data import SourceUnavailable, SourceSchemaError
 from .models import utc_now
 from . import operational_acquisition as acquisition
@@ -267,8 +268,12 @@ def render_map(network, boundary, visible, identifier, *, mode, observations, da
 
 
 def render_legend(categories, reading_mode="SYSTEM", *, event_overlay=False):
+    categories = tuple(categories)
     labels = "".join(f'<span><img src="{legend_symbol(c)}" width="14" height="14" alt="" aria-hidden="true">{escape(CATEGORIES[c])}</span>' for c in categories)
     st.html('<div class="gas-map-legend" aria-label="Legenda della mappa">'+labels+'</div>')
+    if "entry" in categories:
+        st.html('<div class="igor-direction-header" aria-label="Direzioni censite ENTSOG">'+
+                "".join(direction_chip(t) for t in ("Solo ingresso","Solo uscita","Bidirezionale"))+'</div>')
     if reading_mode in ("SYSTEM","FLOW"):
         st.caption("Pieno: dati ENTSOG · contorno: dato assente o sola geografia.")
         if reading_mode == "FLOW":
@@ -307,7 +312,7 @@ def _source_status(status, day, *, expanded=False):
                    "Copertura parziale o non certificata. N/A e conflitti esclusi; capacità confrontate sullo stesso giorno gas.")
 
 
-def _operational_summary(network, item, info, *, compact=False):
+def _operational_summary(network, item, info, *, compact=False, paired=None):
     """Same sections and evidence in the overview and the full point card."""
     if not compact:st.caption("STATO")
     if not info.get("binding"):
@@ -321,25 +326,37 @@ def _operational_summary(network, item, info, *, compact=False):
     status = info["status"]
     from .freshness import label,style
     st.html('<div class="gas-map-status">'+chip(label(status),style(status))+
-        '<span>ENTSOG · '+("Ingresso" if binding.direction == "entry" else "Uscita")+' · '+escape(data_it(day))+'</span></div>')
+        '<span>ENTSOG · '+escape(arrow_text(binding.direction))+' · '+escape(data_it(day))+'</span></div>')
     if status["age"] is not None:
         st.caption("Copia "+_age(status["age"])+(" · da aggiornare" if info["stale"] else ""))
     values, publications = info["values"], info["publications"]
     flow = values.get("Physical Flow")
-    if flow is not None and not compact:st.caption("DATI FISICI")
+    if paired is not None:
+        st.caption("Flussi fisici · giorno gas selezionato")
+        st.html(paired_flow_html(paired,active=binding.direction))
+    if flow is not None and not compact and paired is None:st.caption("DATI FISICI")
     if flow is not None:
         delta = info["change_gwh_d"]
-        flow_col,util_col=st.columns([1.3,1]) if compact else (st,None)
-        flow_col.metric("Ultimo flusso pubblicato",numero(flow,1)+" GWh/d",
-                  delta=(f"{numero(delta,1)} GWh/d vs D-1" if delta is not None else None),delta_color="off")
-        if compact and info["utilization_pct"] is not None:
-            util_col.metric("Utilizzo capacità",numero(info["utilization_pct"],1)+"%",
-                help="Flusso / capacità tecnica firm, con unità e intervalli confrontabili sul giorno gas.")
+        if paired is None:
+            flow_col,util_col=st.columns([1.3,1]) if compact else (st,None)
+            flow_col.metric("Ultimo flusso pubblicato",numero(flow,1)+" GWh/d",
+                      delta=(f"{numero(delta,1)} GWh/d vs D-1" if delta is not None else None),delta_color="off")
+            if compact and info["utilization_pct"] is not None:
+                util_col.metric("Utilizzo capacità",numero(info["utilization_pct"],1)+"%",
+                    help="Flusso / capacità tecnica firm, con unità e intervalli confrontabili sul giorno gas.")
+        else:
+            details = []
+            if info["utilization_pct"] is not None:
+                details.append("Utilizzo capacità: "+numero(info["utilization_pct"],1)+"%")
+            if delta is not None:
+                details.append("Δ D-1: "+numero(delta,1)+" GWh/d")
+            if details:
+                st.caption(arrow_text(binding.direction)+" · "+" · ".join(details))
         row = publications["Physical Flow"][0]
         st.caption(_period_label(row))
     elif not values:
         st.caption("Nessun dato operativo confrontabile sul giorno selezionato.")
-    if info["utilization_pct"] is not None and not compact:
+    if info["utilization_pct"] is not None and not compact and paired is None:
         st.caption(f"Utilizzo capacità: {numero(info['utilization_pct'],1)}% · intervalli confrontabili")
     for heading,names in (("DATI COMMERCIALI",("Nomination","Renomination","Allocation","Firm Technical","Firm Booked","Firm Available")),):
         measures = []
@@ -511,14 +528,14 @@ def overview_panel():
         with detail.container(key="network_home_detail"):
             if len(directions)>1:
                 direction = st.radio("Direzione da consultare",directions,key="net_overview_direction",horizontal=True,
-                    format_func=lambda d:"Ingresso" if d == "entry" else "Uscita")
+                    format_func=arrow_text)
             if identifier:
                 _detail(network,all_items[identifier],observations,snapshots,direction,status.active_events,first,day,saved,
                         mode="overview",info=intelligence.get(identifier),attention=status.attention,
                         displayed=visible,reading=reading)
             else:
                 _empty_selection(reading)
-            with st.popover("Cerca infrastruttura",width="stretch"):
+            with st.popover("Cerca infrastruttura",icon=":material/search:",width="stretch"):
                 st.session_state["net_overview_infrastructure"] = identifier
                 st.selectbox("Infrastruttura",[i.id for i in sorted(choices,key=lambda i:i.name)],
                     key="net_overview_infrastructure",format_func=lambda key:_infrastructure_label(all_items[key]),
@@ -807,7 +824,8 @@ def _detail(network, item, observations, snapshots, direction, events, first, la
     from .italian_network_map import direction_label
     structural = direction_label(verified_bindings(network,item.id))
     if structural:
-        st.caption(structural+" · Direzioni censite ENTSOG rispetto alla rete italiana")
+        st.html(direction_header(structural,direction))
+        st.caption("Direzioni censite ENTSOG rispetto alla rete italiana")
     if displayed is not None:
         _attention_context(item.id,displayed,reading)
         _nearby_selector(network,item,displayed,mode)
@@ -839,11 +857,18 @@ def _detail(network, item, observations, snapshots, direction, events, first, la
         )
     with data_tab:
         with st.container(key="network_home_point_data" if mode == "overview" else "network_point_data"):
-            _operational_summary(network,item,info,compact=mode=="overview")
+            paired = None
+            if structural=="Bidirezionale":
+                validated = validated_observations(network, (o for o in observations if o.infrastructure_id==item.id), utc_now())
+                paired = {b.direction:applicable(validated,b.point_direction,last,"Physical Flow")
+                          for b in verified_bindings(network,item.id)}
+                if binding:
+                    paired[binding.direction] = info.get("values",{}).get("Physical Flow")
+            _operational_summary(network,item,info,compact=mode=="overview",paired=paired)
             _gie_detail(saved,item.id,network,first,last,mode=mode)
             from .italian_network import security_entries
             if any(b.infrastructure_id==item.id for b in security_entries(network)):
-                st.button("Stress Test su questo ingresso",key="net_stress_"+mode,
+                st.button("Stress Test su questo ingresso",icon=":material/monitoring:",key="net_stress_"+mode,
                     on_click=_open_stress,args=(item.id,last),width="stretch")
     with history_tab:
         st.caption("TREND · D-30")
@@ -864,7 +889,7 @@ def _detail(network, item, observations, snapshots, direction, events, first, la
             frame = result.get("frame",pd.DataFrame())
             field = "stock_twh" if b.provider == "AGSI+" else "sendout_gwh_d"
             can_explore |= field in frame and frame[field].notna().any()
-        st.button("Esplora questi dati",key="net_data_explorer_"+mode,on_click=open_explorer,
+        st.button("Esplora questi dati",icon=":material/query_stats:",key="net_data_explorer_"+mode,on_click=open_explorer,
                   args=(item.id,direction,first,last),kwargs={"navigate":mode=="overview"},
                   disabled=not can_explore,help="Disponibile per punti con osservazioni consultabili.")
         if binding:
@@ -981,7 +1006,7 @@ def panel(mode="full"):
                                  on_change=_widget_selection,args=("net_infrastructure",))
         if len(directions)>1:
             direction = st.selectbox("Direzione da consultare", directions, key="net_direction",
-                format_func=lambda d:"Ingresso" if d == "entry" else "Uscita")
+                format_func=arrow_text)
     if refresh_clicked and not archive:
         detail = (identifier,direction,first,last) if identifier else None
         job = acquisition.schedule(store,network,now,api_key=api_key,first=first,last=last,force=True,detail=detail)

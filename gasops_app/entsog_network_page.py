@@ -13,6 +13,7 @@ from .visuals import kpi_grid, plot, info
 from .session import database
 from .italian_network import load_network_assets, verified_bindings, point_direction_labels, direction_name
 from .italian_network_map import display_name
+from .direction_ui import arrow_text, direction_header
 
 STATE="entsog_network_result_v1"
 ATTEMPT="entsog_network_attempt_v1"
@@ -39,8 +40,8 @@ def panel():
         existing=next((k for k,v in presets.items() if v==b.point_direction),None)
         key=existing or b.point_direction
         presets[key]=b.point_direction
-        labels[key]=display_name(lookup[b.infrastructure_id].name)+" · "+types[b.point_direction]+(
-            " · "+direction_name(b.direction) if types[b.point_direction]=="Bidirezionale" else "")
+        labels[key]=display_name(lookup[b.infrastructure_id].name)+" · "+arrow_text(types[b.point_direction])+(
+            " · "+arrow_text(b.direction) if types[b.point_direction]=="Bidirezionale" else "")
     selected=st.selectbox("Interconnessione e direzione",[*presets,"Altro punto ENTSOG"],key="network_point",
         format_func=lambda k:labels.get(k,k))
     with st.form("network_query",border=False):
@@ -84,7 +85,7 @@ def panel():
         st.caption(operator+" · "+result.point)
     else:st.markdown("**"+result.point+"**")
     if result.point in catalog:
-        st.caption(types[result.point]+" · Dati: "+direction_name(catalog[result.point].direction))
+        st.html(direction_header(types[result.point],catalog[result.point].direction))
     else:
         st.caption("Tipologia non verificata nel catalogo italiano · Dati: "+direction_name("exit" if result.point.endswith("exit") else "entry" if result.point.endswith("entry") else None))
     st.caption(f"{day_label(result.first)} – {day_label(result.last)} · acquisizione {acquisition_label(result.acquired.isoformat())}"+(" · cache" if result.cached else ""))

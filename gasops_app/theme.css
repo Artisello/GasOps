@@ -372,3 +372,25 @@ div[data-testid="stVerticalBlockBorderWrapper"] {border-color:var(--gas-border);
 @media(max-width:480px) {
   [class*="st-key-net_view_focus_"] button,[class*="st-key-net_view_reset_"] button {min-height:34px;font-size:.7rem;}
 }
+
+
+/* Shared directional language — hue supports text, never replaces it. */
+.igor-direction-header {display:flex;flex-wrap:wrap;align-items:center;gap:.35rem .5rem;margin:.1rem 0;}
+.igor-direction-chip {display:inline-flex;align-items:center;gap:.25rem;padding:.2rem .55rem;border:1px solid var(--gas-border);border-radius:999px;font-size:.78rem;line-height:1.35;font-weight:600;background:var(--gas-panel);color:var(--gas-text);}
+.igor-direction-chip.entry {color:var(--gas-teal);border-color:#39645e;}
+.igor-direction-chip.exit {color:var(--gas-blue);border-color:#405e87;}
+.igor-direction-chip.both {color:var(--gas-text);border-color:var(--gas-control);}
+.igor-direction-context,.igor-flow-active {font-size:.72rem;color:var(--gas-muted);}
+.igor-flow-pair {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem;}
+.igor-flow-card {border:1px solid var(--gas-border);border-radius:var(--gas-radius);background:var(--gas-panel);padding:.65rem .75rem;min-width:0;}
+.igor-flow-card.entry.active {border-color:#39645e;box-shadow:inset 0 2px var(--gas-teal);}
+.igor-flow-card.exit.active {border-color:#405e87;box-shadow:inset 0 2px var(--gas-blue);}
+.igor-flow-label {font-size:.82rem;font-weight:600;}
+.igor-flow-card.entry .igor-flow-label {color:var(--gas-teal);}
+.igor-flow-card.exit .igor-flow-label {color:var(--gas-blue);}
+.igor-flow-value {font-size:clamp(1.15rem,2vw,1.65rem);font-weight:650;line-height:1.3;letter-spacing:-.025em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;}
+.igor-flow-value small {font-size:.72rem;color:var(--gas-muted);font-weight:450;letter-spacing:0;white-space:nowrap;}
+.igor-flow-card.missing .igor-flow-value {color:var(--gas-muted);}
+.igor-flow-active {display:block;margin-top:.2rem;}
+.st-key-cockpit_compare [data-testid="stDataFrame"] {border-radius:var(--gas-radius);overflow:hidden;}
+@media(max-width:400px) {.igor-flow-card {padding:.5rem;} .igor-flow-value small {display:block;} .igor-direction-chip {font-size:.73rem;}}
