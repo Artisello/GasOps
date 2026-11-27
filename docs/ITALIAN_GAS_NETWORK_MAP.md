@@ -217,3 +217,12 @@ Non sono inclusi tracciati aggiornati certificati, rete regionale distinta, punt
 Valutazione P1: le pagine ufficiali [MASE/UNMIG Cartografia](https://unmig.mase.gov.it/cartografia/) e [Stoccaggio del gas naturale](https://unmig.mase.gov.it/stoccaggio-del-gas-naturale/) pubblicano informazioni mensili e collegamenti a CSV/KML, con CC BY 4.0 dichiarata per i dati di stoccaggio. La presenza di un titolo minerario non identifica automaticamente la posizione di un impianto né il suo stato operativo: in questo incremento non sono stati aggiunti nuovi elementi senza il controllo incrociato di geometria e identità. Gli asset e i mapping verificati restano quelli inclusi. Non sono state aggiunte chiamate GME o Jarvis autenticate.
 
 Priorità successive: 1) dataset geografico ufficiale aggiornato con licenza esplicita; 2) verifica degli inventari e UMM con accesso GIE del deployment; 3) collaudo sul dispositivo e sul browser del team; 4) estensione dei mapping di singoli impianti documentabili; 5) maggiore copertura e riconciliazione della paginazione ENTSOG, mantenendo limiti e provenienza.
+
+
+## Verifica copertura API dei nodi
+
+La mappa estesa include **Copertura API dei nodi**, un controllo del catalogo ENTSOG Operator Point Directions per Snam Rete Gas (IT-TSO-0001), riutilizzando l'adattatore HTTP e cache esistenti. L'acquisizione è esplicita, non parte selezionando un nodo e non è disponibile in modalità archivio. Il report indica data, operatore, righe e conflitti, ed è esportabile in JSON per tutti i nodi.
+
+La copia inclusa del 22 novembre 2026 contiene 32 righe. Il confronto nominale esatto (anche su alias separati da slash o trattino) produce 9 nodi con punti già associati ad altre infrastrutture, 168 senza corrispondenza esatta e nessuna nuova associazione verificata. I dati dei punti già associati non vengono duplicati. Eventuali nuovi candidati restano da revisionare: omonimia e disponibilità del catalogo non provano identità fisica. Aggregati, punti virtuali e hub non sono usati come identificativi di nodi interni. L'audit copre il catalogo esaminato, non tutti i gestori italiani né i portali riservati.
+
+Per i nodi privi di associazioni operative la scheda presenta geografia, provenienza e risultati dell'audit senza schede di telemetria vuote. Nessuna osservazione, binding o metrica nazionale viene modificata.
