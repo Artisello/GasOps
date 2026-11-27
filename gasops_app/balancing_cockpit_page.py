@@ -149,6 +149,14 @@ def _compare(rows,by_point,point,day):
                 plot(point_indicators(by_point[point]),key="cockpit_point_chart")
                 st.caption(display_name(by_point[point]["point"])+" · "+by_point[point]["point_type"]+" · "+
                     direction_name(by_point[point]["direction"])+" · "+by_point[point]["state"])
+                if by_point[point]["point_type"]=="Bidirezionale":
+                    paired=[r for r in rows if r["infrastructure_id"]==by_point[point]["infrastructure_id"]]
+                    from .italiano import numero
+                    st.caption("Flusso fisico · entrambe le direzioni (GWh/d)")
+                    cols=st.columns(2)
+                    for col,d in zip(cols,("entry","exit")):
+                        value=next((r["Physical Flow"] for r in paired if r["direction"]==d),None)
+                        col.metric(direction_name(d),numero(value,1) if value is not None else "N/D")
                 st.button("Apri punto sulla mappa",key="cockpit_map",on_click=_open_full,
                     args=(by_point[point]["infrastructure_id"],day,day,by_point[point]["direction"]))
         _export(pd.DataFrame(rows),"riconciliazione con provenienza","cockpit_reconciliation")
