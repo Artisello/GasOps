@@ -178,9 +178,14 @@ def selected_id(event, visible_ids):
         return None
     for items in objects.values():
         for item in items if isinstance(items, list) else []:
-            identifier = item.get("infra_id") if isinstance(item, dict) else None
-            if identifier is None and isinstance(item, dict):
-                identifier = item.get("properties", {}).get("infra_id")
+            if not isinstance(item, dict):
+                continue
+            props = item.get("properties", {})
+            if item.get("active") is False or (isinstance(props,dict) and props.get("active") is False):
+                continue
+            identifier = item.get("infra_id")
+            if identifier is None and isinstance(props,dict):
+                identifier = props.get("infra_id")
             if identifier in visible_ids:
                 return identifier
     return None
