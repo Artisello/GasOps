@@ -24,7 +24,9 @@ from .italian_network import (ASSETS, CATEGORIES, applicable, filter_infrastruct
 from .italian_network_events import iip_events, verified_events, parse_interruptions
 from .italian_network_map import deck, display_name, legend_symbol, nearby_points, NEARBY_METRES
 from .italian_network_refresh import STATE
-from .italian_network_sources import decode_snapshot
+from .italian_network_sources import decode_snapshot, load_catalog
+from .node_discovery import audit_nodes
+from .public_data import SourceUnavailable, SourceSchemaError
 from .models import utc_now
 from . import operational_acquisition as acquisition
 from .balancing_cockpit import inventory_state
@@ -730,6 +732,74 @@ def _point_events(item, info, events, attention):
         st.caption("Qualità dati · flusso fisico non disponibile per il giorno e la direzione selezionati. Non equivale a flusso nullo.")
 
 
+NODE_CATALOG_KEY = "net_node_discovery_catalog"
+
+
+def _node_report(network, saved):
+    catalog = (None if st.session_state.get(ARCHIVE_KEY,False) else
+               st.session_state.get(NODE_CATALOG_KEY) or saved.get("catalog"))
+    return audit_nodes(network,catalog or network.sources["opd"])
+
+
+def _node_detail(network,item,saved,events,attention):
+    report = _node_report(network,saved)
+    node = next(n for n in report["nodes"] if n["id"]==item.id)
+    st.caption("Nodo geografico storico · nessuna serie operativa associata")
+    if node["state"]=="already_mapped":
+        st.caption("Punti ENTSOG omonimi già associati ad altre infrastrutture. Nessuna duplicazione dei flussi.")
+    elif node["state"]=="review_required":
+        st.caption("Possibile corrispondenza anagrafica da verificare; non costituisce un'associazione operativa.")
+    else:
+        st.caption("Nessuna corrispondenza nominale esatta nel catalogo ENTSOG esaminato.")
+    if node["candidates"]:
+        with st.expander("Corrispondenze ENTSOG da consultare"):
+            st.dataframe([{"Punto":c["label"],"Direzione":"Ingresso" if c["direction"]=="entry" else "Uscita",
+                "Dati censiti":"Sì" if c["has_data"] else "No",
+                "Associazione":c["mapped_name"] or "Da verificare"} for c in node["candidates"]],hide_index=True,width="stretch")
+    st.caption(f"Catalogo: {report['catalog_rows']} righe · {len(report['operators'])} operatori censiti · "
+               +str(report["catalog_date"] or "data non disponibile")[:10]
+               +(" · aggiornamento non riuscito" if report["failed"] else ""))
+    st.caption("La verifica non dimostra l'assenza di dati presso altri operatori o portali riservati.")
+    relevant = [e for e in events if e.get("infrastructure_id")==item.id]
+    signals = [f for f in attention if f.infrastructure_id==item.id]
+    if relevant or signals:
+        with st.expander("Eventi e segnalazioni associati"):
+            _point_events(item,{},relevant,signals)
+    _point_provenance(network,item,(),(),None,None,None)
+
+
+def _node_catalog_audit(network,saved,store,archive):
+    with st.expander("Copertura API dei nodi"):
+        st.caption("Verifica nominale del catalogo ENTSOG Snam Rete Gas (IT-TSO-0001). "
+                   "Non è una verifica nazionale né una prova di identità fisica. "
+                   "Nessuna associazione o misura viene importata automaticamente.")
+        if st.button("Verifica catalogo ENTSOG",key="net_node_catalog_refresh",disabled=archive):
+            try:
+                st.session_state[NODE_CATALOG_KEY] = load_catalog(store,refresh=True)
+                st.session_state.pop("net_node_catalog_error",None)
+            except (SourceUnavailable,SourceSchemaError,ValueError,OSError):
+                st.session_state["net_node_catalog_error"] = True
+        if not archive and st.session_state.get("net_node_catalog_error"):
+            st.warning("Catalogo non aggiornato: verifica basata sull'ultima copia disponibile.")
+        report = _node_report(network,saved)
+        if report["failed"]:
+            st.warning("Aggiornamento non riuscito · ultima copia valida.")
+        st.caption(f"{report['catalog_rows']} righe · {len(report['operators'])} operatori · "
+                   f"{report['conflicts']} chiavi in conflitto escluse · "
+                   +str(report["catalog_date"] or "data non disponibile")[:10])
+        labels={"verified":"Associato","review_required":"Da revisionare","already_mapped":"Punto già associato altrove",
+                "no_exact_match":"Nessuna corrispondenza esatta"}
+        counts={key:sum(n["state"]==key for n in report["nodes"]) for key in labels}
+        st.caption(" · ".join(f"{label}: {counts[key]}" for key,label in labels.items()))
+        candidates=[{"Nodo":n["name"],"Esito":labels[n["state"]],"Punto ENTSOG":c["label"],
+            "Operatore":c["operator"],"Direzione":c["direction"],"Associazione esistente":c["mapped_name"]}
+            for n in report["nodes"] for c in n["candidates"]]
+        if candidates:
+            st.dataframe(candidates,hide_index=True,width="stretch")
+        st.download_button("Esporta verifica di tutti i nodi",json.dumps(report,ensure_ascii=False,indent=2,default=str),
+            "igor-node-discovery.json","application/json",key="net_node_catalog_export")
+
+
 def _detail(network, item, observations, snapshots, direction, events, first, last, saved, *, mode="full", info=None, attention=(), displayed=None, reading="SYSTEM"):
     if mode!="overview":st.caption("IDENTITÀ")
     st.subheader(display_name(item.name))
@@ -744,6 +814,9 @@ def _detail(network, item, observations, snapshots, direction, events, first, la
     info = info if info is not None else point_intelligence(network,item.id,observations,last,utc_now(),
         direction=direction,snapshots=snapshots,failures=saved.get("failures",()))
     binding = info.get("binding")
+    if item.category=="node" and not binding and not network.bindings_for(item.id):
+        _node_detail(network,item,saved,events,attention)
+        return
     # Tracked tabs permit native map callbacks to select the relevant view.
     # Older Streamlit versions do not support stateful tabs.
     tab_key = _detail_tab_key(mode)
@@ -948,6 +1021,7 @@ def panel(mode="full"):
                     displayed=displayed,reading=reading)
         else:
             _empty_selection(reading)
+    _node_catalog_audit(network,saved,store,archive)
     with st.expander("Copertura e fonti"):
         _source_status(status,last)
         st.dataframe([{"Livello":CATEGORIES[c],"Mappate":metrics["categories"][c]} for c in CATEGORIES],hide_index=True)
