@@ -6,6 +6,7 @@ import streamlit as st
 from .gas_data import collect,select,series_frame,LABELS,MAX_DAYS,MAX_EXPORT_ROWS
 from .italian_network_page import assets,bundled_interruptions,SELECTED
 from .italian_network_map import display_name
+from .italian_network import point_direction_labels, direction_name
 from .models import utc_now
 from .operational_sources import attributed_csv
 from .session import database
@@ -61,12 +62,23 @@ def panel():
     _choice("gas_explorer_provider",providers,"ENTSOG")
     provider=a.selectbox("Provider",providers,key="gas_explorer_provider",format_func=PROVIDERS.__getitem__)
     source=menu.loc[menu.provider==provider]
+    direction_types=point_direction_labels(network)
+    def entity_title(key,label):
+        structural=direction_types.get(key)
+        return display_name(label)+(" · "+structural if structural else "")
     entities=source.drop_duplicates("entity_key").set_index("entity_key")
     preferred=source.loc[source.infrastructure_id==st.session_state.get(SELECTED,"INET_BP_65"),"entity_key"]
     _choice("gas_explorer_entity",list(entities.index),preferred.iloc[0] if len(preferred) else None)
     entity=b.selectbox("Infrastruttura / punto",list(entities.index),key="gas_explorer_entity",
-        format_func=lambda e:display_name(entities.loc[e,"entity_label"]))
+        format_func=lambda e:entity_title(e,entities.loc[e,"entity_label"]))
     primary=source.loc[source.entity_key==entity]
+    if provider=="ENTSOG":
+        structural=direction_types.get(entity)
+        st.caption((structural or "Tipologia non verificata nel catalogo")+" · Dati: "+direction_name(primary.direction.iloc[0]))
+        if structural=="Bidirezionale":
+            other=entity[:-5]+"exit" if entity.endswith("entry") else entity[:-4]+"entry"
+            st.caption("Direzione opposta: "+direction_name("exit" if entity.endswith("entry") else "entry")+
+                (" · serie consultabile nel selettore" if other in entities.index else " · nessuna serie disponibile nel perimetro caricato"))
     options=list(dict.fromkeys(zip(primary.indicator,primary.unit,primary.time_basis)))
     _choice("gas_explorer_indicator",options,next((k for k in options if k[0]=="Physical Flow"),options[0]))
     indicator,unit,basis=c.selectbox("Indicatore",options,key="gas_explorer_indicator",
@@ -85,7 +97,7 @@ def panel():
             previous=st.session_state.get("gas_explorer_comparison",[])
             st.session_state["gas_explorer_comparison"]=[e for e in previous if e in alternatives][:3]
             compared=st.multiselect("Stesso indicatore, unità e base temporale",alternatives,max_selections=3,
-                key="gas_explorer_comparison",format_func=lambda e:display_name(labels[e]))
+                key="gas_explorer_comparison",format_func=lambda e:entity_title(e,labels[e]))
     chosen=[entity,*compared]
     records=compatible.loc[compatible.entity_key.isin(chosen)]
     lower=min(records.query_first)
@@ -142,9 +154,13 @@ def panel():
              *[c for c in visible.columns if c not in {"gas_day","entity_label","indicator","value","unit","value_d1","delta_d1",
                  "quality_status","revision_count","publication_status","period_from","period_to","observed_at","retrieved_at"}]]
     def table():
-        st.dataframe(visible[columns],hide_index=True,width="stretch",key="gas_explorer_table",
+        display=visible[columns].copy()
+        if provider=="ENTSOG":
+            display.insert(2,"point_type",display.point_direction.map(direction_types).fillna("Non verificata"))
+        st.dataframe(display,hide_index=True,width="stretch",key="gas_explorer_table",
             column_config={"value":st.column_config.NumberColumn("Valore"),"entity_label":"Punto / infrastruttura",
                 "gas_day":"Giorno fonte","quality_status":"Qualità","observed_at":"Pubblicato",
+                "point_type":"Tipologia punto","direction":"Direzione dati",
                 "delta_d1":"Δ D-1 (p.p.)" if unit=="%" else "Δ D-1 ("+unit+")",
                 "retrieved_at":"Acquisito","revisions":st.column_config.TextColumn("Revisioni · JSON")})
     if view=="Tabella":table()
