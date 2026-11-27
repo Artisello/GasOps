@@ -8,6 +8,7 @@ import pydeck as pdk
 
 from .italian_network import CATEGORIES, COLORS, applicable, verified_bindings, direction_label
 from .italiano import numero, data_it
+from .direction_ui import arrow_text, ARROWS
 
 RADII = {"entry":6, "lng":6, "storage":4.5, "compressor":4, "production":4, "power":3.5, "node":2.5}
 HIT_RADII = {"entry":14,"lng":14,"storage":11,"compressor":10,"production":10,"power":10,"node":7}
@@ -32,6 +33,21 @@ _ATLAS_SYMBOLS = {**SYMBOLS,**{c+"-outline":f'<g fill="none" stroke="white" stro
     "finding":'<path d="M12 2 22 12 12 22 2 12Z" fill="none" stroke="white" stroke-width="1.7"/>',
     "quality":'<circle cx="12" cy="12" r="10" fill="none" stroke="white" stroke-width="1.7" stroke-dasharray="3 2"/>',
     "assumption":'<circle cx="12" cy="12" r="10" fill="none" stroke="white" stroke-width="2" stroke-dasharray="3 2"/><path d="m8 8 8 8m0-8-8 8" fill="none" stroke="white" stroke-width="2"/>'}
+# Abstract glyphs, not geographic headings or observed flow animations.
+_DIRECTION_PATHS = {"entry":"M8 8L16 16M10 16H16V10",
+                    "exit":"M8 16L16 8M10 8H16V14",
+                    "both":"M6 12H18M9 9L6 12L9 15M15 9L18 12L15 15"}
+_DIRECTION_ICONS = {"Solo ingresso":"entry-in","Solo uscita":"entry-out","Bidirezionale":"entry-both"}
+for kind,variant in zip(("entry","exit","both"),_DIRECTION_ICONS.values()):
+    path = _DIRECTION_PATHS[kind]
+    mask = "arrow-"+kind
+    _ATLAS_SYMBOLS[variant] = (
+        f'<mask id="{mask}" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">'
+        f'<rect width="24" height="24" fill="white"/><path d="{path}" fill="none" stroke="black" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></mask>'
+        f'<g mask="url(#{mask})">{SYMBOLS["entry"]}</g>')
+    _ATLAS_SYMBOLS[variant+"-outline"] = (
+        f'<g fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'
+        f'{SYMBOLS["entry"]}<path d="{path}"/></g>')
 ICON_MAPPING = {category:{"x":n*24,"y":0,"width":24,"height":24,"mask":True} for n,category in enumerate(_ATLAS_SYMBOLS)}
 ICON_ATLAS = "data:image/svg+xml,"+quote(f'<svg xmlns="http://www.w3.org/2000/svg" width="{24*len(_ATLAS_SYMBOLS)}" height="24" fill="white">'+
     ''.join(f'<g transform="translate({n*24} 0)">{symbol}</g>' for n,symbol in enumerate(_ATLAS_SYMBOLS.values()))+'</svg>')
@@ -171,7 +187,7 @@ def bidirectional_preview(bindings, observations, day, info):
             value = info.get("values",{}).get("Physical Flow")
         else:
             value = applicable(observations,binding.point_direction,day,"Physical Flow")
-        lines.append(label+": "+(numero(value,1)+" GWh/d" if value is not None else "N/D"))
+        lines.append(arrow_text(direction)+": "+(numero(value,1)+" GWh/d" if value is not None else "N/D"))
     return "\n".join(lines)
 
 
@@ -236,7 +252,7 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
         bindings = bindings_by_id.get(item.id,())
         structural = direction_label(bindings)
         if structural:
-            tooltip["safe_status"] = structural+" · ENTSOG"
+            tooltip["safe_status"] = arrow_text(structural)+" · ENTSOG"
             if reading_mode != "ATTENTION":
                 preview = bidirectional_preview(bindings,observations,day,info)
                 if preview is not None:
@@ -247,7 +263,7 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
                     flow = (info.get("values",{}).get("Physical Flow")
                             if active and active.point_direction == binding.point_direction and info.get("day",day)==day
                             else applicable(observations,binding.point_direction,day,"Physical Flow"))
-                    tooltip["safe_summary"] = escape(data_it(day)+" · flusso fisico\n"+
+                    tooltip["safe_summary"] = escape(data_it(day)+" · flusso fisico\n"+arrow_text(binding.direction)+": "+
                         (numero(flow,1)+" GWh/d" if flow is not None else "N/D"))
                 if info.get("stale"):
                     tooltip["safe_summary"] += "\nCopia da aggiornare (direzione attiva)"
@@ -267,6 +283,8 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
                    and reading_mode != "INFRASTRUCTURE" and not info.get("available") else ""),"icon_size":ICON_SIZES[item.category],
                "radius":RADII[item.category],"hit_radius":HIT_RADII[item.category],
                "active":True,"border":[26,42,58]}
+        if item.category=="entry" and structural in _DIRECTION_ICONS and reading_mode!="ATTENTION":
+            row["icon"] = _DIRECTION_ICONS[structural]+("-outline" if row["icon"].endswith("-outline") else "")
         # Context stays selectable, while primary points dominate visually.
         if reading_mode in ("SYSTEM","FLOW","ATTENTION"):
             if item.id != selected and item.category in ("power","node","compressor"):
@@ -277,9 +295,11 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
         points.append(row)
         if item.id == selected or show_labels and (item.category in ("entry", "lng") or len(point_categories) == 1):
             name = display_name(item.name.split(" · ")[0].replace("FSRU ", ""))
+            if structural and item.category=="entry":
+                name = ARROWS[structural]+" "+name
             flow = info.get("values",{}).get("Physical Flow")
             if reading_mode == "FLOW" and info.get("flow_available") and flow is not None:
-                name += " · "+numero(flow,0)
+                name += " · "+(ARROWS.get(info.get("binding").direction,"")+" " if info.get("binding") and structural=="Bidirezionale" else "")+numero(flow,0)
             labels.append({**row, **label_style,"label":name,
                            "offset":[10,-10] if item.id == selected else [10,9]})
         if item.id in event_ids:
