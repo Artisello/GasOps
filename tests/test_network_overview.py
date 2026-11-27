@@ -299,3 +299,55 @@ def test_flow_sizes_are_fixed_and_tooltips_are_compact():
     assert "{safe_summary}" in tooltip["html"]
     assert "{safe_value}" not in tooltip["html"]
     assert tooltip["style"]["maxWidth"] == "210px"
+
+
+def test_gries_nearby_facilities_have_separate_selectable_identities():
+    from gasops_app.italian_network_map import nearby_points
+    network,_,_=view.assets()
+    items=tuple(i for i in network.infrastructure if i.category in ("entry","compressor"))
+    groups=nearby_points(network,items)
+    assert "INET_CO_77" in groups["INET_BP_78"]
+    assert "INET_BP_78" in groups["INET_CO_77"]
+    assert "INET_CO_77" not in nearby_points(network,tuple(i for i in items if i.category=="entry")).get("INET_BP_78",())
+
+
+@pytest.mark.parametrize("mode",["overview","full"])
+def test_nearby_selection_updates_detail_identity(monkeypatch,mode):
+    state={view.READING:"SYSTEM",view.SELECTED:"INET_BP_78"}
+    monkeypatch.setattr(view.st,"session_state",state)
+    view._select_related(mode,"INET_CO_77")
+    assert state[view.SELECTED]=="INET_CO_77"
+    assert state[view._detail_tab_key(mode)]=="Dati"
+    if mode=="full":
+        assert state["net_pending_selection"]=="INET_CO_77"
+
+
+def test_attention_does_not_render_previous_normal_selection():
+    network,boundary,_=view.assets()
+    mazara="INET_BP_65"
+    gries="INET_BP_78"
+    info={mazara:{"binding":object(),"flow_available":True,"stale":False}}
+    visible=view._reading_items(network.infrastructure,"ATTENTION",info,mazara,(),{gries})
+    assert mazara not in {i.id for i in visible}
+    assert gries in {i.id for i in visible}
+    assert any(i.category=="pipeline" for i in visible)
+    spec=json.loads(deck(network,boundary,visible,mazara,reading_mode="ATTENTION",finding_ids={gries},stable_picking=True).to_json())
+    layers={l["id"]:l for l in spec["layers"]}
+    assert "selected-point" not in layers
+    assert not next(r for r in layers["infrastructure-points"]["data"] if r["infra_id"]==mazara)["active"]
+    assert next(r for r in layers["infrastructure-points"]["data"] if r["infra_id"]==gries)["active"]
+    assert mazara in {i.id for i in view._reading_items(network.infrastructure,"SYSTEM",info,mazara,(),{gries})}
+
+
+def test_overview_nearby_button_can_open_compressor(monkeypatch,tmp_path):
+    offline(monkeypatch,tmp_path)
+    app=AppTest.from_string("from gasops_app.italian_network_page import panel\npanel(mode='overview')",default_timeout=30)
+    app.session_state[ARCHIVE_KEY]=True
+    app.session_state[view.SELECTED]="INET_BP_78"
+    app.run()
+    assert not app.exception
+    button=app.button(key="net_nearby_overview_INET_CO_77")
+    assert "Compressione" in button.label
+    button.click().run()
+    assert not app.exception
+    assert app.session_state[view.SELECTED]=="INET_CO_77"
