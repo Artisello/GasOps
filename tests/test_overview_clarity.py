@@ -125,12 +125,18 @@ def test_legacy_infrastructure_reading_migrates_to_system(offline):
     assert app.radio(key="net_reading_overview").options==["Sistema","Flussi","Attenzione"]
 
 
-def test_nodes_remain_accessible_as_optional_full_map_layer(offline):
+def test_nodes_are_enabled_by_default_and_remain_filterable_in_full_map(offline):
     app=AppTest.from_string("from gasops_app.italian_network_page import panel\npanel(mode='full')",default_timeout=30)
     app.session_state[ARCHIVE_KEY]=True
     app.run()
     assert not app.exception
-    assert "node" not in app.multiselect(key="net_layers").value
+    assert "node" in app.multiselect(key="net_layers").value
+    spec=json.loads(app.get("deck_gl_json_chart")[0].proto.json)
+    assert sum(r["active"] and r["category"]=="node" for l in spec["layers"] if l["id"]=="infrastructure-points" for r in l["data"])==177
+    app.multiselect(key="net_layers").set_value(["lng"]).run()
+    assert not app.exception
+    spec=json.loads(app.get("deck_gl_json_chart")[0].proto.json)
+    assert not any(r["active"] and r["category"]=="node" for l in spec["layers"] if l["id"]=="infrastructure-points" for r in l["data"])
     app.multiselect(key="net_layers").set_value(["node"]).run()
     assert not app.exception
     assert app.radio(key="net_reading_full").options==["Sistema","Flussi","Attenzione"]
@@ -139,3 +145,22 @@ def test_nodes_remain_accessible_as_optional_full_map_layer(offline):
     active=[r for l in spec["layers"] if l["id"]=="infrastructure-points" for r in l["data"] if r["active"]]
     assert len(active)==177 and all(r["category"]=="node" for r in active)
     assert app.session_state[view.SELECTED] in {r["infra_id"] for r in active}
+
+
+def test_overview_system_shows_all_nodes_without_selecting_them(offline):
+    app=AppTest.from_string(SCRIPT,default_timeout=30)
+    app.session_state[ARCHIVE_KEY]=True
+    app.run()
+    assert not app.exception
+    def nodes():
+        spec=json.loads(app.get("deck_gl_json_chart")[0].proto.json)
+        return [r for l in spec["layers"] if l["id"]=="infrastructure-points"
+                for r in l["data"] if r["active"] and r["category"]=="node"]
+    assert len(nodes())==177
+    for mode in ("FLOW","ATTENTION"):
+        app.radio(key="net_reading_overview").set_value(mode).run()
+        assert not app.exception
+        assert not nodes()
+    app.radio(key="net_reading_overview").set_value("SYSTEM").run()
+    assert not app.exception
+    assert len(nodes())==177
