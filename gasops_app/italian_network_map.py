@@ -297,7 +297,8 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
             # when a reading/filter hides rows; radius 0 draws/picks nothing.
             by_id = {r["infra_id"]:r for r in points}
             targets = [by_id.get(i.id,{"infra_id":i.id,"position":lookup[i.id].geometry["coordinates"],
-                "category":i.category,"radius":0,"hit_radius":0,"active":False}) for i in pick_order]
+                "category":i.category,"radius":0,"hit_radius":0,"active":False,
+                "safe_name":"","safe_status":"","safe_summary":""}) for i in pick_order]
         layers.append(pdk.Layer("ScatterplotLayer", targets, id="infrastructure-points", pickable=True,
             auto_highlight=True, highlight_color=[230,245,255,60],get_position="position", get_fill_color=[20,34,49,1], get_radius="hit_radius",
             radius_units=pdk.types.String("pixels"), radius_min_pixels=0, radius_max_pixels=14,
@@ -328,8 +329,9 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
             by_id = {r["infra_id"]:r for r in arranged}
             arranged = [by_id.get(i.id,{"infra_id":i.id,"position":label_anchor(lookup[i.id].geometry),"label":"",
                 "label_size":0,"label_color":[0,0,0,0],"label_background":[0,0,0,0],
-                "offset":[0,0],"anchor":"start"}) for i in network.infrastructure]
-        layers.append(pdk.Layer("GeoJsonLayer", point_features(arranged), id="point-labels", pickable=True,
+                "offset":[0,0],"anchor":"start","active":False,
+                "safe_name":"","safe_status":"","safe_summary":""}) for i in network.infrastructure]
+        layers.append(pdk.Layer("GeoJsonLayer", point_features(arranged), id="point-labels", pickable=False,
             point_type=pdk.types.String("text"),get_text="properties.label",get_text_color="properties.label_color",
             get_text_size="properties.label_size",text_size_units=pdk.types.String("pixels"),text_size_min_pixels=0 if stable_picking else 12,text_size_max_pixels=14,
             get_text_pixel_offset="properties.offset",get_text_anchor="properties.anchor",text_font_family=pdk.types.String("Arial, sans-serif"),
