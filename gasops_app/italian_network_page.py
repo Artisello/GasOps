@@ -268,6 +268,7 @@ def render_map(network, boundary, visible, identifier, *, mode, observations, da
 
 
 def render_legend(categories, reading_mode="SYSTEM", *, event_overlay=False):
+    categories = tuple(categories)
     labels = "".join(f'<span><img src="{legend_symbol(c)}" width="14" height="14" alt="" aria-hidden="true">{escape(CATEGORIES[c])}</span>' for c in categories)
     st.html('<div class="gas-map-legend" aria-label="Legenda della mappa">'+labels+'</div>')
     if "entry" in categories:
