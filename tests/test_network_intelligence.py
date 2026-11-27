@@ -319,3 +319,32 @@ def test_inactive_map_pick_cannot_change_selection(record):
     from gasops_app.italian_network import selected_id
     event={"selection":{"objects":{"infrastructure-points":[record]}}}
     assert selected_id(event,{"point"}) is None
+
+
+def test_gries_preview_shows_both_confirmed_directions_and_distinguishes_zero_from_missing(assets):
+    from gasops_app.italian_network_map import bidirectional_preview
+    from gasops_app.italian_network import verified_bindings
+    n,boundary,_=assets
+    identifier="INET_BP_78"
+    bindings=verified_bindings(n,identifier)
+    assert {b.direction for b in bindings}=={"entry","exit"}
+    entry=next(b for b in bindings if b.direction=="entry")
+    exit=next(b for b in bindings if b.direction=="exit")
+    rows=(reading(entry,value="213.8"),reading(exit,value="0"))
+    for direction in ("entry","exit"):
+        info=point_intelligence(n,identifier,rows,DAY,NOW,direction=direction)
+        preview=bidirectional_preview(bindings,rows,DAY,info)
+        assert "Ingresso: 213,8 GWh/d" in preview
+        assert "Uscita: 0,0 GWh/d" in preview
+        spec=json.loads(deck(n,boundary,tuple(i for i in n.infrastructure if i.id==identifier),
+            identifier,day=DAY,observations=rows,intelligence={identifier:info},reading_mode="SYSTEM").to_json())
+        target=next(l["data"][0] for l in spec["layers"] if l["id"]=="infrastructure-points")
+        assert target["safe_status"]=="Bidirezionale · ENTSOG"
+        assert "Ingresso: 213,8 GWh/d" in target["safe_summary"]
+        assert "Uscita: 0,0 GWh/d" in target["safe_summary"]
+        assert target["direction"]==direction
+    missing=bidirectional_preview(bindings,rows[:1],DAY,{})
+    assert "Uscita: N/D" in missing
+    assert "Uscita: 0,0" not in missing
+    assert bidirectional_preview((entry,),rows,DAY,{}) is None
+    assert "Ingresso: N/D" in bidirectional_preview(bindings,rows,DAY-timedelta(days=1),{})

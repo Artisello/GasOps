@@ -6,7 +6,7 @@ import math
 from urllib.parse import quote
 import pydeck as pdk
 
-from .italian_network import CATEGORIES, COLORS, applicable
+from .italian_network import CATEGORIES, COLORS, applicable, verified_bindings
 from .italiano import numero, data_it
 
 RADII = {"entry":6, "lng":6, "storage":4.5, "compressor":4, "production":4, "power":3.5, "node":2.5}
@@ -156,6 +156,25 @@ def label_layout(labels, *, zoom=4, width=None, height=None, longitude=12.5, lat
     return placed
 
 
+def bidirectional_preview(bindings, observations, day, info):
+    """Describe verified directions and separate published physical flows for D."""
+    by_direction = {b.direction:b for b in bindings}
+    if set(by_direction) != {"entry","exit"}:
+        return None
+    if day is None:
+        return "Ingresso e uscita dalla rete italiana"
+    active = info.get("binding")
+    lines = [data_it(day)+" · flussi fisici"]
+    for direction,label in (("entry","Ingresso"),("exit","Uscita")):
+        binding = by_direction[direction]
+        if active and active.point_direction == binding.point_direction and info.get("day",day) == day:
+            value = info.get("values",{}).get("Physical Flow")
+        else:
+            value = applicable(observations,binding.point_direction,day,"Physical Flow")
+        lines.append(label+": "+(numero(value,1)+" GWh/d" if value is not None else "N/D"))
+    return "\n".join(lines)
+
+
 def deck(network, boundary, visible, selected=None, event_ids=(), *, observations=(), day=None, direction="entry", show_labels=True, mode="full", viewport_width=600,
          reading_mode="INFRASTRUCTURE", intelligence=None, finding_ids=(), stable_picking=False, scenario_ids=(), focus_id=None):
     camera = fit_italy(boundary,viewport_width,498 if mode in ("overview","scenario") else 648)
@@ -166,6 +185,9 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
     visible = tuple(visible)
     nearby = nearby_points(network, visible)
     point_categories = {i.category for i in visible if i.category != "pipeline"}
+    bindings_by_id = {}
+    for binding in verified_bindings(network):
+        bindings_by_id.setdefault(binding.infrastructure_id,[]).append(binding)
     lines, points, highlight, labels, events, findings, quality, assumptions = [], [], [], [], [], [], [], []
     for item in visible:
         geometry = lookup[item.id].geometry
@@ -211,6 +233,16 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
             if value is not None:
                 tooltip["safe_value"] = f"{numero(value,1)} GWh/d · {'ingresso' if point.direction == 'entry' else 'uscita'} · {data_it(day)}"
                 tooltip["safe_summary"] = tooltip["safe_value"]
+        if item.category == "entry":
+            preview = bidirectional_preview(bindings_by_id.get(item.id,()),observations,day,info)
+            if preview is not None:
+                if reading_mode == "ATTENTION":
+                    tooltip["safe_status"] = "Bidirezionale · ENTSOG"
+                else:
+                    tooltip["safe_status"] = "Bidirezionale · ENTSOG"
+                    tooltip["safe_summary"] = escape(preview)
+                    if info.get("stale"):
+                        tooltip["safe_summary"] += "\nCopia da aggiornare (direzione attiva)"
         if geometry["type"] != "Point":
             feature = {"type":"Feature", "geometry":geometry, **tooltip,
                        "properties":{**tooltip, "color":COLORS[item.category]}}
@@ -221,7 +253,7 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
                 labels.append({**tooltip,**label_style,"position":position,"label":display_name(item.name)})
             continue
         if item.id in nearby:
-            tooltip["safe_summary"] += f" · {1+len(nearby[item.id])} punti vicini: clicca per scegliere"
+            tooltip["safe_summary"] += f"\n{1+len(nearby[item.id])} punti vicini · clicca per scegliere"
         row = {**tooltip, "position":geometry["coordinates"], "color":COLORS[item.category],
                "category":item.category,"icon":item.category+("-outline" if intelligence is not None
                    and reading_mode != "INFRASTRUCTURE" and not info.get("available") else ""),"icon_size":ICON_SIZES[item.category],
@@ -344,6 +376,6 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
         map_provider=None, **({} if NATIVE_BASEMAP_OMISSION else {"map_style":LOCAL_STYLE_URL}),
         tooltip={"html":"<b>{safe_name}</b><br/>{safe_status}<br/>{safe_summary}",
                  "style":{"backgroundColor":"#122331", "color":"#eef5fc", "fontSize":"12px",
-                          "pointerEvents":"none","maxWidth":"210px","whiteSpace":"normal",
+                          "pointerEvents":"none","maxWidth":"240px","whiteSpace":"pre-line",
                           "border":"1px solid #39576b","borderRadius":"8px","padding":"8px 10px",
                           "boxShadow":"0 4px 14px rgba(0,0,0,.24)"}})
