@@ -129,9 +129,10 @@ def _compare(rows,by_point,point,day):
         st.caption("Nessun punto con associazione verificata.")
         return
     with st.container(key="cockpit_compare"):
-        table,detail=st.columns([2,1.1],gap="medium")
-        with table:
-            st.markdown("**Dalla nomina al flusso fisico**")
+        with st.container(key="cockpit_reconciliation_table"):
+            title,options=st.columns([3,1],vertical_alignment="center")
+            title.markdown("**Dalla nomina al flusso fisico**")
+            extended=options.toggle("Scostamenti",key="cockpit_show_deltas",help="Mostra anche le differenze tra nomina, rinomina, allocazione e flusso fisico.")
             names={"point":"Punto","point_type":"Tipologia","direction":"Direzione dati","Nomination":"Nomina","Renomination":"Rinomina",
                 "Allocation":"Allocazione","Physical Flow":"Flusso fisico","delta_renomination_nomination":"Δ rinomina",
                 "delta_allocation_renomination":"Δ allocazione","delta_physical_allocation":"Δ flusso","state":"Stato"}
@@ -143,17 +144,20 @@ def _compare(rows,by_point,point,day):
             display["Direzione dati"]=display["Direzione dati"].map(arrow_text)
             styled=display.style.map(lambda v: "color: #65dfbf; font-weight: 600" if str(v).startswith("↘") else
                 "color: #83b4ff; font-weight: 600" if str(v).startswith("↗") else "",subset=["Tipologia","Direzione dati"])
-            st.dataframe(styled,hide_index=True,width="stretch",height=420,
+            st.dataframe(styled,hide_index=True,width="stretch",height=min(550,38+35*len(display)),
+                column_order=list(display.columns) if extended else [c for c in display.columns if not c.startswith("Δ")],
                 column_config={"Punto":st.column_config.TextColumn(width="medium"),"Tipologia":st.column_config.TextColumn(width="medium"),"Direzione dati":st.column_config.TextColumn(width="medium"),
                     **{c:st.column_config.NumberColumn(format="%.1f",width="small") for c in number_columns}})
-            st.caption("GWh/d · tipologia dal catalogo verificato; una riga per direzione. N/D non equivale a zero. Ogni Δ confronta due passaggi consecutivi dello stesso giorno gas. Il CSV include fonti e versioni.")
-        with detail:
-            if point:
+            st.caption("GWh/d · una riga per direzione · N/D ≠ zero. Gli scostamenti confrontano passaggi consecutivi. Il CSV conserva tutte le colonne, fonti e versioni.")
+        if point:
+            chart_col, readout_col = st.columns([1.25,1],gap="medium")
+            with chart_col:
                 from .balancing_charts import point_indicators
                 st.markdown("**"+escape(display_name(by_point[point]["point"]))+"**")
                 st.html(direction_header(by_point[point]["point_type"],by_point[point]["direction"]))
                 st.caption(by_point[point]["state"])
                 plot(point_indicators(by_point[point]),key="cockpit_point_chart")
+            with readout_col:
                 if by_point[point]["point_type"]=="Bidirezionale":
                     paired=[r for r in rows if r["infrastructure_id"]==by_point[point]["infrastructure_id"]]
                     st.caption("Flusso fisico · entrambe le direzioni")
