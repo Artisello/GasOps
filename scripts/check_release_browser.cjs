@@ -182,6 +182,20 @@ async function main(){
   assert(await mobile.evaluate(()=>document.body.scrollWidth<=innerWidth));
   await mobile.screenshot({path:path.join(output,'overview-mobile.png'),fullPage:true});
   report.checks.push({check:'mobile_no_overflow',status:'PASS'});
+  const operationalControls=mobile.locator('.st-key-network_camera_overview button, .st-key-system_day_nav button');
+  assert.equal(await operationalControls.count(),5);
+  const controlRects=await operationalControls.evaluateAll(nodes=>nodes.map(e=>{
+   const r=e.getBoundingClientRect();return {height:r.height,width:r.width,top:r.top,bottom:r.bottom,left:r.left,right:r.right};
+  }));
+  assert(controlRects.every(r=>r.height>=43.5 && r.width>=44),'Operational controls must have generous targets');
+  const mapBottom=await mobile.locator('[data-testid="stDeckGlJsonChart"]').evaluate(e=>e.getBoundingClientRect().bottom);
+  const cameraRects=await mobile.locator('.st-key-network_camera_overview button').evaluateAll(nodes=>nodes.map(e=>e.getBoundingClientRect().top));
+  assert(cameraRects.every(top=>top>=mapBottom-1),'Camera controls must not obscure the map');
+  for(let i=0;i<controlRects.length;i++)for(let j=i+1;j<controlRects.length;j++){
+   const a=controlRects[i],b=controlRects[j];
+   assert(a.right<=b.left || b.right<=a.left || a.bottom<=b.top || b.bottom<=a.top,'Controls must not overlap');
+  }
+  report.checks.push({check:'mobile_operational_controls_targets_and_no_overlap',status:'PASS'});
   await open(mobile,'market','Mercato e previsioni');
   assert(await mobile.evaluate(()=>document.body.scrollWidth<=innerWidth));
   const targets=await mobile.locator('[class*="st-key-workspace_nav_"] [role="radiogroup"] label').evaluateAll(labels=>labels.map(e=>e.getBoundingClientRect().height));

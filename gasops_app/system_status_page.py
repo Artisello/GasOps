@@ -33,7 +33,7 @@ def header(status, *, include_metrics=True):
         with label:
             day_status = {"active":"Giorno gas attivo", "last_completed":"Ultimo giorno gas concluso", "historical":"Giorno gas storico"}[status.gas_day_status]
             data_status = {"stale":"Dati da aggiornare", "partial":"Dati parziali", "observed":"Dati osservati", "unavailable":"Dati non disponibili"}[status.source_status]
-            st.html('<div class="gas-map-status">'+chip(day_status, "historical" if status.gas_day_status == "historical" else "ok")
+            st.html('<div class="gas-map-status" role="status" aria-atomic="true">'+chip(day_status, "historical" if status.gas_day_status == "historical" else "ok")
                     +chip(data_status, "review" if status.source_status != "observed" else "ok")+'</div>')
             st.caption(f"{status.source_coverage.valid}/{status.source_coverage.expected} componenti · "
                        f"06:00–06:00 Europe/Rome · {status.hours} ore")
@@ -51,17 +51,18 @@ def header(status, *, include_metrics=True):
             latest = data_it(status.latest_observed_gas_day) if status.latest_observed_gas_day else "N/A"
             st.caption(f"Ultimo giorno osservato: {latest} · ultimo giorno concluso: {data_it(status.last_completed_gas_day)}")
         if not include_metrics:
-            previous, following, latest = st.columns([1,1,2],gap="small")
-            earliest = status.active_gas_day.replace(year=2000,month=1,day=1)
-            previous.button("D−1",icon=":material/chevron_left:",key="system_day_prev",
-                disabled=status.gas_day<=earliest,width="stretch",on_click=_choose_day,
-                args=(max(earliest,status.gas_day-timedelta(days=1)),),help="Giorno gas precedente")
-            following.button("D+1",icon=":material/chevron_right:",key="system_day_next",
-                disabled=status.gas_day>=status.active_gas_day,width="stretch",on_click=_choose_day,
-                args=(min(status.active_gas_day,status.gas_day+timedelta(days=1)),),help="Giorno gas successivo")
-            latest.button("Ultimo concluso",icon=":material/today:",key="system_day_latest",
-                disabled=status.gas_day==status.last_completed_gas_day,width="stretch",
-                on_click=_choose_day,args=(status.last_completed_gas_day,))
+            with st.container(key="system_day_nav"):
+                previous, following, latest = st.columns([1,1,2],gap="small")
+                earliest = status.active_gas_day.replace(year=2000,month=1,day=1)
+                previous.button("D−1",icon=":material/chevron_left:",key="system_day_prev",
+                    disabled=status.gas_day<=earliest,width="stretch",on_click=_choose_day,
+                    args=(max(earliest,status.gas_day-timedelta(days=1)),),help="Giorno gas precedente")
+                following.button("D+1",icon=":material/chevron_right:",key="system_day_next",
+                    disabled=status.gas_day>=status.active_gas_day,width="stretch",on_click=_choose_day,
+                    args=(min(status.active_gas_day,status.gas_day+timedelta(days=1)),),help="Giorno gas successivo")
+                latest.button("Ultimo concluso",icon=":material/today:",key="system_day_latest",
+                    disabled=status.gas_day==status.last_completed_gas_day,width="stretch",
+                    on_click=_choose_day,args=(status.last_completed_gas_day,))
     if include_metrics:
         metrics(status)
 

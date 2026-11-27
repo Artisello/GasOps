@@ -280,7 +280,7 @@ def render_map(network, boundary, visible, identifier, *, mode, observations, da
                reading_mode="SYSTEM", intelligence=None, findings=(), scenario_ids=(), flow_lens="volume"):
     """Native selection callback runs before the single Streamlit rerun."""
     key = f"italian_network_{mode}_deck_v2_{st.session_state.get('net_map_epoch',0)}_{st.session_state.get('net_view_epoch_'+mode,0)}"
-    description = "Mappa del sistema gas italiano. Gasdotti storici schematici e impianti; seleziona con il mouse o usa la ricerca infrastruttura per leggere gli stessi dettagli."
+    description = "Mappa del sistema gas italiano. Gasdotti storici schematici e impianti; seleziona sulla mappa o usa il selettore Infrastruttura, utilizzabile anche da tastiera per leggere gli stessi dettagli."
     # Native alt was added after our minimum supported Streamlit version.
     accessible = {"alt":description} if "alt" in signature(st.pydeck_chart).parameters else {}
     if not accessible:
@@ -295,13 +295,18 @@ def render_map(network, boundary, visible, identifier, *, mode, observations, da
             height=500 if mode in ("overview","scenario") else 650,selection_mode="single-object",
             on_select=partial(_accept_pick,key,tuple(i.id for i in _selectable_items(visible,reading_mode)),mode,
                 point_directions=tuple((identifier,info["binding"].direction) for identifier,info in (intelligence or {}).items() if info.get("binding"))),**accessible)
-        if mode in ("overview","full"):
-            st.button("Centra selezione",key="net_view_focus_"+mode,icon=":material/my_location:",
-                      disabled=identifier not in {i.id for i in visible},
-                      on_click=_focus_view,args=(mode,identifier),
-                      help="Inquadra l’infrastruttura selezionata senza modificare filtri o giorno gas.")
-        st.button("Vista Italia",key="net_view_reset_"+mode,on_click=_reset_view,args=(mode,),
-                  help="Ripristina l’inquadratura italiana, mantenendo l’infrastruttura selezionata.")
+        with st.container(key="network_camera_"+mode):
+            if mode in ("overview","full"):
+                focus_col,reset_col=st.columns(2,gap="small")
+                focus_col.button("Centra selezione",key="net_view_focus_"+mode,icon=":material/my_location:",
+                          disabled=identifier not in {i.id for i in visible},width="stretch",
+                          on_click=_focus_view,args=(mode,identifier),
+                          help="Inquadra l’infrastruttura selezionata senza modificare filtri o giorno gas.")
+            else:
+                reset_col=st.container()
+            reset_col.button("Vista Italia",key="net_view_reset_"+mode,icon=":material/zoom_out_map:",width="stretch",
+                      on_click=_reset_view,args=(mode,),
+                      help="Ripristina l’inquadratura italiana, mantenendo l’infrastruttura selezionata.")
 
 
 def render_legend(categories, reading_mode="SYSTEM", *, event_overlay=False, flow_lens="volume"):
