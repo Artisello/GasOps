@@ -23,7 +23,7 @@ def test_home_works_with_presentation_module_loaded_before_sidebar_release(monke
     app.session_state[ARCHIVE_KEY] = True
     app.run()
     assert not app.exception
-    assert app.title[0].value=="I.G.O.R. — Sistema Gas Italiano"
+    assert app.title[0].value=="I.G.O.R. - Sistema Gas Italiano"
     assert len(app.get("page_link"))==11
     assert {chart.key for chart in app.get("plotly_chart")}=={"net_overview_entsog_history"}
 
@@ -35,7 +35,7 @@ def test_home_does_not_call_a_cached_callback_from_the_previous_release(monkeypa
     monkeypatch.delenv("GASOPS_APP_MODE",raising=False)
     app=AppTest.from_file(ROOT/"app.py",default_timeout=30).run()
     assert not app.exception
-    assert app.title[0].value=="I.G.O.R. — Sistema Gas Italiano"
+    assert app.title[0].value=="I.G.O.R. - Sistema Gas Italiano"
     assert len(app.get("page_link"))==11
 
 
