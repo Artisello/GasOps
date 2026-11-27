@@ -107,7 +107,7 @@ async function main(){
   await a.mouse.click(target.x,target.y,{delay:80});
   await a.getByText('Collegamento storico schematico · nessuna misura di flusso sul segmento',{exact:true}).waitFor();
   report.checks.push({check:'native_pipeline_click_8px_offset',status:'PASS'});
-  assert.equal(await a.locator('.st-key-net_mode_overview [role="radiogroup"] label').count(),4);
+  assert.equal(await a.locator('.st-key-net_mode_overview [role="radiogroup"] label').count(),3);
   await chooseRadio(a,'Flussi');
   await a.getByRole('radio',{name:'Flussi',exact:true}).press('ArrowRight');
   await a.getByRole('radio',{name:'Attenzione',exact:true}).waitFor();

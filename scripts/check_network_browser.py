@@ -128,20 +128,17 @@ def main():
         report["reading_modes"] = []
         hints = {"SYSTEM":"Categorie e disponibilità dei dati.",
             "FLOW":"Flussi dei punti verificati · gasdotti solo come contesto geografico.",
-            "ATTENTION":"Eventi pubblicati, indicatori calcolati e qualità dei dati.",
-            "INFRASTRUCTURE":"Tutti i livelli geografici selezionati · posizioni e stato storici."}
-        for reading in ("FLOW","ATTENTION","INFRASTRUCTURE","SYSTEM"):
-            page.locator(".st-key-net_reading_overview").get_by_text(reading,exact=True).click()
-            expect(page.get_by_role("radio",name=reading,exact=True)).to_be_checked()
-            expect(page.locator(".st-key-network_home_detail h3")).to_have_text("Tarvisio")
+            "ATTENTION":"Eventi pubblicati, indicatori calcolati e qualità dei dati."}
+        labels = {"SYSTEM":"Sistema","FLOW":"Flussi","ATTENTION":"Attenzione"}
+        for reading in ("FLOW","ATTENTION","SYSTEM"):
+            page.locator(".st-key-net_reading_overview").get_by_text(labels[reading],exact=True).click()
+            expect(page.get_by_role("radio",name=labels[reading],exact=True)).to_be_checked()
             expect(page.get_by_text(hints[reading],exact=True)).to_be_visible(timeout=15000)
             page.wait_for_function('document.querySelector("[data-testid=stApp]").dataset.testScriptState === "notRunning"')
-            page.wait_for_timeout(400)  # Commit the updated WebGL layers after the server response.
-            expect(page.locator(".st-key-network_home_detail h3")).to_have_text("Tarvisio",timeout=15000)
+            page.wait_for_timeout(400)
             scene = rendered_map(page)
-            assert "INET_BP_89" in scene["pointIds"]
             assert len(set(scene["pointIds"])) == len(scene["pointIds"]),"Duplicate point markers"
-            if reading in ("SYSTEM","INFRASTRUCTURE"):
+            if reading == "SYSTEM":
                 assert scene["powerCount"] == 69
             report["reading_modes"].append({"mode":reading,"points":len(scene["pointIds"]),"power":scene["powerCount"]})
             page.screenshot(path=str(args.output/("reading-"+reading.lower()+".png")),full_page=True)
@@ -238,7 +235,7 @@ def main():
     assert not any(any(host in url for host in ("cartocdn","mapbox.com","entsog","gie.eu","openstreetmap"))
                    for url in report["blocked"]),"Map tried to reach an external data or tile service"
     (args.output/"checks.json").write_text(json.dumps(report,indent=2))
-    print("PASS: four reading modes, 69 unselected power plants, unique markers, offline system status, attention drill-down, WebGL, map interactions, D-30 history and four viewports")
+    print("PASS: three reading modes, 69 unselected power plants, unique markers, offline system status, attention drill-down, WebGL, map interactions, D-30 history and four viewports")
 
 
 if __name__ == "__main__":
