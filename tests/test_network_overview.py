@@ -260,3 +260,41 @@ with tabs[2]:
     assert not any("raw-observation" in c.value for c in app.caption)
     assert any(e.label == "Evidenze tecniche e metodologia" for e in app.expander)
     assert list(app.dataframe[0].value["ID osservazione"]) == ["raw-observation-1", "raw-observation-2"]
+
+
+def test_map_focus_and_reset_preserve_selection_and_other_layout(monkeypatch):
+    state={view.SELECTED:"INET_BP_65","net_view_epoch_full":3,"net_period":("keep","keep")}
+    monkeypatch.setattr(view.st,"session_state",state)
+    view._focus_view("overview","INET_BP_65")
+    assert state["net_camera_focus_overview"] == "INET_BP_65"
+    assert state["net_view_epoch_overview"] == 1
+    view._reset_view("overview")
+    assert "net_camera_focus_overview" not in state
+    assert state["net_view_epoch_overview"] == 2
+    assert state[view.SELECTED] == "INET_BP_65" and state["net_view_epoch_full"] == 3
+    assert state["net_period"] == ("keep","keep")
+
+
+def test_map_focus_camera_uses_selected_geometry_and_allows_national_zoom():
+    from gasops_app.italian_network_map import label_anchor
+    network,boundary,_=view.assets()
+    identifier="INET_BP_65"
+    geometry=next(g.geometry for g in network.geography if g.infrastructure_id == identifier)
+    national=json.loads(deck(network,boundary,network.infrastructure).to_json())["initialViewState"]
+    spec=json.loads(deck(network,boundary,network.infrastructure,identifier,focus_id=identifier).to_json())
+    camera=spec["initialViewState"]
+    assert [camera["longitude"],camera["latitude"]] == label_anchor(geometry)
+    assert camera["zoom"] > national["zoom"]
+    assert camera["minZoom"] == national["minZoom"]
+    assert camera["maxZoom"] == national["maxZoom"]
+
+
+def test_flow_sizes_are_fixed_and_tooltips_are_compact():
+    from gasops_app.italian_network_map import flow_icon_size
+    from decimal import Decimal
+    assert [flow_icon_size(Decimal(str(v))) for v in (0,1,100,101,500,501)] == [9,12,12,15,15,18]
+    network,boundary,_=view.assets()
+    spec=json.loads(deck(network,boundary,network.infrastructure).to_json())
+    assert "{safe_summary}" in spec["tooltip"]["html"]
+    assert "{safe_value}" not in spec["tooltip"]["html"]
+    assert spec["tooltip"]["style"]["maxWidth"] == "210px"
