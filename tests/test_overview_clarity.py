@@ -23,19 +23,51 @@ def offline(monkeypatch,tmp_path):
     monkeypatch.setattr(requests,"get",forbidden)
 
 
-def test_italian_mode_labels_preserve_selection_day_and_chart_identity(offline):
-    app=AppTest.from_string(SCRIPT,default_timeout=30).run()
+@pytest.mark.parametrize("archive",[False,True])
+def test_italian_mode_labels_preserve_valid_selection_day_and_marker_identity(offline,archive):
+    app=AppTest.from_string(SCRIPT,default_timeout=30)
+    app.session_state[ARCHIVE_KEY]=archive
+    app.run()
     assert not app.exception
-    chart=app.get("deck_gl_json_chart")[0].proto.id
-    identifier=app.session_state[view.SELECTED]
+
+    def scene():
+        charts=app.get("deck_gl_json_chart")
+        assert len(charts)==1
+        layers={layer["id"]:layer for layer in json.loads(charts[0].proto.json)["layers"]}
+        points=layers["infrastructure-points"]["data"]
+        links=layers.get("pipeline-hit-targets",{})
+        eligible={r["infra_id"] for r in points if r["active"]}
+        if links.get("pickable"):
+            eligible.update(f["properties"]["infra_id"] for f in links["data"]["features"])
+        return points,eligible
+
+    points,_=scene()
+    identities=[(r["infra_id"],r["position"]) for r in points]
     day=app.date_input(key="system_status_gas_day").value
     for mode in ("FLOW","ATTENTION","INFRASTRUCTURE","SYSTEM"):
+        previous=app.session_state[view.SELECTED]
         app.radio(key="net_reading_overview").set_value(mode).run()
         assert not app.exception
         assert app.radio(key="net_reading_overview").options==["Sistema","Flussi","Attenzione","Infrastrutture"]
-        assert app.session_state[view.READING]==mode and app.session_state[view.SELECTED]==identifier
+        assert app.session_state[view.READING]==mode
         assert app.date_input(key="system_status_gas_day").value==day
-        assert app.get("deck_gl_json_chart")[0].proto.id==chart
+        points,eligible=scene()
+        selected=app.session_state[view.SELECTED]
+        assert [(r["infra_id"],r["position"]) for r in points]==identities
+        assert app.selectbox(key="net_overview_infrastructure").value==selected
+        if previous in eligible:
+            assert selected==previous
+        elif eligible:
+            assert selected in eligible
+        else:
+            assert selected is None
+            assert not app.tabs
+        if mode=="FLOW" and not archive:
+            # Cold offline data must not silently fall back to bundled evidence.
+            assert not eligible and selected is None
+        if mode in ("FLOW","ATTENTION") and selected is not None:
+            assert any(r["infra_id"]==selected and r["active"] for r in points)
+        assert all(r["hit_radius"]==0 for r in points if not r["active"])
 
 
 def test_secondary_evidence_is_collapsed_but_complete_and_exportable(offline):

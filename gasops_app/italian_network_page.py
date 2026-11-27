@@ -144,12 +144,15 @@ def _reconcile_map(network, perimeter, observations, snapshots, day, now, saved,
                    direction, policy, reading, events, findings, mode):
     # Eligibility uses a verified direction with data, not a stale direction from another item.
     intelligence = _map_intelligence(network,perimeter,observations,snapshots,day,now,saved,None,None,policy)
+    # Membership in Flow depends on any verified observed direction, not the
+    # direction the user happens to inspect (which may legitimately be N/D).
+    flow_displayed = _reading_items(perimeter,reading,intelligence,previous,events,findings) if reading=="FLOW" else None
     if previous in intelligence and direction in ("entry","exit"):
         candidate = point_intelligence(network,previous,observations,day,now,direction=direction,
             snapshots=snapshots,failures=saved.get("failures",()),ttl_hours=policy.network_ttl_hours)
-        if candidate.get("binding") and (reading!="FLOW" or candidate.get("flow_available")):
+        if candidate.get("binding"):
             intelligence[previous] = candidate
-    displayed = _reading_items(perimeter,reading,intelligence,previous,events,findings)
+    displayed = flow_displayed if flow_displayed is not None else _reading_items(perimeter,reading,intelligence,previous,events,findings)
     identifier = _resolve_selection(displayed,reading,previous,events,findings)
     if identifier != previous:
         st.session_state[_detail_tab_key(mode)] = "Eventi" if reading=="ATTENTION" else "Dati"
@@ -158,9 +161,6 @@ def _reconcile_map(network, perimeter, observations, snapshots, day, now, saved,
     binding = intelligence.get(identifier,{}).get("binding")
     directions = sorted({b.direction for b in verified_bindings(network,identifier)}) if identifier else []
     direction = binding.direction if binding else (directions[0] if directions else None)
-    if reading == "FLOW" and len(directions)>1:
-        directions = [d for d in directions if d==direction or point_intelligence(network,identifier,observations,day,now,
-            direction=d,snapshots=snapshots,failures=saved.get("failures",()),ttl_hours=policy.network_ttl_hours)["flow_available"]]
     st.session_state[SELECTED] = identifier
     return displayed,identifier,directions,direction,intelligence
 
@@ -456,6 +456,7 @@ def overview_panel():
     info = acquisition.journal(store)
     connections = info.get("connections",{})
     api_key = configured_key()
+    map_slot = st.container()
     refresh = _source_controls(connections,gie=bool(api_key),overview=True)
     archive = st.session_state.get(ARCHIVE_KEY,False)
     anchor = min(chosen or (max(s.last for s in bundled) if archive else completed),completed)
@@ -486,8 +487,8 @@ def overview_panel():
     all_items = {i.id:i for i in network.infrastructure}
     perimeter = network.infrastructure
     direction = st.session_state.get("net_overview_direction")
-    system.header(status)
-    with st.container(key="network_overview"):
+    with map_slot, st.container(key="network_overview"):
+        system.header(status,include_metrics=False)
         reading = _mode_selector("overview")
         event_ids = {e["infrastructure_id"] for e in status.active_events}
         finding_ids = {f.infrastructure_id for f in status.attention if f.category not in ("quality","event") and f.infrastructure_id}
@@ -503,8 +504,8 @@ def overview_panel():
             st.caption("SciGRID 2021 · collegamenti storici schematici · CC BY 4.0 · Natural Earth, pubblico dominio")
         with detail.container(key="network_home_detail"):
             if len(directions)>1:
-                direction = st.radio("Direzione",directions,key="net_overview_direction",horizontal=True,
-                    format_func=lambda d:"Ingresso" if d == "entry" else "Uscita",label_visibility="collapsed")
+                direction = st.radio("Direzione da consultare",directions,key="net_overview_direction",horizontal=True,
+                    format_func=lambda d:"Ingresso" if d == "entry" else "Uscita")
             if identifier:
                 _detail(network,all_items[identifier],observations,snapshots,direction,status.active_events,first,day,saved,
                         mode="overview",info=intelligence.get(identifier),attention=status.attention,
@@ -516,10 +517,11 @@ def overview_panel():
                 st.selectbox("Infrastruttura",[i.id for i in sorted(choices,key=lambda i:i.name)],
                     key="net_overview_infrastructure",format_func=lambda key:_infrastructure_label(all_items[key]),
                     disabled=not choices,on_change=_widget_selection,args=("net_overview_infrastructure",))
-    system.balance(status,compact=True)
-    system.attention(status,network,_open_full,compact=True)
     st.button("Esplora la rete",icon=":material/arrow_forward:",key="net_overview_open",
               width="stretch",on_click=_open_full,args=(identifier,first,day,direction))
+    system.metrics(status)
+    system.attention(status,network,_open_full,compact=True)
+    system.balance(status,compact=True)
 
 
 def _plain(value):
@@ -728,6 +730,10 @@ def _detail(network, item, observations, snapshots, direction, events, first, la
     if mode!="overview":st.caption("IDENTITÀ")
     st.subheader(display_name(item.name))
     st.caption(" · ".join(filter(None,[CATEGORIES[item.category],item.operator,*item.regions])))
+    from .italian_network_map import direction_label
+    structural = direction_label(verified_bindings(network,item.id))
+    if structural:
+        st.caption(structural+" · Direzioni censite ENTSOG rispetto alla rete italiana")
     if displayed is not None:
         _attention_context(item.id,displayed,reading)
         _nearby_selector(network,item,displayed,mode)
@@ -896,8 +902,9 @@ def panel(mode="full"):
         identifier = st.selectbox("Infrastruttura", options, format_func=lambda k:_infrastructure_label(lookup[k]), key="net_infrastructure",
                                  placeholder="Nessuna infrastruttura nei filtri", disabled=not options,
                                  on_change=_widget_selection,args=("net_infrastructure",))
-        direction = st.selectbox("Direzione", directions, key="net_direction", disabled=not directions,
-            format_func=lambda d:"Ingresso" if d == "entry" else "Uscita", placeholder="—") if directions else None
+        if len(directions)>1:
+            direction = st.selectbox("Direzione da consultare", directions, key="net_direction",
+                format_func=lambda d:"Ingresso" if d == "entry" else "Uscita")
     if refresh_clicked and not archive:
         detail = (identifier,direction,first,last) if identifier else None
         job = acquisition.schedule(store,network,now,api_key=api_key,first=first,last=last,force=True,detail=detail)

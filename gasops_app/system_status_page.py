@@ -24,7 +24,7 @@ def policy():
         baseline_min_days=st.session_state.get("system_baseline_min_days", 14))
 
 
-def header(status):
+def header(status, *, include_metrics=True):
     st.session_state[SELECTED_DAY] = status.gas_day
     with st.container(key="system_status_header"):
         label, date_col, settings = st.columns([3, 1.2, .6], vertical_alignment="bottom")
@@ -48,6 +48,11 @@ def header(status):
             st.number_input("Giorni minimi della baseline", min_value=3, max_value=28, value=14, key="system_baseline_min_days")
             latest = data_it(status.latest_observed_gas_day) if status.latest_observed_gas_day else "N/A"
             st.caption(f"Ultimo giorno osservato: {latest} · ultimo giorno concluso: {data_it(status.last_completed_gas_day)}")
+    if include_metrics:
+        metrics(status)
+
+
+def metrics(status):
     demand = status.demand_forecast if status.demand_actual.value is None and status.demand_forecast.value is not None else status.demand_actual
     cards = []
     for label, m in (("Ingressi stimati dalla fonte" if status.entry_flow_observed.status == "estimated" else "Ingressi osservati", status.entry_flow_observed), ("Send-out GNL", status.lng_sendout),
@@ -127,14 +132,19 @@ def attention(status, network, open_point, *, compact=False):
             st.caption("Nessuna regola attivata sui dati confrontabili. Le componenti N/A e la copertura degli avvisi restano indicate sopra.")
         def row(f):
             info, action = st.columns([5, 1], vertical_alignment="top")
-            with info, st.expander(categories[f.category]+" · "+f.description):
+            summary = categories[f.category]+" · "+f.description
+            if f.observed_value is not None:
+                summary += " · "+numero(f.observed_value,1)+" "+f.unit
+            with info, st.expander(summary):
                 st.caption("Regola: "+f.rule+" · severità informativa")
                 st.caption("Valore: "+(numero(f.observed_value,1)+" "+f.unit if f.observed_value is not None else "N/A")
                            +" · soglia: "+(numero(f.threshold,1)+" "+f.unit if f.threshold is not None else "N/A"))
                 st.caption("Fonte: "+f.source_id)
                 st.caption("Pubblicato: "+local_time(f.observed_at)+" · acquisito: "+local_time(f.retrieved_at))
                 if f.evidence_ids:
-                    st.caption("Riferimenti: "+", ".join(f.evidence_ids))
+                    st.caption(f"Evidenze: {len(set(f.evidence_ids))} riferimenti")
+                    st.download_button("Scarica riferimenti tecnici", "\n".join(f.evidence_ids),
+                        file_name=f"igor-evidence-{f.id}.txt",mime="text/plain",key="system_evidence_"+f.id)
                 if f.baseline is not None:
                     st.caption(f"Mediana: {numero(f.baseline,1)} GWh/d · {f.baseline_n} giorni precedenti validi · finestra massima 28 giorni")
                 st.caption("ID: "+f.id)
@@ -156,7 +166,9 @@ def attention(status, network, open_point, *, compact=False):
                     "Valore":numero(f.observed_value,1) if f.observed_value is not None else None,
                     "Soglia":numero(f.threshold,1) if f.threshold is not None else None,"Unità":f.unit,
                     "Pubblicato":local_time(f.observed_at),"Acquisito":local_time(f.retrieved_at),
-                    "Riferimenti":", ".join(f.evidence_ids),"ID":f.id} for f in quality],hide_index=True,width="stretch")
+                    "Evidenze":len(set(f.evidence_ids)),"ID":f.id} for f in quality],hide_index=True,width="stretch")
+                st.download_button("Scarica evidenze qualità",json.dumps([asdict(f) for f in quality],ensure_ascii=False,indent=2,default=str),
+                    "igor-quality-evidence.json","application/json",key="system_quality_evidence")
                 for f in quality:
                     if f.infrastructure_id in names:
                         st.button("Apri "+names[f.infrastructure_id],key="system_attention_"+f.id,
