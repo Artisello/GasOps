@@ -226,3 +226,8 @@ La mappa estesa include **Copertura API dei nodi**, un controllo del catalogo EN
 La copia inclusa del 22 novembre 2026 contiene 32 righe. Il confronto nominale esatto (anche su alias separati da slash o trattino) produce 9 nodi con punti già associati ad altre infrastrutture, 168 senza corrispondenza esatta e nessuna nuova associazione verificata. I dati dei punti già associati non vengono duplicati. Eventuali nuovi candidati restano da revisionare: omonimia e disponibilità del catalogo non provano identità fisica. Aggregati, punti virtuali e hub non sono usati come identificativi di nodi interni. L'audit copre il catalogo esaminato, non tutti i gestori italiani né i portali riservati.
 
 Per i nodi privi di associazioni operative la scheda presenta geografia, provenienza e risultati dell'audit senza schede di telemetria vuote. Nessuna osservazione, binding o metrica nazionale viene modificata.
+
+
+## Linguaggio visivo delle direzioni
+
+Le viste operative riutilizzano `direction_ui`: ↘ ingresso nella rete italiana, ↗ uscita e ↔ punto bidirezionale secondo i binding ENTSOG confermati. Le frecce sono simboli semantici, non orientamenti geografici, velocità o direzioni dedotte dei gasdotti. I rombi delle frontiere in Sistema e Flussi conservano il pieno/contorno relativo alla disponibilità dei dati e incorporano un glifo direzionale; in Attenzione la simbologia degli avvisi resta prioritaria. Tooltip, etichette, selettori e legenda condividono la stessa semantica. I riquadri bidirezionali mostrano separatamente i due flussi fisici del giorno gas, con N/D distinto da zero e direzione consultata evidenziata. Non vengono sommate le direzioni né alterati i dati esportati.
