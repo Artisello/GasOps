@@ -6,7 +6,7 @@ import math
 from urllib.parse import quote
 import pydeck as pdk
 
-from .italian_network import CATEGORIES, COLORS, applicable, verified_bindings
+from .italian_network import CATEGORIES, COLORS, applicable, verified_bindings, direction_label
 from .italiano import numero, data_it
 
 RADII = {"entry":6, "lng":6, "storage":4.5, "compressor":4, "production":4, "power":3.5, "node":2.5}
@@ -154,14 +154,6 @@ def label_layout(labels, *, zoom=4, width=None, height=None, longitude=12.5, lat
                 boxes.append(box)
                 break
     return placed
-
-
-def direction_label(bindings):
-    """Classify confirmed ENTSOG mappings, not physical engineering capability."""
-    directions = {b.direction for b in bindings}
-    return {frozenset({"entry"}):"Solo ingresso",
-            frozenset({"exit"}):"Solo uscita",
-            frozenset({"entry","exit"}):"Bidirezionale"}.get(frozenset(directions))
 
 
 def bidirectional_preview(bindings, observations, day, info):
