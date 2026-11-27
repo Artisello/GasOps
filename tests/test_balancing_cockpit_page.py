@@ -142,7 +142,7 @@ def test_cockpit_displays_structural_type_and_separate_directions(offline):
     assert set(table.loc[table.Punto=="Bizzarone","Tipologia"])=={"↗ Solo uscita"}
     app.selectbox(key="cockpit_point").set_value("IT-TSO-0001ITP-00136entry").run()
     assert not app.exception
-    assert {m.label for m in app.metric}>={"Ingresso","Uscita"}
+    assert any("igor-flow-pair" in e.proto.body and "↘ Ingresso" in e.proto.body and "↗ Uscita" in e.proto.body for e in app.get("html"))
     app.selectbox(key="cockpit_point").set_value("IT-TSO-0001ITP-00136exit").run()
     assert not app.exception
     assert any("↔ Bidirezionale" in e.proto.body and "↗ Uscita" in e.proto.body for e in app.get("html"))
