@@ -236,3 +236,8 @@ Le viste operative riutilizzano `direction_ui`: ↘ ingresso nella rete italiana
 ### Indicatori nella vista Flussi
 
 Un solo selettore contestuale consente Volume (dimensione fissa per classe GWh/d), Variazione D−1 (segno e colore, stesso punto e direzione) oppure Utilizzo capacità (percentuale rispetto a capacità tecnica firm confrontabile). Le soglie di utilizzo sono descrittive (<30%, 30–<60%, 60–<90%, ≥90%), non una valutazione automatica della sicurezza. I valori mancanti sono indicati N/D con contorno grigio, non zero. Il colore indica la variazione o la classe soltanto nella rispettiva lettura; legenda e tooltip cambiano insieme. Il conteggio di copertura si riferisce ai punti mostrati e alla direzione rappresentata, non a tutti i punti nazionali. Selezione, filtri, geometrie e giorno gas non cambiano al passaggio di indicatore. Nessun dato viene attribuito ai segmenti schematici.
+
+
+### Consultazione rapida e storico bidirezionale
+
+La ricerca nella Panoramica precede i dettagli del punto. Le etichette dei risultati nelle due mappe distinguono i punti con direzione ENTSOG verificata (↘ solo ingresso, ↗ solo uscita, ↔ bidirezionale) dagli asset puramente geografici. La scheda Storico mantiene un'unica scelta di indicatore. Per un punto bidirezionale mostra entrambe le serie separatamente sullo stesso asse, con linea continua per la direzione consultata e tratteggiata per l'altra. La finestra completa di 30 giorni resta visibile, anche in presenza di giorni mancanti all'inizio, e la copertura viene riportata per direzione. Non si aggiungono misure, non si interpolano i giorni mancanti e non si sommano i flussi.
