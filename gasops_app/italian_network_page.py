@@ -314,13 +314,13 @@ def render_legend(categories, reading_mode="SYSTEM", *, event_overlay=False, flo
             st.html('<div class="igor-flow-scale" aria-label="Classi di flusso fisico in GWh/d"><strong>GWh/d</strong>'+scale+'</div>')
         else:
             classes = ([(DELTA_COLORS["down"],"− D−1"),(DELTA_COLORS["flat"],"Invariato"),(DELTA_COLORS["up"],"+ D−1")]
-                       if flow_lens=="delta" else list(zip((c for _,c in UTILIZATION_BANDS),("meno di 30%","30–59%","60–89%","≥90%"))))
-            classes.append((MISSING_COLOR,"N/D"))
+                       if flow_lens=="delta" else list(zip((c for _,c in UTILIZATION_BANDS),("meno di 30%","30–<60%","60–<90%","≥90%"))))
             scale = "".join(f'<span><i style="width:12px;height:12px;background:rgb({",".join(map(str,color))})" aria-hidden="true"></i>{escape(label)}</span>'
                             for color,label in classes)
             st.html('<div class="igor-flow-scale" aria-label="Scala indicatore"><strong>'+
                 ("GWh/d vs D−1" if flow_lens=="delta" else "Capacità tecnica firm")+'</strong>'+scale+'</div>')
-        st.caption("Valori per direzione consultata (freccia accanto al numero) · contorno grigio: N/D. Gasdotti schematici, senza valori di flusso.")
+        st.html('<div class="igor-flow-scale"><span><i style="width:12px;height:12px;background:transparent;border:1px solid rgb(147,163,181)" aria-hidden="true"></i>N/D · dato non disponibile</span></div>')
+        st.caption("Una direzione per punto; nei bidirezionali la freccia accanto al valore la identifica. Gasdotti solo geografici.")
     elif reading_mode == "ATTENTION":
         marks = "".join(f'<span><img src="{legend_symbol(c)}" alt="" aria-hidden="true">{label}</span>'
                         for c,label in (("ring","Evento pubblicato"),("finding","Indicatore I.G.O.R."),("quality","Dato assente / cache da aggiornare")))
