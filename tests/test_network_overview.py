@@ -213,3 +213,50 @@ def test_overview_direction_is_consistent_in_tooltip_detail_and_navigation(monke
     assert not app.exception and "ingresso" not in tooltips[-1]
     app.button(key="net_overview_open").click().run()
     assert not app.exception and app.selectbox(key="net_direction").value == "exit"
+
+
+@pytest.mark.parametrize("mode", ["overview", "full"])
+def test_attention_pick_opens_events_and_other_modes_open_data(monkeypatch, mode):
+    event = {"selection":{"objects":{"infrastructure-points":[{"infra_id":"INET_BP_65"}]}}}
+    key = view._detail_tab_key(mode)
+    state = {view.READING:"ATTENTION", key:"Storico"}
+    monkeypatch.setattr(view.st, "session_state", state)
+    view._accept_pick("chart", ("INET_BP_65",), mode, event)
+    assert state[view.SELECTED] == "INET_BP_65"
+    assert state[key] == "Eventi"
+    state[key] = "Fonti"
+    view._accept_pick("chart", ("foreign",), mode, event)
+    assert state[key] == "Fonti"
+    state[view.READING] = "FLOW"
+    view._accept_pick("chart", ("INET_BP_65",), mode, event)
+    assert state[key] == "Dati"
+
+
+def test_overview_attention_tab_and_compact_event_evidence(monkeypatch, tmp_path):
+    offline(monkeypatch,tmp_path)
+    app = AppTest.from_string("""
+import streamlit as st
+from types import SimpleNamespace
+from decimal import Decimal
+from gasops_app.italian_network_page import _accept_pick, _point_events, _detail_tab_key, DETAIL_TABS, READING
+from gasops_app.system_status import Attention
+st.session_state.setdefault(READING, "ATTENTION")
+_accept_pick("chart", ("point",), "overview", {"selection":{"objects":{"infrastructure-points":[{"infra_id":"point"}]}}})
+tabs = st.tabs(list(DETAIL_TABS), key=_detail_tab_key("overview"), on_change="rerun")
+with tabs[2]:
+    _point_events(SimpleNamespace(id="point"), {}, (), (
+        Attention("id", "deviation", "info", "Passo Gries · scarto dalla mediana di 28 giorni",
+                  Decimal("30"), Decimal("53"), "%", "ENTSOG:point", None, None,
+                  infrastructure_id="point", direction="entry",
+                  evidence_ids=("raw-observation-1","raw-observation-2"),
+                  baseline=Decimal("100"), baseline_n=28),
+    ))
+""", default_timeout=30).run()
+    assert not app.exception
+    assert app.session_state[view._detail_tab_key("overview")] == "Eventi"
+    assert [t.label for t in app.tabs] == list(view.DETAIL_TABS)
+    assert any("28 giorni validi" in c.value for c in app.caption)
+    assert any("2 riferimenti" in c.value for c in app.caption)
+    assert not any("raw-observation" in c.value for c in app.caption)
+    assert any(e.label == "Evidenze tecniche e metodologia" for e in app.expander)
+    assert list(app.dataframe[0].value["ID osservazione"]) == ["raw-observation-1", "raw-observation-2"]
