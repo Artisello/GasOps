@@ -245,8 +245,11 @@ _accept_pick("chart", ("point",), "overview", {"selection":{"objects":{"infrastr
 tabs = st.tabs(list(DETAIL_TABS), key=_detail_tab_key("overview"), on_change="rerun")
 with tabs[2]:
     _point_events(SimpleNamespace(id="point"), {}, (), (
-        Attention("id", "deviation", "info", "Passo Gries · scarto dalla mediana di 28 giorni",
-                  Decimal("30"), Decimal("53"), "%", "ENTSOG:point", None, None,
+        Attention(id="id", category="deviation", severity="info",
+                  description="Passo Gries · scarto dalla mediana di 28 giorni",
+                  rule="historical_median_deviation", threshold=Decimal("30"),
+                  observed_value=Decimal("53"), unit="%", source_id="ENTSOG:point",
+                  observed_at=None, retrieved_at=None,
                   infrastructure_id="point", direction="entry",
                   evidence_ids=("raw-observation-1","raw-observation-2"),
                   baseline=Decimal("100"), baseline_n=28),
