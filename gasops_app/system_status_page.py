@@ -11,6 +11,7 @@ from .system_status import StatusPolicy
 from .visuals import chip, kpi_grid, local_time
 from .freshness import measure_evidence, label as freshness_label
 from .models import utc_now
+from .direction_ui import arrow_text
 
 DAY_KEY = "system_status_gas_day"
 SELECTED_DAY = "system_status_selected_gas_day"
@@ -146,11 +147,18 @@ def attention(status, network, open_point, *, compact=False):
         st.caption("Indicatori di attenzione calcolati da I.G.O.R.")
         names = {i.id:i.name.replace("_", " – ") for i in network.infrastructure}
         categories = {"quality":"Qualità dati", "capacity":"Capacità", "deviation":"Scostamento", "event":"Evento pubblicato"}
+        if status.attention:
+            counts = {category:sum(f.category==category for f in status.attention) for category in categories}
+            st.html('<div class="igor-attention-summary" aria-label="Riepilogo segnalazioni per categoria">'+
+                "".join(f'<span><strong>{count}</strong> {escape(categories[category])}</span>'
+                        for category,count in counts.items() if count)+'</div>')
         if not status.attention:
             st.caption("Nessuna regola attivata sui dati confrontabili. Le componenti N/A e la copertura degli avvisi restano indicate sopra.")
         def row(f):
             info, action = st.columns([5, 1], vertical_alignment="top")
             summary = categories[f.category]+" · "+f.description
+            if f.direction in ("entry","exit"):
+                summary += " · "+arrow_text(f.direction)
             if f.observed_value is not None:
                 summary += " · "+numero(f.observed_value,1)+" "+f.unit
             with info, st.expander(summary):
@@ -167,7 +175,7 @@ def attention(status, network, open_point, *, compact=False):
                     st.caption(f"Mediana: {numero(f.baseline,1)} GWh/d · {f.baseline_n} giorni precedenti validi · finestra massima 28 giorni")
                 st.caption("ID: "+f.id)
             if f.infrastructure_id in names:
-                action.button("Apri punto", key="system_attention_"+f.id, width="stretch",
+                action.button("Apri punto", icon=":material/map:", key="system_attention_"+f.id, width="stretch",
                     help=names[f.infrastructure_id], on_click=open_point,
                     args=(f.infrastructure_id, status.gas_day, status.gas_day, f.direction))
         findings=[f for f in status.attention if f.category!="quality"] if compact else status.attention
