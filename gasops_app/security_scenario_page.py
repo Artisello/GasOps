@@ -12,7 +12,7 @@ from .gas_calendar import gas_day_bounds, closed_gas_day
 from .gas_data import source_context
 from .balancing_cockpit import inventory_state
 from .balancing_charts import security_comparison
-from .italian_network import security_entries, security_scenario_case
+from .italian_network import security_entries, security_scenario_case, point_direction_labels
 from .italian_network_page import assets, render_map, SELECTED, _open_full
 from .italian_network_map import display_name, legend_symbol
 from .models import utc_now
@@ -41,7 +41,8 @@ def panel():
     entries=security_entries(network)
     lookup={i.id:i for i in network.infrastructure}
     mapping={b.point_direction:b.infrastructure_id for b in entries}
-    labels={b.point_direction:display_name(lookup[b.infrastructure_id].name) for b in entries}
+    direction_types=point_direction_labels(network)
+    labels={b.point_direction:display_name(lookup[b.infrastructure_id].name)+" · "+direction_types[b.point_direction] for b in entries}
     st.markdown("**Stress Test · disponibilità e domanda del sistema italiano**")
     source,calendar=st.columns([2,1])
     mode=source.radio("Input del modello",["Dati pubblici","Demo esplicita"],horizontal=True,key="sos_mode")
