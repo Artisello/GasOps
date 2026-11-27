@@ -185,6 +185,7 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
             value = applicable(observations,point.point_direction,day,"Physical Flow") if point else None
             if value is not None:
                 tooltip["safe_value"] = f"{numero(value,1)} GWh/d · {'ingresso' if point.direction == 'entry' else 'uscita'} · {data_it(day)}"
+                tooltip["safe_summary"] = tooltip["safe_value"]
         if geometry["type"] != "Point":
             feature = {"type":"Feature", "geometry":geometry, **tooltip,
                        "properties":{**tooltip, "color":COLORS[item.category]}}
