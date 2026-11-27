@@ -7,7 +7,7 @@ import re
 import pandas as pd
 
 from .gas_calendar import gas_day_bounds,closed_gas_day
-from .italian_network import verified_bindings
+from .italian_network import verified_bindings, point_direction_labels
 from .jarvis_archive import latest_records,merge_extracts,revision_rows
 from .settlement_desk import daily_controls
 from .reconciliation import reconcile_days
@@ -43,6 +43,7 @@ def public_reconciliation(network,frame,day):
     start,stop=gas_day_bounds(day)
     bindings={b.point_direction:b for b in verified_bindings(network)}
     lookup={i.id:i for i in network.infrastructure}
+    direction_types=point_direction_labels(network)
     source=frame.loc[(frame.provider=="ENTSOG")&(frame.gas_day==day)&frame.indicator.isin(INDICATORS)]
     result=[]
     for point,binding in bindings.items():
@@ -64,7 +65,8 @@ def public_reconciliation(network,frame,day):
         preliminary=any(str(c.publication_status).casefold() not in CONFIRMED for c in cells.values() if c is not None)
         if preliminary:notes.append("Pubblicazioni provvisorie o non confermate: confronto descrittivo, non riconciliazione definitiva")
         result.append({"point_direction":point,"infrastructure_id":binding.infrastructure_id,
-            "point":lookup[binding.infrastructure_id].name,"direction":binding.direction,"gas_day":day,
+            "point":lookup[binding.infrastructure_id].name,"point_type":direction_types[point],
+            "direction":binding.direction,"gas_day":day,
             "unit":"GWh/d","period_from":start,"period_to":stop,
             **{name:cells[name].value if cells[name] is not None else None for name in INDICATORS},**differences,
             "available":sum(c is not None for c in cells.values()),"comparable":comparable,
