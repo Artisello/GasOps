@@ -11,6 +11,7 @@ from .gas_calendar import closed_gas_day, gas_day_bounds
 from .italian_network_page import assets,bundled_interruptions,SELECTED,_open_full
 from .italian_network_map import display_name
 from .italian_network import direction_name
+from .direction_ui import arrow_text, direction_header, paired_flow_html
 from .models import utc_now
 from .operational_sources import attributed_csv
 from .session import database
@@ -98,8 +99,8 @@ def _public(day_layout=None):
         if st.session_state.get(key) not in options:
             st.session_state[key]=next((p for p in options if by_point[p]["infrastructure_id"]==st.session_state.get(SELECTED)),options[0])
         point=st.selectbox("Punto da esaminare",options,key=key,
-            format_func=lambda p:display_name(by_point[p]["point"])+" · "+by_point[p]["point_type"]+
-                (" · "+direction_name(by_point[p]["direction"]) if by_point[p]["point_type"]=="Bidirezionale" else ""))
+            format_func=lambda p:display_name(by_point[p]["point"])+" · "+arrow_text(by_point[p]["point_type"])+
+                (" · "+arrow_text(by_point[p]["direction"]) if by_point[p]["point_type"]=="Bidirezionale" else ""))
     from .gme_market import api_configured as gme_configured
     readouts = ("Riconciliazione","Pubblicazioni","Eventi","Fonti")
     if gme_configured():
@@ -138,26 +139,25 @@ def _compare(rows,by_point,point,day):
             number_columns=[names[k] for k in (*m.INDICATORS,"delta_renomination_nomination","delta_allocation_renomination","delta_physical_allocation")]
             for c in number_columns:display[c]=pd.to_numeric(display[c],errors="coerce")
             display["Punto"]=display.Punto.map(display_name)
-            display["Direzione dati"]=display["Direzione dati"].map(direction_name)
-            st.dataframe(display,hide_index=True,width="stretch",height=345,
-                column_config={"Punto":st.column_config.TextColumn(width="medium"),"Tipologia":st.column_config.TextColumn(width="medium"),"Direzione dati":st.column_config.TextColumn(width="small"),
+            display["Tipologia"]=display["Tipologia"].map(arrow_text)
+            display["Direzione dati"]=display["Direzione dati"].map(arrow_text)
+            st.dataframe(display,hide_index=True,width="stretch",height=420,
+                column_config={"Punto":st.column_config.TextColumn(width="medium"),"Tipologia":st.column_config.TextColumn(width="medium"),"Direzione dati":st.column_config.TextColumn(width="medium"),
                     **{c:st.column_config.NumberColumn(format="%.1f",width="small") for c in number_columns}})
             st.caption("GWh/d · tipologia dal catalogo verificato; una riga per direzione. N/D non equivale a zero. Ogni Δ confronta due passaggi consecutivi dello stesso giorno gas. Il CSV include fonti e versioni.")
         with detail:
             if point:
                 from .balancing_charts import point_indicators
+                st.markdown("**"+escape(display_name(by_point[point]["point"]))+"**")
+                st.html(direction_header(by_point[point]["point_type"],by_point[point]["direction"]))
+                st.caption(by_point[point]["state"])
                 plot(point_indicators(by_point[point]),key="cockpit_point_chart")
-                st.caption(display_name(by_point[point]["point"])+" · "+by_point[point]["point_type"]+" · "+
-                    direction_name(by_point[point]["direction"])+" · "+by_point[point]["state"])
                 if by_point[point]["point_type"]=="Bidirezionale":
                     paired=[r for r in rows if r["infrastructure_id"]==by_point[point]["infrastructure_id"]]
-                    from .italiano import numero
-                    st.caption("Flusso fisico · entrambe le direzioni (GWh/d)")
-                    cols=st.columns(2)
-                    for col,d in zip(cols,("entry","exit")):
-                        value=next((r["Physical Flow"] for r in paired if r["direction"]==d),None)
-                        col.metric(direction_name(d),numero(value,1) if value is not None else "N/D")
-                st.button("Apri punto sulla mappa",key="cockpit_map",on_click=_open_full,
+                    st.caption("Flusso fisico · entrambe le direzioni")
+                    st.html(paired_flow_html({r["direction"]:r["Physical Flow"] for r in paired},
+                        active=by_point[point]["direction"]))
+                st.button("Apri punto sulla mappa",icon=":material/map:",width="stretch",key="cockpit_map",on_click=_open_full,
                     args=(by_point[point]["infrastructure_id"],day,day,by_point[point]["direction"]))
         _export(pd.DataFrame(rows),"riconciliazione con provenienza","cockpit_reconciliation")
 
