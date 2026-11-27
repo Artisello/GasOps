@@ -18,7 +18,7 @@ CATEGORIES = {"pipeline": "Gasdotti", "entry": "Ingressi e uscite", "lng": "Term
 COLORS = {"pipeline": [91, 139, 181], "entry": [101, 223, 191], "lng": [131, 180, 255],
           "storage": [242, 190, 114], "compressor": [201, 170, 239], "production": [145, 202, 158],
           "power": [161, 175, 192], "node": [139, 157, 178]}
-READING_MODES = ("SYSTEM", "FLOW", "ATTENTION", "INFRASTRUCTURE")
+READING_MODES = ("SYSTEM", "FLOW", "ATTENTION")
 SYSTEM_CATEGORIES = frozenset(CATEGORIES)-{"node"}
 
 
@@ -491,21 +491,22 @@ def point_intelligence(network, identifier, observations, day, now, *, direction
         "headroom_gwh_d":headroom,"headroom_kind":"published" if headroom is not None else None}
 
 
-def reading_infrastructure(visible, reading_mode, intelligence, *, selected=None, event_ids=(), finding_ids=()):
+def reading_infrastructure(visible, reading_mode, intelligence, *, selected=None, event_ids=(), finding_ids=(), include_nodes=False):
     """Modes narrow the existing filter perimeter independently of selection.
 
     Pipelines are static geographic context, never a location for point flows.
     Missing telemetry is meaningful only for a point with a verified binding.
     The selected argument is retained for compatibility; it cannot bypass filters.
     """
+    # Old saved readings migrate to the single geographic System view.
+    if reading_mode == "INFRASTRUCTURE":
+        reading_mode = "SYSTEM"
     if reading_mode not in READING_MODES:
         raise ValueError("Modalità di lettura non riconosciuta")
     ids = set(event_ids)|set(finding_ids)
     def include(item):
-        if reading_mode == "INFRASTRUCTURE":
-            return True
         if reading_mode == "SYSTEM":
-            return item.category in SYSTEM_CATEGORIES
+            return item.category in SYSTEM_CATEGORIES or (include_nodes and item.category == "node")
         if item.category == "pipeline":
             return True
         point = intelligence.get(item.id,{})
