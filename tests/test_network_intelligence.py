@@ -388,3 +388,45 @@ def test_previous_no_nodes_default_is_restored_once(monkeypatch):
     state["net_layers"]=old_default
     view._initialize_layers()
     assert state["net_layers"]==old_default
+
+
+def test_flow_metric_encodings_distinguish_zero_missing_and_fixed_thresholds():
+    from gasops_app.italian_network_map import flow_visual, DELTA_COLORS, UTILIZATION_BANDS, MISSING_COLOR
+    info={"values":{"Physical Flow":D("0")},"change_gwh_d":D("0"),"utilization_pct":D("0")}
+    for lens in ("volume","delta","utilization"):
+        assert flow_visual(info,lens)["value"]==0
+        assert flow_visual({},lens)["value"] is None
+        assert flow_visual({},lens)["color"]==MISSING_COLOR
+    assert flow_visual({"change_gwh_d":D("12.5")},"delta")["label"]=="+12,5"
+    assert flow_visual({"change_gwh_d":D("-12.5")},"delta")["color"]==DELTA_COLORS["down"]
+    for pct,index in ((0,0),(30,1),(60,2),(90,3),(120,3)):
+        assert flow_visual({"utilization_pct":D(pct)},"utilization")["color"]==UTILIZATION_BANDS[index][1]
+
+
+def test_flow_lenses_keep_geometry_selection_and_direction(assets):
+    from gasops_app.italian_network_map import DELTA_COLORS, MISSING_COLOR
+    n,boundary,_=assets
+    b=point(n)
+    rows=(reading(b,value="20"),reading(b,value="10",day=DAY-timedelta(days=1)),
+          reading(b,"Firm Technical","40"))
+    info=point_intelligence(n,b.infrastructure_id,rows,DAY,NOW)
+    visible=tuple(i for i in n.infrastructure if i.id==b.infrastructure_id)
+    targets=[]
+    for lens in ("volume","delta","utilization"):
+        scene=json.loads(deck(n,boundary,visible,b.infrastructure_id,observations=rows,day=DAY,
+            reading_mode="FLOW",intelligence={b.infrastructure_id:info},flow_lens=lens,stable_picking=True).to_json())
+        layers={l["id"]:l for l in scene["layers"]}
+        target=next(r for r in layers["infrastructure-points"]["data"] if r["active"])
+        targets.append(target)
+        assert not layers["category-symbols"]["pickable"]
+        assert target["direction"]==b.direction
+    assert all(t["position"]==targets[0]["position"] and t["infra_id"]==b.infrastructure_id for t in targets)
+    assert targets[1]["color"]==DELTA_COLORS["up"]
+    assert "+10,0 GWh/d" in targets[1]["safe_summary"]
+    assert "50,0%" in targets[2]["safe_summary"]
+    missing={**info,"utilization_pct":None}
+    scene=json.loads(deck(n,boundary,visible,day=DAY,reading_mode="FLOW",
+        intelligence={b.infrastructure_id:missing},flow_lens="utilization").to_json())
+    target=next(l["data"][0] for l in scene["layers"] if l["id"]=="infrastructure-points")
+    assert target["color"]==MISSING_COLOR and target["icon"].endswith("-outline")
+    assert "N/D" in target["safe_summary"]

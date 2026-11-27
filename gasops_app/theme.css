@@ -407,3 +407,11 @@ div[data-testid="stVerticalBlockBorderWrapper"] {border-color:var(--gas-border);
 .igor-attention-summary {display:flex;flex-wrap:wrap;gap:.45rem;margin:.15rem 0;}
 .igor-attention-summary span {display:inline-flex;align-items:center;gap:.4rem;border:1px solid var(--gas-border);border-radius:var(--gas-radius);padding:.35rem .65rem;background:var(--gas-panel);color:var(--gas-muted);font-size:.78rem;}
 .igor-attention-summary strong {color:var(--gas-text);font-variant-numeric:tabular-nums;}
+
+
+/* Secondary flow lens: a single lightweight selector, shown only in Flow. */
+.stApp [class*="st-key-network_flow_lens_"] [role="radiogroup"] {display:flex;flex-wrap:wrap;gap:.25rem .4rem;}
+.stApp [class*="st-key-network_flow_lens_"] [role="radiogroup"] label {border:1px solid var(--gas-border);border-radius:.5rem;padding:.15rem .5rem;min-height:32px;}
+.stApp [class*="st-key-network_flow_lens_"] [role="radiogroup"] label:has(input:checked) {background:var(--gas-selected);border-color:#39645e;}
+.stApp [class*="st-key-network_flow_lens_"] [role="radiogroup"] label:has(input:checked) p {color:var(--gas-teal);font-weight:600;}
+.stApp [class*="st-key-network_flow_lens_"] [role="radiogroup"] label:has(input:focus-visible) {outline:2px solid var(--gas-blue);outline-offset:1px;}

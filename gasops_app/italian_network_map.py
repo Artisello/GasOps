@@ -62,6 +62,40 @@ def flow_icon_size(value):
     return next(size for upper,size in FLOW_SIZES if abs(value) <= upper)
 
 
+FLOW_LENSES = ("volume","delta","utilization")
+FLOW_LENS_LABELS = {"volume":"Volume","delta":"Variazione D−1","utilization":"Utilizzo capacità"}
+MISSING_COLOR = [147,163,181]
+DELTA_COLORS = {"up":[101,223,191],"down":[242,190,114],"flat":[180,194,211]}
+UTILIZATION_BANDS = ((30,[131,180,255]),(60,[101,223,191]),(90,[242,190,114]),(float("inf"),[246,146,157]))
+
+
+def flow_metric(info, lens):
+    """Only the validated point/direction/day selected by point_intelligence."""
+    if lens not in FLOW_LENSES:
+        raise ValueError("Indicatore cartografico non riconosciuto")
+    if lens=="volume":
+        return info.get("values",{}).get("Physical Flow")
+    return info.get("change_gwh_d" if lens=="delta" else "utilization_pct")
+
+
+def flow_visual(info, lens):
+    value = flow_metric(info,lens)
+    unit = "%" if lens=="utilization" else "GWh/d"
+    if value is None:
+        return {"value":None,"label":"N/D","summary":"N/D","color":MISSING_COLOR,"size":12}
+    if lens=="volume":
+        return {"value":value,"label":numero(value,0),"summary":numero(value,1)+" "+unit,
+                "color":None,"size":flow_icon_size(value)}
+    if lens=="delta":
+        sign = "+" if value>0 else ""
+        color = DELTA_COLORS["up" if value>0 else "down" if value<0 else "flat"]
+        return {"value":value,"label":sign+numero(value,1),"summary":sign+numero(value,1)+" "+unit,
+                "color":color,"size":16}
+    color = next(color for upper,color in UTILIZATION_BANDS if value<upper)
+    return {"value":value,"label":numero(value,1)+"%","summary":numero(value,1)+"%",
+            "color":color,"size":16}
+
+
 def focus_camera(camera, geometry):
     lon, lat = label_anchor(geometry)
     return {**camera, "longitude":lon, "latitude":lat,
@@ -70,10 +104,10 @@ def focus_camera(camera, geometry):
 MARK_COLORS = {"ring":[246,146,157],"finding":[242,190,114],"quality":[180,194,211],"assumption":[255,202,110]}
 
 
-def legend_symbol(category, *, outlined=False):
+def legend_symbol(category, *, outlined=False, neutral=False):
     """The legend and atlas use exactly the same authored SVG geometry."""
     base = "entry" if category in _DIRECTION_ICONS.values() else category
-    color = ",".join(map(str,COLORS.get(base,MARK_COLORS.get(base,[161,175,192]))))
+    color = ",".join(map(str,MISSING_COLOR if neutral and base!="pipeline" else COLORS.get(base,MARK_COLORS.get(base,[161,175,192]))))
     shape = _ATLAS_SYMBOLS.get(category,'<path d="M1 11h22v2H1Z"/>').replace('stroke="white"',f'stroke="rgb({color})"')
     if outlined:
         shape = f'<g fill="none" stroke="rgb({color})" stroke-width="1.8">{shape}</g>'
@@ -193,7 +227,9 @@ def bidirectional_preview(bindings, observations, day, info):
 
 
 def deck(network, boundary, visible, selected=None, event_ids=(), *, observations=(), day=None, direction="entry", show_labels=True, mode="full", viewport_width=600,
-         reading_mode="INFRASTRUCTURE", intelligence=None, finding_ids=(), stable_picking=False, scenario_ids=(), focus_id=None):
+         reading_mode="INFRASTRUCTURE", intelligence=None, finding_ids=(), stable_picking=False, scenario_ids=(), focus_id=None, flow_lens="volume"):
+    if flow_lens not in FLOW_LENSES:
+        raise ValueError("Indicatore cartografico non riconosciuto")
     camera = fit_italy(boundary,viewport_width,498 if mode in ("overview","scenario") else 648)
     national_zoom = camera["zoom"]
     lookup = {g.infrastructure_id:g for g in network.geography}
@@ -277,6 +313,10 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
                 position = label_anchor(geometry)
                 labels.append({**tooltip,**label_style,"position":position,"label":display_name(item.name)})
             continue
+        visual = flow_visual(info,flow_lens) if reading_mode=="FLOW" and info.get("binding") else None
+        if visual is not None and flow_lens!="volume":
+            summary = FLOW_LENS_LABELS[flow_lens]+" · "+arrow_text(info["binding"].direction)+": "+visual["summary"]
+            tooltip["safe_summary"] = escape(summary)+"\n"+tooltip["safe_summary"]
         if item.id in nearby:
             tooltip["safe_summary"] += f"\n{1+len(nearby[item.id])} punti vicini · clicca per scegliere"
         row = {**tooltip, "position":geometry["coordinates"], "color":COLORS[item.category],
@@ -291,16 +331,19 @@ def deck(network, boundary, visible, selected=None, event_ids=(), *, observation
             if item.id != selected and item.category in ("power","node","compressor"):
                 row["color"] = [*row["color"],150]
                 row["icon_size"] = max(6,row["icon_size"]-3)
-            if reading_mode == "FLOW" and info.get("flow_available"):
-                row["icon_size"] = flow_icon_size(info["values"].get("Physical Flow"))
+            if visual is not None:
+                row["icon_size"] = visual["size"]
+                if visual["color"] is not None:
+                    row["color"] = visual["color"]
+                if visual["value"] is None and not row["icon"].endswith("-outline"):
+                    row["icon"] += "-outline"
         points.append(row)
-        if item.id == selected or show_labels and (item.category in ("entry", "lng") or len(point_categories) == 1):
+        if item.id == selected or show_labels and (visual is not None or item.category in ("entry", "lng") or len(point_categories) == 1):
             name = display_name(item.name.split(" · ")[0].replace("FSRU ", ""))
             if structural and item.category=="entry":
                 name = ARROWS[structural]+" "+name
-            flow = info.get("values",{}).get("Physical Flow")
-            if reading_mode == "FLOW" and info.get("flow_available") and flow is not None:
-                name += " · "+(ARROWS.get(info.get("binding").direction,"")+" " if info.get("binding") and structural=="Bidirezionale" else "")+numero(flow,0)
+            if visual is not None:
+                name += " · "+(ARROWS.get(info["binding"].direction,"")+" " if structural=="Bidirezionale" else "")+visual["label"]
             labels.append({**row, **label_style,"label":name,
                            "offset":[10,-10] if item.id == selected else [10,9]})
         if item.id in event_ids:
