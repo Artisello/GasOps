@@ -72,7 +72,8 @@ MARK_COLORS = {"ring":[246,146,157],"finding":[242,190,114],"quality":[180,194,2
 
 def legend_symbol(category, *, outlined=False):
     """The legend and atlas use exactly the same authored SVG geometry."""
-    color = ",".join(map(str,COLORS.get(category,MARK_COLORS.get(category,[161,175,192]))))
+    base = "entry" if category in _DIRECTION_ICONS.values() else category
+    color = ",".join(map(str,COLORS.get(base,MARK_COLORS.get(base,[161,175,192]))))
     shape = _ATLAS_SYMBOLS.get(category,'<path d="M1 11h22v2H1Z"/>').replace('stroke="white"',f'stroke="rgb({color})"')
     if outlined:
         shape = f'<g fill="none" stroke="rgb({color})" stroke-width="1.8">{shape}</g>'
