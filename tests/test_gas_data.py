@@ -235,3 +235,68 @@ def test_legacy_desk_reuses_snapshot_model_and_keeps_original_ids_and_row_acquis
     assert r.source_id=="original-Physical Flow" and r.retrieved_at==NOW-timedelta(hours=1)
     assert r.observed_at==NOW-timedelta(hours=3) and r.revision_count==1
     assert "original-Physical Flow" in en.export_csv(result)
+
+
+def test_health_latest_observation_has_its_own_timestamps(network):
+    older=DAY-timedelta(days=1)
+    old_at=NOW-timedelta(hours=20)
+    new_at=NOW-timedelta(hours=1)
+    new_pub=NOW-timedelta(hours=2)
+    frame=dataset(network,[
+        obs(network,older,retrieved_at=old_at,observed_at=(old_at-timedelta(hours=1)).isoformat()),
+        obs(network,DAY,retrieved_at=new_at,observed_at=new_pub.isoformat()),
+    ])
+    h=observation_health(frame,older,DAY,NOW)
+    assert h["valid"]==h["expected"]==2
+    assert h["retrieved_at"]==h["acquired"]==new_at.isoformat()
+    assert h["observed_at"]==h["published_at"]==new_pub.isoformat()
+    assert h["cache_age"]==3600
+    assert h["oldest_acquired"]==old_at.isoformat()
+    assert h["cache_age_hours"]==20
+    assert not h["stale"]
+    assert h["timestamp_issues"]==0
+    start,stop=gas_day_bounds(DAY)
+    assert h["observation_period"]=={"from":start.isoformat(),"to":stop.isoformat()}
+    assert h["coverage_period"]["from"]==gas_day_bounds(older)[0].isoformat()
+
+
+def test_health_does_not_date_latest_period_with_newer_historical_download(network):
+    older=DAY-timedelta(days=1)
+    latest_at=NOW-timedelta(hours=4)
+    latest_pub=NOW-timedelta(hours=5)
+    frame=dataset(network,[
+        obs(network,older,retrieved_at=NOW,observed_at=(NOW-timedelta(hours=1)).isoformat()),
+        obs(network,DAY,retrieved_at=latest_at,observed_at=latest_pub.isoformat()),
+    ])
+    h=observation_health(frame,older,DAY,NOW)
+    assert h["latest"]==DAY.isoformat()
+    assert h["retrieved_at"]==latest_at.isoformat()
+    assert h["published_at"]==latest_pub.isoformat()
+    assert h["newest_acquired"]==NOW.isoformat()
+
+
+def test_health_d1_age_is_separate_from_selected_observation(network):
+    older=DAY-timedelta(days=1)
+    old_at=NOW-timedelta(hours=20)
+    frame=dataset(network,[
+        obs(network,older,retrieved_at=old_at,observed_at=(old_at-timedelta(hours=1)).isoformat()),
+        obs(network),
+    ])
+    selected=g.select(frame,"ENTSOG",[frame.entity_key.iloc[0]],"Physical Flow","GWh/d","gas_day",DAY,DAY)
+    h=observation_health(selected,DAY,DAY,NOW)
+    assert h["valid"]==h["expected"]==1
+    assert h["oldest_acquired"]==old_at.isoformat()
+    assert h["cache_age_hours"]==20
+    assert not h["stale"]
+
+
+def test_health_inconsistent_publication_is_explicit_not_relabelled(network):
+    frame=dataset(network,[obs(network)])
+    frame.loc[:,"observed_at"]=(NOW-timedelta(minutes=1)).isoformat()
+    h=observation_health(frame,DAY,DAY,NOW)
+    assert h["timestamp_issues"]==1
+    assert h["observed_at"] is None and h["published_at"] is None
+    assert h["retrieved_at"]==(NOW-timedelta(hours=1)).isoformat()
+    assert h["partial"] and h["data_status"]=="Partial"
+    assert h["valid"]==1
+    assert frame.observed_at.iloc[0]==(NOW-timedelta(minutes=1)).isoformat()
