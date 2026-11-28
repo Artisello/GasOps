@@ -13,6 +13,7 @@ from .mensile import load_monthly
 from .entsog import load as load_daily
 from .operational_sources import load_agsi,load_alsi,load_iip,GIE_LINKS
 from .terna_power import load_power,latest_day,token_batch
+from .public_data import SourceUnavailable
 from .terna_history import make_batch,merge,STATE as HISTORY
 from .acer_market import load_lng
 
@@ -64,6 +65,10 @@ def refresh(state,store,now,selected,*,gie=None,terna=None,clock=utc_now,progres
         try:
             note=fn()
             records[name]={"status":"Da verificare" if note else "Acquisito","at":clock().isoformat(),"note":note or ""}
+        except SourceUnavailable as error:
+            records[name]={"status":"Da aggiornare","at":clock().isoformat(),
+                           "note":str(error) if name.startswith("terna") else
+                           "Fonte temporaneamente non disponibile. Ultimo dato valido conservato, se presente."}
         except Exception:
             records[name]={"status":"Da aggiornare","at":clock().isoformat(),
                            "note":"Fonte temporaneamente non disponibile. Ultimo dato valido conservato, se presente."}
