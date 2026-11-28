@@ -138,10 +138,12 @@ def test_gme_readouts_do_not_reacquire_when_reading_history(monkeypatch):
 
 def test_gme_question_without_cached_prices_does_not_start_market_acquisition(monkeypatch):
     from gasops_app import gme_market_page as gme
-    from gasops_app.models import utc_now
+    from datetime import datetime, timezone
+    now=datetime(2026,11,28,12,tzinfo=timezone.utc)
+    monkeypatch.setattr(gme,"utc_now",lambda:now)
     monkeypatch.setattr(gme.g,"api_configured",lambda:True)
     monkeypatch.setattr(gme,"_automatic_sources",lambda *a,**k:pytest.fail("GME acquisition belongs to market"))
     monkeypatch.setattr(gme,"snapshot",lambda *a,**k:None)
-    result=gme._assistant_price_readout({"kinds":["igi"],"day":"2026-11-20"},utc_now())
+    result=gme._assistant_price_readout({"kinds":["igi"],"day":"2026-11-20"},now)
     assert result["cards"]==[]
     assert "Mercato e previsioni" in result["message"]
