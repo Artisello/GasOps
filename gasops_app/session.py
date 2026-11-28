@@ -25,7 +25,7 @@ from .store import Store
 from .access import document_directory, private_access, require_private
 from .visuals import chip, info, kind_tag, local_time, steps
 from .workflow import DAILY_BRIEFING, run_workflow, plan
-from .assistant_sources import GIE, GME, MARKET, POWER, WEATHER, mentions_day, query_day, requested_sources
+from .assistant_sources import GIE, GME, MARKET, POWER, WEATHER, mentions_day, query_day, requested_sources, expand_command
 
 LOG = logging.getLogger(__name__)
 DEMO, PUBLIC, ARCHIVE = "Dati di esempio · giornalieri", "Eurostat + ARERA · mensili", "JRC · archivio giornaliero"
@@ -492,6 +492,13 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
     model = None if ai_policy == "off" else reasoner()
     if ai_policy == "required" and model is None:
         raise ModelUnavailable("AI non attiva. Nessuna domanda eseguita.")
+    expanded,issue=expand_command(question)
+    if issue:
+        report=lookup_report(question,{},utc_now(),issue=issue)
+        st.session_state["last_run"]=report
+        return report
+    question=expanded
+    full=full or question==DAILY_BRIEFING
     country=requested_country(question) if not full else None
     requested=() if full else requested_sources(question)
     day=None if full else query_day(question,today=utc_now().astimezone(ROME).date())
