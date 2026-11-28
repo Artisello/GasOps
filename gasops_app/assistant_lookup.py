@@ -129,3 +129,112 @@ def lookup_report(question, public, now, *, day=None, scope="IT", reasoner=None,
                      "gme_request":gme},
     )
     return execute(run,{},[],set(),lambda _: [],lambda _: None,reasoner if available else None,planned_only=True)
+
+
+def _document_libraries():
+    """Read only the existing authorized archives, using the document desk's
+    bounded caches and validation. Visitor/private indices remain session-local.
+    Never use a stale remote manifest as current evidence after a failed read.
+    """
+    import streamlit as st
+    from . import document_page as desk
+    from .document_desk import identity, build
+    from .access import document_directory, private_access
+    from .data import ROOT
+    from .document_archive import display_name
+    libraries,notices=[],[]
+    public=()
+    try:
+        public=desk._local_inputs(ROOT/"data"/"public-regulatory",shared=True)
+    except OSError:
+        notices.append("Archivio pubblico locale non leggibile.")
+    remote=()
+    try:
+        config=desk._archive_config()
+        if config:
+            remote=tuple((display_name(k),raw) for k,raw in desk._read_remote(config))
+    except Exception:
+        notices.append("Archivio pubblico remoto non disponibile; nessuna copia precedente sostituita.")
+    shared=(*remote,*public)
+    if shared:
+        docs,_=desk._public_index(identity(shared),shared)
+        libraries.append(docs)
+    private=()
+    if private_access():
+        try:
+            path,is_public=document_directory(ROOT)
+            if not is_public:
+                private=desk._local_inputs(path,shared=False)
+        except (OSError,PermissionError):
+            notices.append("Archivio riservato non leggibile.")
+    uploads=tuple(st.session_state.get(desk.VISITOR_UPLOADS,()))
+    personal=(*uploads,*private)
+    key=identity(personal)
+    cache_key="assistant_private_pdf_index_v1"
+    if personal:
+        cached=st.session_state.get(cache_key)
+        if not cached or cached[0]!=key:
+            cached=(key,build(personal))
+            st.session_state[cache_key]=cached
+        libraries.append(cached[1])
+    else:
+        st.session_state.pop(cache_key,None)
+    if any(docs.errors for docs in libraries):
+        notices.append("Alcuni PDF non sono indicizzabili o superano i limiti dell’archivio.")
+    return libraries,notices
+
+
+def document_lookup_report(question,public,now,*,reasoner=None):
+    """Retrieve actual PDF passages independently of market-series availability.
+    Private and visitor excerpts never travel to a remote model from chat.
+    For a local model use the existing citation-checked document RAG.
+    """
+    from .document_desk import search
+    from .document_rag import answer, MAX_PASSAGES
+    from .models import Agent, Result, Step, utc_now
+    libraries,notices=_document_libraries()
+    hits=[]
+    seen=set()
+    # Deduplicate identical passages across public and personal archives.
+    for docs in libraries:
+        for hit in search(docs,question,limit=MAX_PASSAGES):
+            key=(hit.document,hit.page,hit.evidence)
+            if key not in seen:
+                seen.add(key)
+                hits.append(hit)
+    hits=hits[:MAX_PASSAGES]
+    summary=("Passaggi pertinenti nei PDF. Verifica l’edizione applicabile." if hits else
+             "Nessun passaggio pertinente trovato nei documenti consultabili.")
+    run=lookup_report(question,public,now,reasoner=None,issue=summary)
+    run.assumptions["assistant_document_lookup"]=True
+    run.assumptions["document_count"]=sum(len(docs.documents) for docs in libraries)
+    # This is not a dated market lookup and must not seed date follow-ups.
+    run.assumptions["source_lookup"]=False
+    run.source=Origin(name="Archivio documentale I.G.O.R.",kind=Kind.HISTORICAL,grain="daily",
+                      fields=(),description="Estratti da PDF indicizzati, non validità normativa corrente.",retrieved_at=now)
+    run.input_sha256=sha256(json.dumps({"public":public,"hits":[h.model_dump(mode="json") for h in hits]},
+                              ensure_ascii=False,sort_keys=True,allow_nan=False).encode()).hexdigest()
+    result=Result(agent=Agent.REGULATORY,status="completed" if hits else "unavailable",
+                  summary=summary,evidence=hits,values={"document_count":run.assumptions["document_count"]})
+    run.results[Agent.REGULATORY]=result
+    run.steps[Agent.REGULATORY]=Step(agent=Agent.REGULATORY,status=result.status,started_at=now,finished_at=utc_now())
+    run.warnings.extend(notices)
+    if hits and reasoner is not None and reasoner.config.local:
+        try:
+            claims=answer(reasoner,question,hits)
+            if claims:
+                run.mode="LLM-assisted"
+                run.model=reasoner.label
+                run.interpretation="\n".join(claim["text"] for claim in claims)
+                run.interpretation_sources=[Agent.REGULATORY]
+                run.assumptions["document_claims"]=[{"text":c["text"],"citation":c["citation"].model_dump(mode="json")} for c in claims]
+            else:
+                run.warnings.append("Nessuna risposta AI verificabile; consulta gli estratti.")
+        except Exception:
+            run.warnings.append("Sintesi documentale non disponibile; consulta gli estratti.")
+        if callable(getattr(reasoner,"usage_summary",None)):
+            run.ai_usage=reasoner.usage_summary()
+    elif hits and reasoner is not None:
+        run.warnings.append("Ricerca PDF locale: nessun estratto inviato al provider remoto. La sintesi AI di documenti richiede il consenso nella sezione Norme e documenti o un modello locale.")
+    run.finished_at=utc_now()
+    return run
