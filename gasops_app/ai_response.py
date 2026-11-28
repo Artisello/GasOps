@@ -26,7 +26,7 @@ def compact_context(context):
     return {key:compact(value) for key,value in context.items() if isinstance(value,dict)}
 
 
-_UNIT=r"(?:€|EUR)\s*/\s*MWh|GWh(?:\s*/\s*(?:giorno(?: gas)?|[dg]))?|TWh|MWh|MW|bcm|Sm[3³]|°\s*C|%|€|EUR"
+_UNIT=r"(?:€|EUR)\s*/\s*MWh|GWh(?:\s*/\s*(?:giorno(?: gas)?|mese|[dg]))?|TWh|MWh|MW|bcm|Sm[3³]|°\s*C|%|€|EUR"
 _CLAIM=re.compile(
     r"(?<![\w.,])(?P<number>[+−-]?(?:\d{1,3}(?:[. \u00a0]\d{3})+(?:,\d+)?|\d+(?:[,.]\d+)?))"
     r"\s*(?P<unit>"+_UNIT+r")(?![\w/])",re.I)
