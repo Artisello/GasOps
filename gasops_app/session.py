@@ -558,6 +558,10 @@ def launch(selection: Selection | None, question: str = DAILY_BRIEFING, *, full:
                 requested=model.select_public_sources(question)
             except Exception:
                 requested=()
+        if requested and day is None and mentions_day(question):
+            report=lookup_report(question,{},utc_now(),issue="Indica un solo giorno valido per la consultazione.")
+            st.session_state["last_run"]=report
+            return report
         unknown=not requested and not computation
         if doc_question or unknown:
             with st.spinner("Ricerca nei documenti…"):
@@ -570,7 +574,7 @@ def launch(selection: Selection | None, question: str = DAILY_BRIEFING, *, full:
     specific_market=bool(set(requested)&set(MARKET)) and bool(re.search(
         r"\beurostat\b|\bentsog\b|\bmensil\w*|import|esport|produzione nazionale",question,re.I))
     standalone=bool(requested) and not targets.intersection((Agent.SETTLEMENT,Agent.SCENARIO)) and (automatic or Agent.REGULATORY not in targets) and (
-        (not set(requested).intersection(MARKET) or day is not None or base is None or specific_market) and Agent.FORECAST not in targets)
+        not set(requested).intersection(MARKET) or (day is not None or base is None or specific_market) and Agent.FORECAST not in targets)
     scoped_lookup=country=="EU" or country=="DE" and requested==("AGSI+",)
     if scoped_lookup or (country is None and standalone):
         with st.spinner("Lettura delle fonti pertinenti…"):
