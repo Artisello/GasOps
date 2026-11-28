@@ -550,7 +550,7 @@ def overview_panel():
         job = acquisition.schedule(store,network,now,api_key=api_key,force=refresh,**requested)
     watch(store,job,connections)
     if archive:
-        st.caption("Snapshot storico · dati statici.")
+        st.caption("Snapshot storico incluso · dati statici.")
     context = _window_context(network,bundled,st.session_state,now,store,anchor-timedelta(days=34),anchor,archive)
     data = {} if archive else dict(st.session_state,operational_acquisition=info)
     snapshots = context["snapshots"]
@@ -656,7 +656,7 @@ def _history(observations, point, first, last, *, mode="full", counterpart=None,
         _, other = _daily(observations,counterpart,first,last,indicator)
         series.append(("exit" if direction=="entry" else "entry",other))
     if not any(v is not None for _,vs in series for v in vs):
-        st.caption("Nessun valore confrontabile nel periodo.")
+        st.caption("Nessun valore confrontabile sul giorno gas nel periodo.")
         return
     figure = go.Figure()
     for index,(d,vs) in enumerate(series):
@@ -960,7 +960,7 @@ def _detail(network, item, observations, snapshots, direction, events, first, la
                     (o for o in observations if o.infrastructure_id==item.id and o.point_direction==other.point_direction),utc_now()))
             _history(history_records,binding.point_direction,last-timedelta(days=29),last,mode=mode,
                      counterpart=other.point_direction if other else None,direction=binding.direction)
-            st.caption("Solo osservazioni · nessuna interpolazione.")
+            st.caption("Solo osservazioni · nessuna interpolazione o stima.")
         else:
             st.caption("Serie ENTSOG non associata. Eventuali dati GIE del singolo impianto sono nella scheda Dati.")
     with events_tab:
