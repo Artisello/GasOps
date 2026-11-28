@@ -7,7 +7,7 @@ import streamlit as st
 
 from .italiano import ESITI, GRAVITA, TIPI, numero
 from .market import demand_trend_question, demand_readout
-from .assistant_sources import source_rows, COMMANDS, resolve_followup
+from .assistant_sources import source_rows, COMMANDS, resolve_followup, wants_day_comparison, day_comparison
 from .models import Agent, AGENT_LABELS, Kind, Run, utc_now
 from .reports import markdown
 from . import session
@@ -149,6 +149,18 @@ def _report(report:Run,selection,*,fresh=False):
         st.markdown("**Report di calcolo (senza AI)**")
         if not report.results:
             st.text(report.summary or "Nessun risultato disponibile.")
+    if "assistant_comparison" in report.assumptions:
+        rows=report.assumptions["assistant_comparison"]
+        if rows:
+            st.markdown("**Confronto tra giorni**")
+            st.caption("Variazione: giorno più recente − giorno meno recente. p.p. = punti percentuali.")
+            st.dataframe([{"Indicatore":row["metric"],"Fonte":row["source"],"Area":row["scope"],
+                           "Prima":row["before_day"]+" · "+numero(row["before"],2)+" "+row["unit"],
+                           "Dopo":row["after_day"]+" · "+numero(row["after"],2)+" "+row["unit"],
+                           "Variazione":("+" if row["delta"]>0 else "")+numero(row["delta"],2)+" "+row["delta_unit"]}
+                          for row in rows],hide_index=True,width="stretch")
+        else:
+            st.info("Confronto non disponibile: mancano due osservazioni giornaliere confrontabili.")
     _source_evidence_panel(report)
     if gme:=report.assumptions.get("gme_request"):
         from .gme_market_page import assistant_prices
@@ -323,7 +335,8 @@ def assistant_page():
             st.caption("Esempi: /scorte 20/11/2026 · /mase 2025 · E il giorno precedente?")
     question=None if local else st.chat_input("Chiedi qualcosa sul gas…",key="assistant_question",max_chars=600)
     requested=DAILY_BRIEFING if full else shortcut or (question.strip() if question else "")
-    resolved,issue=(resolve_followup(requested,_previous_turn(),today=utc_now().astimezone(ZoneInfo("Europe/Rome")).date())
+    previous_turn=_previous_turn()
+    resolved,issue=(resolve_followup(requested,previous_turn,today=utc_now().astimezone(ZoneInfo("Europe/Rome")).date())
                     if requested and not (local or full or shortcut) else (requested,None))
 
     def render(report,*,fresh=False):
@@ -369,6 +382,8 @@ def assistant_page():
                         if generated:
                             if resolved!=requested:
                                 generated.assumptions["assistant_user_question"]=requested
+                                if wants_day_comparison(requested):
+                                    generated.assumptions["assistant_comparison"]=day_comparison(previous_turn,generated)
                             _remember(generated)
                             st.session_state[CONTEXT]=generated.id
                             _report(generated,selection,fresh=True)
