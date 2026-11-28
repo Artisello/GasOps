@@ -15,7 +15,7 @@ from .direction_ui import arrow_text, direction_header, paired_flow_html
 from .models import utc_now
 from .operational_sources import attributed_csv
 from .session import database
-from .visuals import kpi_grid, plot
+from .visuals import kpi_grid, plot, info
 from .italiano import data_it
 from .workspace import picker
 
@@ -130,9 +130,12 @@ def _compare(rows,by_point,point,day):
         return
     with st.container(key="cockpit_compare"):
         with st.container(key="cockpit_reconciliation_table"):
-            title,options=st.columns([3,1],vertical_alignment="center")
+            title,options,help_col=st.columns([3,1.3,1],vertical_alignment="center")
             title.markdown("**Dalla nomina al flusso fisico**")
             extended=options.toggle("Scostamenti",key="cockpit_show_deltas",help="Differenze tra passaggi consecutivi: nomina, rinomina, allocazione e flusso.")
+            with help_col:
+                info("Info riconciliazione", "Nomina: quantità programmata. Rinomina: programma aggiornato. Allocazione: quantità attribuita agli utenti. Flusso fisico: misura della rete.",
+                     "Scostamenti: differenze tra passaggi consecutivi. I valori devono riferirsi allo stesso giorno gas e alla stessa direzione. N/D significa dato non disponibile, non zero.")
             names={"point":"Punto","point_type":"Tipologia","direction":"Direzione dati","Nomination":"Nomina","Renomination":"Rinomina",
                 "Allocation":"Allocazione","Physical Flow":"Flusso fisico","delta_renomination_nomination":"Δ rinomina",
                 "delta_allocation_renomination":"Δ allocazione","delta_physical_allocation":"Δ flusso","state":"Stato"}
@@ -171,7 +174,7 @@ def _compare(rows,by_point,point,day):
 def _publications(frame,point,day,now):
     from .entsog_vintages import audit_rows, STATE as VINTAGES
     with st.container():
-        st.caption("Pubblicazione ≠ acquisizione. Una sola versione non è una revisione.")
+        info("Info pubblicazioni", "Pubblicazione: quando il gestore ha diffuso il dato. Acquisizione: quando I.G.O.R. lo ha ricevuto. Una sola versione non dimostra una revisione.")
         try:audit=audit_rows(frame,day,now,batches=st.session_state.get(VINTAGES,()))
         except ValueError:
             audit=audit_rows(frame,day,now)
