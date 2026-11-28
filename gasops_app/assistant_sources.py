@@ -448,51 +448,73 @@ _COMPARABLE_DAILY = {
 }
 
 
-def day_comparison(previous,current):
-    """JSON-safe deterministic comparison, previous chat observation -> new day.
+_COMPARABLE_MONTHLY = {
+    MONTHLY: tuple((field,label,"GWh/mese",False) for field,label in (
+        ("demand_gwh","Consumi nazionali"),("production_gwh","Produzione nazionale"),
+        ("imports_gwh","Importazioni"),("exports_gwh","Esportazioni"),
+        ("net_imports_gwh","Importazioni nette"),("stock_change_gwh","Variazione scorte"))),
+    PRICE: (("value","CMEM,m","€/MWh",False),),
+}
 
-    Compare only available observed snapshots, identical source/scope and
-    distinct exact periods; calculate from stored precision. No model calls.
-    """
-    if previous is None:
-        return []
-    before=previous.assumptions.get("public_operational_context") or {}
-    after=current.assumptions.get("public_operational_context") or {}
-    if previous.assumptions.get("requested_country")!=current.assumptions.get("requested_country"):
-        return []
+
+def period_comparison(before,after,*,first=None,last=None,monthly=False):
+    """Match exact observed periods and scope; compute locally, never via LLM."""
+    specs_by_source=_COMPARABLE_MONTHLY if monthly else _COMPARABLE_DAILY
     rows=[]
-    for key,specs in _COMPARABLE_DAILY.items():
+    for key,specs in specs_by_source.items():
         a,b=before.get(key,{}),after.get(key,{})
-        if a.get("status")!="available" or b.get("status")!="available":
+        if any(item.get("status")!="available" or item.get("quality_review") for item in (a,b)):
             continue
-        if any(item.get("kind")!="observed" or item.get("quality_review") for item in (a,b)):
+        if key==PRICE:
+            if any(item.get("kind") not in (None,"observed") for item in (a,b)):
+                continue
+        elif any(item.get("kind")!="observed" for item in (a,b)):
             continue
         if not a.get("source") or not a.get("scope") or a.get("scope")!=b.get("scope") or a.get("source")!=b.get("source"):
             continue
         if a.get("grain")!=b.get("grain") or a.get("unit")!=b.get("unit"):
             continue
+        if monthly and a.get("grain")!="mese":
+            continue
         old_day=a.get("gas_day") or a.get("period")
         new_day=b.get("gas_day") or b.get("period")
         try:
-            if date.fromisoformat(old_day)==date.fromisoformat(new_day):
+            old_date,new_date=date.fromisoformat(old_day),date.fromisoformat(new_day)
+            if old_date==new_date or monthly and (old_date.day!=1 or new_date.day!=1):
                 continue
         except (ValueError,TypeError):
             continue
-        if new_day!=current.assumptions.get("requested_day"):
+        if first is not None and old_day!=first or last is not None and new_day!=last:
             continue
-        if previous.assumptions.get("requested_day") not in (None,old_day):
-            continue
-        av,bv=a.get("values",{}),b.get("values",{})
+        av,bv=(a,b) if key==PRICE else (a.get("values",{}),b.get("values",{}))
         for field,label,unit,is_pct in specs:
             x,y=av.get(field),bv.get(field)
             if not all(type(v) in (float,int) and isfinite(v) for v in (x,y)):
                 continue
             first_day,last_day=sorted((old_day,new_day))
-            first,last=(x,y) if old_day==first_day else (y,x)
-            delta=last-first
+            earlier,later=(x,y) if old_day==first_day else (y,x)
+            delta=later-earlier
             if not isfinite(delta):
                 continue
-            rows.append({"source":a.get("source") or key,"scope":a["scope"],"metric":label,
-                         "before_day":first_day,"after_day":last_day,"before":first,"after":last,
-                         "unit":unit,"delta":delta,"delta_unit":"p.p." if is_pct else unit})
+            relative=100*delta/earlier if earlier>0 and not is_pct else None
+            if relative is not None and not isfinite(relative):
+                relative=None
+            rows.append({"source":a["source"],"scope":a["scope"],"metric":label,
+                         "before_day":first_day,"after_day":last_day,"before":earlier,"after":later,
+                         "unit":unit,"delta":delta,"delta_unit":"p.p." if is_pct else unit,
+                         "delta_pct":relative})
     return rows
+
+
+def day_comparison(previous,current):
+    """Session follow-up: compare only matched observed daily indicators."""
+    if previous is None:
+        return []
+    if previous.assumptions.get("requested_country")!=current.assumptions.get("requested_country"):
+        return []
+    last=current.assumptions.get("requested_day")
+    if last is None:
+        return []
+    return period_comparison(previous.assumptions.get("public_operational_context") or {},
+                             current.assumptions.get("public_operational_context") or {},
+                             first=previous.assumptions.get("requested_day"),last=last)
