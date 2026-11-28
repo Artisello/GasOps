@@ -154,7 +154,42 @@ def observation_health(frame,first,last,now):
         "revision_rows":int((frame.revision_count>1).sum()),"source_url":frame.source_url.iloc[0]}
 
 
-def gas_health(frame,first,last,now):
+def acquisition_diagnostic(now,*candidates):
+    """Project existing attempts without treating stored observations as API probes."""
+    from .freshness import timestamp
+    from .public_data import DIAGNOSTIC_CODES
+    known={"acquired","partial","failed","cached","no_observation","review","completed_unverified","deferred"}
+    options=[]
+    for basis,record in candidates:
+        if not isinstance(record,dict):continue
+        at=timestamp(record.get("at"))
+        if at is None or at>now:continue
+        outcome=record.get("outcome")
+        if outcome not in known:
+            outcome=("failed" if record.get("failed") or record.get("status")=="Da aggiornare" else
+                     "partial" if record.get("partial") else
+                     "review" if record.get("status")=="Da verificare" else
+                     "completed_unverified")
+        code=record.get("reason_code")
+        code=code if isinstance(code,str) and code in DIAGNOSTIC_CODES else None
+        duration=record.get("duration_seconds")
+        duration=float(duration) if type(duration) in (float,int) and finite(duration) and duration>=0 else None
+        options.append((at,{"attempt":at.isoformat(),"attempt_basis":basis,"attempt_outcome":outcome,
+                            "attempt_reason_code":code,"attempt_duration_seconds":duration}))
+    return max(options,key=lambda pair:pair[0])[1] if options else {
+        "attempt":None,"attempt_basis":None,"attempt_outcome":"not_recorded",
+        "attempt_reason_code":None,"attempt_duration_seconds":None}
+
+
+def point_attempt(state,point,day,now):
+    # Journal records exact-day physical-flow coverage, not per-indicator probes.
+    raw=state.get("operational_acquisition",{}).get("attempts",{}).get(point,{}).get(day.isoformat())
+    if not isinstance(raw,(list,tuple)) or len(raw)<2 or type(raw[1]) is not bool:return acquisition_diagnostic(now)
+    outcome="failed" if not raw[1] else "acquired" if len(raw)>2 and raw[2] is True else "review"
+    return acquisition_diagnostic(now,("point_physical_flow",{"at":raw[0],"outcome":outcome}))
+
+
+def gas_health(frame,first,last,now,*,state=None):
     if frame.empty:return []
     from .gas_data import select
     rows=[]
@@ -165,6 +200,10 @@ def gas_health(frame,first,last,now):
             rows.append({**row(label,str(group.scope.iloc[0] or group.point_direction.iloc[0] or "Singolo impianto"),
                 "Osservato",{},dates(last,(last-first).days+1),now),"state":"Historical"})
         else:rows.append(observation_health(visible,first,last,now))
+        if key[0]=="ENTSOG" and key[2]=="Physical Flow" and state is not None:
+            point=group.point_direction.iloc[0]
+            rows[-1].update(point_attempt(state,point,last,now))
+        else:rows[-1].update(acquisition_diagnostic(now))
     return rows
 
 
@@ -310,20 +349,42 @@ def session_health(state,now,*,inspections=None,network=None,snapshots=(),gas_ro
         ("Open-Meteo · ERA5","Proxy Italia",lambda:_weather(state,now,"era5")),
         ("Open-Meteo · outlook","Proxy Italia",lambda:_weather(state,now,"forecast"))]
     rows=[]
-    for name,scope,fn in adapters:
+    from .live_sources import STATUS
+    attempts=state.get(STATUS,{}).get("sources",{})
+    journal=state.get("operational_acquisition",{}).get("connections",{})
+    keys=("monthly","monthly","daily","agsi","alsi","terna","terna","acer","weather","weather")
+    for (name,scope,fn),key in zip(adapters,keys,strict=True):
         try:rows.append(fn())
         except (ValueError,KeyError,AttributeError,TypeError,OverflowError,ArithmeticError,IndexError):
             rows.append({**row(name,scope,"Non verificato",{},[],now),"status":"Schema da verificare",
                          "note":"Formato sessione non riconosciuto; nessun valore presunto"})
+        operational_key="srg" if key=="daily" else key
+        records=[("manual_source_batch",attempts.get(key)),
+                 ("operational_source_window",journal.get(operational_key))]
+        if key in ("agsi","alsi"):
+            platform="AGSI+" if key=="agsi" else "ALSI"
+            saved=state.get(platform+"_IT",{})
+            r=saved.get("result") or {}
+            records.append(("national_inventory_window",r.get("refresh_diagnostic")))
+            if saved.get("attempted"):
+                records.append(("national_inventory_request",{"at":saved["attempted"],
+                    "outcome":"failed" if saved.get("error") or r.get("failed") else
+                              "no_observation" if r.get("no_observation") else
+                              "cached" if r.get("cached") else "completed_unverified"}))
+        if key=="weather":
+            from .weather_source import STATE
+            at=state.get(STATE,{}).get("attempted")
+            if at:records.append(("weather_batch",{"at":at,"outcome":"completed_unverified"}))
+        rows[-1].update(acquisition_diagnostic(now,*records))
     if network is not None or gas_rows is not None:
         from .gas_data import collect
         first,last=dates(closed_gas_day(now))[0],closed_gas_day(now)
         try:
             frame=gas_rows if gas_rows is not None else collect(network,snapshots,state,now,first=first,last=last,interruptions=interruptions)
-            rows.extend(gas_health(frame.loc[frame.provider=="ENTSOG"],first,last,now))
+            rows.extend(gas_health(frame.loc[frame.provider=="ENTSOG"],first,last,now,state=state))
             gie=frame.loc[(frame.provider!="ENTSOG")&~((frame.scope=="IT")&frame.infrastructure_id.isna())]
             end=now.astimezone(ROME).date()-timedelta(days=1)
-            rows.extend(gas_health(gie,dates(end)[0],end,now))
+            rows.extend(gas_health(gie,dates(end)[0],end,now,state=state))
         except (ValueError,KeyError,AttributeError,TypeError,ArithmeticError):
             rows.append({**row("Dati gas · mappa e Explorer","Punti verificati","Non verificato",{},[],now),
                          "status":"Schema da verificare","note":"Nessuna misura presunta"})
