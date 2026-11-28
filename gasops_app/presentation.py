@@ -9,7 +9,7 @@ import streamlit as st
 from .demo_cases import briefing, cases
 from .demo_forecast import load as load_forecast
 from .italiano import data_it, numero
-from .visuals import AMBER, BLUE, MUTED, ROSE, TEAL, chip, kpi_grid, header
+from .visuals import AMBER, BLUE, MUTED, ROSE, TEAL, chip, kpi_grid, header, plot
 
 VIEWS = ("In sintesi", "Balancing", "Settlement", "Operations", "Previsioni", "Sviluppi")
 NAV = "demo_view"
@@ -37,8 +37,7 @@ def _chart(fig, key, unit, height=300):
         yaxis=dict(title=unit, gridcolor="rgba(176,190,208,.12)", automargin=True,
                    zerolinecolor="#63768b", fixedrange=True),
     )
-    st.plotly_chart(fig, key=key, width="stretch", theme=None,
-                    config={"displayModeBar": False, "scrollZoom": False})
+    plot(fig, key=key, interactive=False)
 
 
 def _sas_chart(b, key, height=290):
