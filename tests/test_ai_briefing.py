@@ -245,6 +245,31 @@ def test_compact_context_keeps_units_periods_status_and_original():
     assert len(json.dumps(projected))<len(json.dumps(original))
 
 
+def test_model_context_filters_stale_and_failed_at_all_levels_without_mutation():
+    from copy import deepcopy
+    from gasops_app.ai_response import compact_context, model_context
+
+    original={
+        "Terna":{"status":"stale","unit":"GWh elettrici","period":"2026-11-16",
+                 "values":{"load":{"value":100}}},
+        "ACER":{"status":"available","values":[
+            {"status":"available","value":42},
+            {"status":"failed","value":999,"unit":"€/MWh"},
+            {"status":"unavailable","value":888}]},
+        "GME":{"status":"available","value":77},
+    }
+    before=deepcopy(original)
+    assert compact_context(original)==before
+    safe=model_context(original)
+    assert safe["Terna"]=={"status":"stale","unit":"GWh elettrici","period":"2026-11-16"}
+    assert safe["ACER"]["values"]==[
+        {"status":"available","value":42},
+        {"status":"failed","unit":"€/MWh"},
+        {"status":"unavailable"}]
+    assert "GME" not in safe
+    assert original==before
+
+
 
 def test_section_parser_normalizes_only_known_references():
     import pytest
