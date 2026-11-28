@@ -7,6 +7,7 @@ model calls. Only explicit historical intervals enter this path.
 from datetime import date, timedelta
 from hashlib import sha256
 import json
+import math
 import re
 
 import pandas as pd
@@ -35,7 +36,7 @@ EXCLUDED=r"\b(?:prevision\w*|forecast|simul\w*|scenario|stress|settlement|pdf|do
 def operation(question):
     # "totale medio" describes an average of a total series, not a sum.
     found=[key for key,pattern in OPS.items() if re.search(pattern,question,re.I)]
-    if "mean" in found and "sum" in found:
+    if "mean" in found and "sum" in found and re.search(r"\btotale\s+medi[oa]\b",question,re.I):
         found.remove("sum")
     if len(found)==1:
         return found[0]
@@ -104,6 +105,8 @@ def metric_keys(question,grain):
         raise ValueError("Indicatore non ancora supportato dal motore su intervalli; nessuna fonte sostitutiva.")
     if re.search(r"\b(?:elettric\w*|power)\b",text) and not re.search(r"\b(?:gas|metano|srg|entsog)\b",text):
         raise ValueError("Il mercato elettrico non è un indicatore di gas.")
+    if re.search(r"\b(?:consum\w*|domanda|fabbisogn\w*|produzion\w*)\s+(?:di\s+)?(?:energia\s+)?elettric\w*\b",text):
+        raise ValueError("I consuntivi elettrici Terna non sono ancora supportati dalle interrogazioni storiche in chat.")
     if re.search(r"\b(?:nord|sud|lombardia|sicilia|piemonte|regione|regional\w*|bergamo|milano|tarvisio|mazara|melendugno|passo gries)\b",text):
         raise ValueError("Perimetro regionale o di punto non supportato.")
     chosen=[]
@@ -154,8 +157,8 @@ def metric_keys(question,grain):
         explicit_srg=bool(re.search(r"\b(?:srg|entsog|preliev\w*)\b",text)) and not storage
         if grain=="month" and explicit_srg:
             raise ValueError("SRG è giornaliero; non sostituire i prelievi con il bilancio nazionale.")
-        if grain=="gas_day" and re.search(r"\b(?:nazional\w*|eurostat)\b",text):
-            raise ValueError("Il consumo nazionale Eurostat è mensile. I prelievi SRG sono un proxy distinto.")
+        if grain=="gas_day" and (re.search(r"\b(?:nazional\w*|eurostat)\b",text) or not explicit_srg and not re.search(r"\b(?:srg|entsog)\b",text)):
+            raise ValueError("Il consumo nazionale Eurostat è mensile. Per giorni gas specifica i prelievi SRG, un perimetro distinto.")
         add(src.MONTHLY if grain=="month" else src.DAILY,"demand_gwh")
     if not chosen:
         raise ValueError("Indicatore non riconosciuto. Specifica consumi, importazioni, produzione, CMEM,m o stoccaggi.")
@@ -166,6 +169,8 @@ def build_plan(question,now):
     from .country_analysis import requested_country
     if requested_country(question) is not None:
         raise ValueError("Il motore su intervalli supporta per ora soltanto l'Italia.")
+    if re.search(r"\b(?:rispetto|precedent\w*|confront\w*|anno su anno|mese su mese)\b",question,re.I):
+        raise ValueError("Il confronto tra intervalli distinti non è ancora supportato. Richiedi una statistica su un solo intervallo.")
     op=operation(question)
     if not op:
         raise ValueError("Richiedi una sola operazione: media, totale, minimo, massimo, variazione, deviazione standard o correlazione.")
@@ -213,14 +218,14 @@ def acquire(store,plan,now,gie_key=""):
                     raise ValueError("Origine non compatibile")
                 frame=inspect(bundle,now).usable
                 source_name,url=bundle.origin.name,bundle.origin.url
-                status="Ultima cache valida" if bundle.origin.refresh_failed else "Dato pubblicato; soggetto a revisione"
+                status=("Ultima cache valida" if bundle.origin.refresh_failed else "Dato pubblicato; soggetto a revisione")+" · acquisito "+bundle.origin.retrieved_at.isoformat()
                 origin=bundle.fingerprint
                 scope="Italia" if source==src.MONTHLY else "Tre aggregati di prelievo SRG; non consumo nazionale"
                 raw={field:zip(frame.index.date,frame[field]) for field in fields if field in bundle.origin.fields}
             elif source==src.PRICE:
                 result=load_arera(store)
                 source_name,url=result.source.name,result.source.url
-                status="Ultima cache valida" if result.source.refresh_failed else "Riferimento mensile gas, non spot"
+                status=("Ultima cache valida" if result.source.refresh_failed else "Riferimento mensile gas, non spot")+" · acquisito "+result.source.retrieved_at.isoformat()
                 origin=result.source.retrieved_at.isoformat()
                 scope="Italia";raw={"value":result.rows.items()}
             elif source=="AGSI+":
@@ -229,7 +234,7 @@ def acquire(store,plan,now,gie_key=""):
                     raise ValueError("Perimetro non compatibile")
                 frame=result["frame"]
                 source_name,url=result["source"],result["source_url"]
-                status="Ultima cache valida" if result["failed"] else "Dati GIE, possibili stime e revisioni"
+                status=("Ultima cache valida" if result["failed"] else "Dati GIE, possibili stime e revisioni")+" · acquisito "+result["acquired"].isoformat()
                 origin=result["acquired"].isoformat()
                 scope="Italia · perimetro GIE"
                 raw={field:zip(frame.gas_day,frame[field]) for field in fields if field in frame}
@@ -277,11 +282,14 @@ def calculate(plan,items,issues):
                     row["value"]=float(v.std(ddof=1))
             elif op=="change":
                 row["value"]=s["change"]
-                row["change_pct"]=s["change_pct"] if metric.quantity!="ratio" else None
+                row["change_pct"]=s["change_pct"] if metric.quantity!="ratio" and s["change_pct"] is not None and math.isfinite(s["change_pct"]) else None
                 if metric.quantity=="ratio":row["unit"]="p.p."
                 row["first_value"]=s["first_value"];row["last_value"]=s["last_value"]
             elif op!="correlation":
                 row["value"]=s[op]
+        if row["value"] is not None and not math.isfinite(row["value"]):
+            row["value"]=None
+            row["reason"]="Risultato numerico non valido."
         out.append(row)
     result={"plan":plan,"rows":out,"correlations":[]}
     if op=="correlation" and len(valid)==2:
