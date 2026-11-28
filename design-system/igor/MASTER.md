@@ -123,3 +123,8 @@ The system overview is operational only: do not render or construct synthetic su
 ## Remove rather than duplicate
 
 Retire the standalone guided BSO showcase and executive walkthrough: their examples duplicate the actual balancing, settlement, operations and forecast tools. Keep examples only inside their relevant tools, explicitly labeled and never preferred to available real data. The operational overview renders the map directly. Preserve the existing public JRC archive, forecast/backtest engines, ACER evidence, import validation and operational tests. The retired /demo URL is intentionally no longer a registered destination. Existing Executive demo session selections migrate to operational indicators. Delete dedicated demo code, snapshot and CSS rather than keeping hidden copies.
+
+
+## One task at a time
+
+Commercial tools render only the selected view. Open actual document reconciliation by default; offer sample invoices explicitly only without an imported balance register. Do not mix simulated invoice, guarantee and calendar metrics into a global summary. Keep the existing settlement desk as the single balance/revision register; retain the distinct GNL allocation calculator. Do not repeat navigation catalogs or empty-state instructions when native controls already communicate the action. Keep required source, simulation and data-availability notices. Preserve core invoice and credit draft fields across commercial view changes in the session.
