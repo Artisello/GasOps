@@ -7,7 +7,7 @@ import streamlit as st
 
 from .italiano import ESITI, GRAVITA, TIPI, numero
 from .market import demand_trend_question, demand_readout
-from .assistant_sources import source_rows
+from .assistant_sources import source_rows, COMMANDS
 from .models import Agent, AGENT_LABELS, Kind, Run, utc_now
 from .reports import markdown
 from . import session
@@ -300,7 +300,13 @@ def assistant_page():
             shortcut=question
     full=controls[3].button("Bollettino",key="assistant_briefing",width="stretch",disabled=disabled,
                             help="Genera bollettino locale" if local else "Genera bollettino AI")
-    question=None if local else st.chat_input("Fai una domanda sul mercato del gas…",key="assistant_question",max_chars=600)
+    if not local:
+        with st.popover("Info · comandi",icon=":material/info:"):
+            st.caption("Scrivi una domanda libera oppure un comando.")
+            for command,example in COMMANDS.items():
+                st.markdown("**"+command+"** · "+example)
+            st.caption("Esempi: /scorte 20/11/2026 · /mase 2025")
+    question=None if local else st.chat_input("Chiedi qualcosa sul gas…",key="assistant_question",max_chars=600)
     requested=DAILY_BRIEFING if full else shortcut or (question.strip() if question else "")
 
     def render(report,*,fresh=False):
