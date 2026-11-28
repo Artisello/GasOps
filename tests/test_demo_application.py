@@ -10,21 +10,18 @@ from gasops_app.llm import LLMConfig
 from gasops_app.operations_ledger import sample_rows
 
 ROOT=Path(__file__).resolve().parents[1]
-PATHS=("","market","security-of-supply","balancing","ledger","risk","regulatory","operations","kpi","connections","demo")
+PATHS=("","market","security-of-supply","balancing","ledger","risk","regulatory","operations","kpi","connections")
 
 
-def test_home_works_with_presentation_module_loaded_before_sidebar_release(monkeypatch):
-    from gasops_app import presentation
-    # Cloud can retain the presentation module from the preceding release,
-    # which has the overview renderer but not the newer `home` convenience alias.
-    monkeypatch.delattr(presentation,"home")
+def test_home_has_no_standalone_demo_route(monkeypatch):
     monkeypatch.delenv("GASOPS_APP_MODE",raising=False)
     app=AppTest.from_file(ROOT/"app.py",default_timeout=30)
-    app.session_state[ARCHIVE_KEY] = True
+    app.session_state[ARCHIVE_KEY]=True
     app.run()
     assert not app.exception
     assert app.title[0].value=="I.G.O.R. - Sistema Gas Italiano"
-    assert len(app.get("page_link"))==11
+    assert {link.proto.page for link in app.get("page_link")}==set(PATHS)
+    assert not any(b.key and b.key.startswith("demo_example_") for b in app.button)
     assert {chart.key for chart in app.get("plotly_chart")}=={"net_overview_entsog_history"}
 
 
@@ -36,7 +33,7 @@ def test_home_does_not_call_a_cached_callback_from_the_previous_release(monkeypa
     app=AppTest.from_file(ROOT/"app.py",default_timeout=30).run()
     assert not app.exception
     assert app.title[0].value=="I.G.O.R. - Sistema Gas Italiano"
-    assert len(app.get("page_link"))==11
+    assert len(app.get("page_link"))==10
 
 
 def test_ready_assistant_respects_local_mode_and_does_not_regenerate_after_clear(monkeypatch):
@@ -74,13 +71,13 @@ def test_every_feature_route_is_reachable_offline_and_preserves_imports(monkeypa
     links={x.proto.page:x.proto.page_script_hash for x in app.get("page_link")}
     assert set(links)==set(PATHS)
     assert "sidebar_state" not in app.session_state
-    for path in ("balancing","operations","security-of-supply","risk","ledger","regulatory","kpi","connections","market","demo",""):
+    for path in ("balancing","operations","security-of-supply","risk","ledger","regulatory","kpi","connections","market",""):
         # Streamlit AppTest.switch_page only supports file pages; these are callable
         # pages. Use the actual hash exposed by each rendered native page link.
         app._page_hash=links[path]
         app.run()
         assert not app.exception,(path,[e.message for e in app.exception])
-        assert len(app.get("page_link"))==11
+        assert len(app.get("page_link"))==10
         assert len(app.title)==1,(path,[t.value for t in app.title])
         assert app.title[0].value
         assert app.session_state["settlement_desk_csv_v1"]["sha"]==saved["sha"]
