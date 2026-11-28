@@ -207,7 +207,9 @@ def _events(status,by_point,point):
         current=[e for e in status.active_events if point is None or e.get("infrastructure_id")==by_point[point]["infrastructure_id"]]
         if current:
             st.dataframe(pd.DataFrame(current),hide_index=True,width="stretch")
-        else:st.caption("Nessun evento documentato associato al punto nella copia disponibile. Copertura degli avvisi parziale.")
+        else:
+            from .system_status import event_monitoring_label
+            st.caption(event_monitoring_label(status)+". Nessun evento documentato nella selezione; assenza di indisponibilità non verificabile.")
         st.caption("Nessuna azione operativa documentata. I risultati I.G.O.R. non attestano interventi eseguiti.")
 
 
