@@ -6,6 +6,7 @@ import re
 from .assistant_sources import (
     ACER, DAILY, GIE, GME, MASE, MONTHLY, NETWORK, POWER, PRICE, WEATHER,
     add_price_source, complete_requirements, gme_indicators, safe_source_url, source_evidence, useful_source,
+    electricity_price_question, query_months, query_days, mentions_day, explicit_period_comparison,
 )
 from .models import Kind, Origin, Run
 from .supervisor import execute
@@ -106,7 +107,24 @@ def collect_context(
 
 def gme_request(question, day):
     kinds=gme_indicators(question)
-    return {"kinds":list(kinds),"day":day.isoformat() if day else None} if kinds else None
+    result={"kinds":list(kinds),"day":day.isoformat() if day else None}
+    if electricity_price_question(question):
+        # GME observations never enter the public evidence or provider payload.
+        result["kinds"].append("pun")
+        months=query_months(question)
+        days=query_days(question)
+        text=question.casefold()
+        unsupported=(len(months)>1 or days is None or bool(days and len(days)>1)
+            or explicit_period_comparison(question) or (months and (day or mentions_day(question)))
+            or (not day and mentions_day(question))
+            or bool(re.search(r"\b(?:settiman\w*|annuale|annui|annuo|orar\w*|quartorar\w*|domest\w*|bollett\w*|tariff\w*|zonal\w*|fasci\w*|ultim[oi]\s+\d+|ultim[oa]\s+(?:mese|anno)|mensil\w*|mesi|anni|giorni|prevision\w*|forecast|retail|contratt\w*)\b",text) and not months)
+            or bool(re.search(r"\b(?:domest\w*|bollett\w*|tariff\w*|zonal\w*|fasci\w*|orar\w*|prevision\w*|forecast|retail|contratt\w*)\b",text))
+            or (not months and not day and bool(re.search(r"\b20\d{2}\b",text))))
+        if unsupported:
+            result["pun_unsupported"]=True
+        elif months:
+            result["pun_month"]=months[0].isoformat()
+    return result if result["kinds"] else None
 
 
 def lookup_report(question, public, now, *, day=None, scope="IT", reasoner=None, issue=None):

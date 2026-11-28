@@ -612,8 +612,8 @@ def launch(selection: Selection | None, question: str = DAILY_BRIEFING, *, full:
     requested=() if full else requested_sources(question)
     day=None if full else query_day(question,today=utc_now().astimezone(ROME).date())
     if automatic and requested==(ELECTRIC_PRICE,):
-        # There is no integrated electricity-price dataset. No API or model
-        # call can turn gas evidence into an electricity observation.
+        # PUN is a session-local readout, not provider evidence. No API or
+        # model call can turn gas evidence into an electricity observation.
         public=complete_requirements({},requested)
         report=lookup_report(question,public,utc_now(),day=day,scope=country or "IT",reasoner=None)
         st.session_state["last_run"]=report
@@ -753,7 +753,7 @@ def launch(selection: Selection | None, question: str = DAILY_BRIEFING, *, full:
     if model is None:
         report.assumptions["ai_mode_reason"] = ("Modalità locale selezionata" if ai_policy=="off" or ai_configured()
                                                else "Modello AI non configurato o configurazione non valida")
-    if GME in requested:
+    if (GME in requested or ELECTRIC_PRICE in requested) and (country or "IT")=="IT":
         from .assistant_lookup import gme_request
         report.assumptions["gme_request"]=gme_request(question,day)
     st.session_state["last_run"] = report

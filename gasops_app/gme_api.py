@@ -206,7 +206,7 @@ class Client:
         # The working example in the user manual sends yyyyMMdd as strings.
         body = {"platform": "PublicMarketResults", "segment": segment, "dataName": spec.name,
                 "intervalStart": first.strftime("%Y%m%d"), "intervalEnd": last.strftime("%Y%m%d"),
-                "attributes": {}}
+                "attributes": {"GranularityType": "PT60"} if kind == "pun" else {}}
         with self._lock:
             quotas = self._quotas()
             if any(used >= limit for used, limit in quotas.values()):
