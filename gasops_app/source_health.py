@@ -106,7 +106,7 @@ def observation_health(frame,first,last,now):
             candidates.append((day,at,published,r))
     # Prefer the most recent usable period, not the most recently downloaded
     # historical row. For intervals, prefer the latest actual start on ties.
-    anchor=max(candidates,key=lambda x:(x[0],x[1],_stamp(x[3].period_from) or x[1]),default=None)
+    anchor=max(candidates,key=lambda x:(x[0],_stamp(x[3].period_from) or x[1],x[1]),default=None)
     at=anchor[1] if anchor else None
     published=anchor[2] if anchor else None
     latest=anchor[0] if anchor else None
@@ -130,10 +130,12 @@ def observation_health(frame,first,last,now):
         note="Copertura dei record, non dei giorni senza eventi" if interval else "Giorni gas distinti; nessuna interpolazione")
     current=closed_gas_day(now) if frame.provider.iloc[0]=="ENTSOG" else now.astimezone(ROME).date()-timedelta(days=1)
     partial=review or item["valid"]<item["expected"] or bool(frame.cached.isna().any())
+    window_from=min((t for v in frame.period_from if (t:=_stamp(v)) is not None),default=None)
+    window_to=max((t for v in frame.period_to if (t:=_stamp(v)) is not None),default=None)
     temporal=temporal_evidence(now=now,gas_day=latest,retrieved_at=at,current_day=current,
         observed_at=published,published_at=published,
-        period_from=min((t for v in frame.period_from if (t:=_stamp(v)) is not None),default=None),
-        period_to=max((t for v in frame.period_to if (t:=_stamp(v)) is not None),default=None),
+        period_from=_stamp(anchor[3].period_from) if anchor else None,
+        period_to=_stamp(anchor[3].period_to) if anchor else None,
         valid=item["valid"],expected=item["expected"],cached=bool(anchor and not pd.isna(anchor[3].cached) and anchor[3].cached),
         failed=failed,partial=partial,ttl=ttl,publication_status="Confirmed" if confirmed.all() else "Non confermato",
         historical=last<current)
@@ -143,6 +145,8 @@ def observation_health(frame,first,last,now):
         "failed":failed,"cache_age_hours":round(oldest_age.total_seconds()/3600,2) if oldest_age is not None else None,
         "oldest_acquired":oldest.isoformat() if oldest else None,
         "newest_acquired":newest.isoformat() if newest else None,
+        "coverage_period":{"from":window_from.isoformat() if window_from else None,
+                           "to":window_to.isoformat() if window_to else None},
         "timestamp_basis":"Ultima osservazione utilizzabile; acquisizione e pubblicazione della stessa riga",
         "timestamp_issues":temporal_issues,
         "coverage_basis":"record" if interval else "giorni gas",
