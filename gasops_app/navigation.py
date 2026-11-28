@@ -4,11 +4,11 @@ import streamlit as st
 GROUPS=(
     ("Operatività",("security-of-supply","balancing","ledger","kpi")),
     ("Analisi",("market","risk")),
-    ("Strumenti",("regulatory","operations","connections","demo")),
+    ("Strumenti",("regulatory","operations","connections")),
 )
 LABELS={"security-of-supply":"Rete e forniture",
         "balancing":"Bilanciamento",
-        "connections":"Fonti e API","demo":"Esempi guidati","kpi":"Attività e indicatori"}
+        "connections":"Fonti e API","kpi":"Attività e indicatori"}
 HINTS={"":"Mappa della rete, flussi e avvisi.","balancing":"Confronta quantità programmate e misurate; verifica i saldi.",
        "ledger":"Esplora fatture, garanzie e scadenze con esempi dichiarati.",
        "kpi":"Segui attività, scadenze e indicatori operativi.","market":"Leggi i consumi e calcola una previsione quando serve.",
@@ -16,7 +16,7 @@ HINTS={"":"Mappa della rete, flussi e avvisi.","balancing":"Confronta quantità 
        "risk":"Confronta uno scenario di stress con la situazione di partenza.",
        "regulatory":"Cerca nei documenti pubblici o nei PDF della tua sessione.",
        "operations":"Genera un report o fai una domanda all’assistente.",
-       "connections":"Controlla quali fonti sono configurate e verificate.","demo":"Prova il programma con esempi guidati."}
+       "connections":"Controlla quali fonti sono configurate e verificate."}
 
 
 def sidebar_navigation(pages,current):
