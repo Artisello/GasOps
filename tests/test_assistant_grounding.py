@@ -394,3 +394,108 @@ def test_local_document_rag_keeps_verified_page_citation(monkeypatch):
     assert report.mode=="LLM-assisted"
     assert report.assumptions["document_claims"][0]["citation"]["page"]==5
     assert report.interpretation=="Il preavviso è di sette giorni."
+
+
+def test_explicit_period_parser_distinguishes_days_and_months():
+    assert sources.query_days("Confronta 20/11/2026 e 21 novembre 2026")==(
+        date(2026,11,20),date(2026,11,21))
+    assert sources.query_days("31/11/2026") is None
+    assert sources.query_months("Settembre 2026 e 2026-10")==(
+        date(2026,9,1),date(2026,10,1))
+    assert sources.query_months("20 novembre 2026 e 2026-11-21")==()
+
+
+def test_hub_quotes_are_not_other_price_indicators():
+    assert sources.requested_sources("Prezzo TTF spot oggi")== (sources.TTF_QUOTE,)
+    assert sources.requested_sources("Prezzo PSV day-ahead")== (sources.PSV_QUOTE,)
+    assert sources.requested_sources("Prezzo PSV del 20/11/2026")== (sources.PSV_QUOTE,)
+    assert sources.requested_sources("Riferimento mensile PSV ARERA CMEM,m")== (sources.PRICE,)
+    assert sources.requested_sources("Differenziale GNL–TTF ACER")== (sources.ACER,)
+    assert "non è il prezzo TTF" in sources.complete_requirements({},(sources.TTF_QUOTE,))[sources.TTF_QUOTE]["reason"]
+
+
+def test_nested_stale_price_is_not_sent_to_model_and_frequency_is_checked():
+    public={
+        sources.ACER:{"status":"available","unit":"€/MWh","values":{
+            "eu":{"value":40,"status":"available"},"benchmark":{"value":999,"status":"stale"}}},
+        sources.MONTHLY:{"status":"available","grain":"mese","unit":"GWh/mese",
+                         "values":{"demand_gwh":12000}},
+    }
+    safe=model_context(public)
+    assert safe[sources.ACER]["values"]["benchmark"]=={"status":"stale"}
+    verify_measurements([{"text":"12000 GWh/mese","references":["src:"+sources.MONTHLY]}],{},safe)
+    with pytest.raises(InvalidSynthesis,match="giornaliera e mensile"):
+        verify_measurements([{"text":"12000 GWh/giorno gas","references":["src:"+sources.MONTHLY]}],{},safe)
+
+
+def test_period_comparison_uses_only_exact_compatible_observations():
+    first,last="2026-09-01","2026-10-01"
+    def snapshot(period,value):
+        return {sources.PRICE:{"source":"ARERA","status":"available","scope":"IT","grain":"mese",
+                               "unit":"€/MWh","period":period,"value":value}}
+    a,b=snapshot(first,40),snapshot(last,50)
+    rows=sources.period_comparison(a,b,first=first,last=last,monthly=True)
+    assert len(rows)==1 and rows[0]["delta"]==10 and rows[0]["delta_pct"]==25
+    assert not sources.period_comparison(a,b,first=first,last="2026-11-01",monthly=True)
+    b[sources.PRICE]["quality_review"]=True
+    assert not sources.period_comparison(a,b,first=first,last=last,monthly=True)
+
+
+def test_automatic_assistant_compares_two_months_without_llm_or_latest_substitution(monkeypatch):
+    from gasops_app import session
+    monkeypatch.setattr(session,"utc_now",lambda:NOW)
+    calls=[]
+    def collect(context,selected,requested,**kw):
+        calls.append((requested,kw["day"]))
+        value={date(2026,9,1):40,date(2026,10,1):50}[kw["day"]]
+        return {sources.PRICE:{"source":"ARERA","status":"available","scope":"IT","grain":"mese",
+                              "unit":"€/MWh","period":kw["day"].isoformat(),"value":value}}
+    monkeypatch.setattr(session,"_collect_assistant_sources",collect)
+    app=AppTest.from_string("""
+from gasops_app.session import launch
+from gasops_app.assistant_page import _report
+report=launch(None,"Confronta CMEM,m settembre 2026 e ottobre 2026",ai_policy="off")
+_report(report,None)
+""").run()
+    assert not app.exception
+    report=app.session_state["last_run"]
+    assert report.assumptions["assistant_period_comparison"]
+    assert report.assumptions["assistant_comparison"][0]["delta"]==10
+    assert len(app.dataframe)==1
+    assert calls==[((sources.PRICE,),date(2026,9,1)),((sources.PRICE,),date(2026,10,1))]
+
+
+def test_precise_gie_requests_actual_historical_window(monkeypatch):
+    from gasops_app import briefing_context as b
+    historical=date(2025,1,15)
+    calls=[]
+    def fetch(store,key,scope,**kwargs):
+        calls.append((kwargs["first"],kwargs["last"]))
+        return {"frame":pd.DataFrame([{"gas_day":historical,"status":"C","stock_twh":70}]),
+                "scope":scope,"acquired":NOW,"failed":False}
+    monkeypatch.setattr(b,"load_agsi",fetch)
+    item=b.collect(None,None,NOW,key="fixture",include_gie=True,only={"AGSI+"},
+                   day=historical,clock=lambda:NOW)["AGSI+"]
+    assert item["gas_day"]==historical.isoformat() and item["status"]=="available"
+    assert calls==[(historical,historical)]
+    assert b.collect(None,None,NOW,key="fixture",include_gie=True,only={"AGSI+"},
+                     day=NOW.date(),clock=lambda:NOW)["AGSI+"]["status"]=="unavailable"
+    assert len(calls)==1
+
+
+def test_precise_srg_uses_bounded_historical_range(monkeypatch):
+    from gasops_app import briefing_market_sources as m
+    historical=date(2025,1,15)
+    calls=[]
+    def fetch(store,first,last,**kwargs):
+        calls.append((first,last))
+        return object()
+    monkeypatch.setattr(m,"load_daily_range",fetch)
+    monkeypatch.setattr(m,"combine_daily",lambda *a:object())
+    monkeypatch.setattr(m,"market_context",lambda bundle,now,day=None:{
+        "status":"available","period":day.isoformat(),"values":{"demand_gwh":120}})
+    monkeypatch.setattr(m,"load_daily",lambda *a,**k:pytest.fail("Do not load latest SRG history"))
+    result=m.collect_market_sources(None,None,NOW,{},only={sources.DAILY},day=historical,
+                                   clock=lambda:NOW)
+    assert result[sources.DAILY]["period"]==historical.isoformat()
+    assert calls==[(historical-timedelta(days=13),historical)]
