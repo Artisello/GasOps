@@ -127,16 +127,16 @@ def verify_price_semantics(sections, public):
     from .assistant_sources import electricity_price_question
     for section in sections:
         # Keep decimal points and CMEM,m intact; split only sentence boundaries.
-        sentences=re.split(r"(?<=[.!?;])\s+|\n+",section["text"])
+        sentences=re.split(r"(?<=[!?;])\s+|(?<!\bes)(?<!\bad)\.\s+|\n+",section["text"],flags=re.I)
         for sentence in sentences:
             for match in _CLAIM.finditer(sentence):
                 if _unit(match["unit"])!="€/mwh":
                     continue
                 prefix=sentence[:match.start()]
-                if electricity_price_question(prefix):
-                    # An explicit denial is a limitation, not a price claim.
-                    if re.search(r"\b(?:non disponibile|non integrat\w*|non è|non rappresenta|non corrisponde)\b",prefix,re.I):
-                        continue
+                # A preceding semicolon separates a missing-price statement
+                # from a separately labelled gas figure. Do not waive this
+                # check just because another clause contains a negation.
+                if electricity_price_question(prefix) and not re.search(r"\b(?:cmem|psv|ttf|gnl|lng)\b[^;:]{0,40}$",prefix,re.I):
                     raise InvalidSynthesis("Prezzo elettrico non verificabile: le fonti gas non sono quotazioni elettriche.")
             # A recommendation to use PSV/TTF as an electricity spot
             # price is erroneous even without a numerical claim.
