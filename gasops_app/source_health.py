@@ -185,7 +185,7 @@ def point_attempt(state,point,day,now):
     # Journal records exact-day physical-flow coverage, not per-indicator probes.
     raw=state.get("operational_acquisition",{}).get("attempts",{}).get(point,{}).get(day.isoformat())
     if not isinstance(raw,(list,tuple)) or len(raw)<2 or type(raw[1]) is not bool:return acquisition_diagnostic(now)
-    outcome="failed" if not raw[1] else "acquired" if len(raw)>2 and raw[2] is True else "review"
+    outcome="failed" if not raw[1] else "completed_unverified" if len(raw)>2 and raw[2] is True else "review"
     return acquisition_diagnostic(now,("point_physical_flow",{"at":raw[0],"outcome":outcome}))
 
 
@@ -368,9 +368,12 @@ def session_health(state,now,*,inspections=None,network=None,snapshots=(),gas_ro
             records.append(("national_inventory_window",r.get("refresh_diagnostic")))
             if saved.get("attempted"):
                 records.append(("national_inventory_request",{"at":saved["attempted"],
-                    "outcome":"failed" if saved.get("error") or r.get("failed") else
-                              "no_observation" if r.get("no_observation") else
+                    "outcome":"no_observation" if saved.get("outcome")=="no_observation" or r.get("no_observation") else
+                              "failed" if saved.get("error") or r.get("failed") else
                               "cached" if r.get("cached") else "completed_unverified"}))
+        if key in ("terna","acer"):
+            at=state.get("terna_power_attempt_v1" if key=="terna" else "acer_lng_attempt_v1")
+            if at:records.append(("dedicated_view_request",{"at":at,"outcome":"completed_unverified"}))
         if key=="weather":
             from .weather_source import STATE
             at=state.get(STATE,{}).get("attempted")
@@ -387,7 +390,7 @@ def session_health(state,now,*,inspections=None,network=None,snapshots=(),gas_ro
             rows.extend(gas_health(gie,dates(end)[0],end,now,state=state))
         except (ValueError,KeyError,AttributeError,TypeError,ArithmeticError):
             rows.append({**row("Dati gas · mappa e Explorer","Punti verificati","Non verificato",{},[],now),
-                         "status":"Schema da verificare","note":"Nessuna misura presunta"})
+                         "status":"Schema da verificare","note":"Nessuna misura presunta",**acquisition_diagnostic(now)})
     return rows
 
 
