@@ -313,13 +313,12 @@ def source_rows(run):
 # Conversational date changes are intentionally narrow. Never use model prose,
 # inferred dates or a different source as an instruction for the next analysis.
 _FOLLOWUP_DATE = re.compile(
-    r"^(?:e\s+)?(?:(?:in\s+data|per\s+il|per|del|il|al|a)\s+)?("
-    + DATE_TEXT.replace("(?<!\\d)","").replace("(?!\\d)","")
-    + "|" + _MONTH_DATE.replace("(?<!\\d)","").replace("(?!\\d)","")
+    r"^(?:e\s+)?(?:rispetto\s+)?(?:(?:in\s+data|per\s+il|per|del|il|al|a)\s+)?("
+    + DATE_TEXT + "|" + _MONTH_DATE
     + r"|ieri|oggi|domani)\s*[?.!]*$", re.I)
 _FOLLOWUP_PREVIOUS = re.compile(
     r"^(?:e\s+)?(?:rispetto\s+)?(?:(?:al|a|il)\s+)?"
-    r"(giorno precedente|giorno prima|sette giorni prima|7 giorni prima)\s*[?.!]*$", re.I)
+    r"(giorno precedente|giorno prima|sette giorni prima|7 giorni prima|lo stesso giorno della settimana precedente|stesso giorno della settimana precedente)\s*[?.!]*$", re.I)
 _FOLLOWUP_REFERENCE = re.compile(
     r"^(?:e\s+(?:in|nel|nella|per|il|al|a|rispetto|quanto|come|quali|la|le|lo|i|gli)\b"
     r"|(?:e\s+)?rispetto\b|(?:e\s+)?(?:fammi|mostrami|crea|disegna|genera)\s+(?:un\s+)?grafico\b"
@@ -345,7 +344,7 @@ def resolve_followup(question, previous, *, today):
         # A complete new question is not a continuation merely because it
         # begins with 'e'. Only short, unresolved references are intercepted.
         if _FOLLOWUP_REFERENCE.search(text):
-            if re.search(r"\bgrafico\b|perch[eé]|\brispetto\b|settimana precedente|mese precedente|anno precedente",text,re.I) or not requested_sources(text):
+            if re.search(r"\bgrafico\b|perch[eé]|\brispetto\b|settimana precedente|mese precedente|anno precedente",text,re.I) or not (requested_sources(text) and mentions_day(text)):
                 return None,"Specifica il dato e il periodo da confrontare o rappresentare."
         return text,None
 
@@ -356,8 +355,10 @@ def resolve_followup(question, previous, *, today):
         return None,"Indica l’indicatore da consultare e la data: l’analisi precedente non è una consultazione puntuale."
     base=previous.question
     sources=set(requested_sources(base))
-    if not sources or not sources <= _DAILY_FOLLOWUP_SOURCES:
+    if base.startswith("/") or not sources or not sources <= _DAILY_FOLLOWUP_SOURCES:
         return None,"Per cambiare periodo, specifica anche l’indicatore; non tutte le fonti pubblicano dati giornalieri."
+    if not sources <= (set(assumptions.get("public_operational_context") or {}) | ({GME} if assumptions.get("gme_request") else set())):
+        return None,"Nessuna fonte identificata con certezza nella richiesta precedente. Specifica dato e data."
     if re.search(r"\b(?:simula|scenario|stress|prevision\w*|confront\w*|settimanal\w*|mensil\w*)\b",base,re.I):
         return None,"Specifica il dato da consultare e la data, senza riutilizzare le ipotesi precedenti."
 
@@ -389,10 +390,74 @@ def resolve_followup(question, previous, *, today):
             anchor=date.fromisoformat(raw)
         except (TypeError,ValueError):
             return None,"Indica la data di partenza."
-        day=anchor-timedelta(days=7 if relative.group(1).lower() in ("sette giorni prima","7 giorni prima") else 1)
+        try:
+            day=anchor-timedelta(days=1 if relative.group(1).lower() in ("giorno precedente","giorno prima") else 7)
+        except OverflowError:
+            return None,"Indica una data valida."
     resolved=stripped+" del "+day.isoformat()
     if len(resolved)>600:
         return None,"Formula una domanda più breve."
     if set(requested_sources(resolved))!=sources:
         return None,"Specifica il dato e la data in una nuova domanda."
     return resolved,None
+
+
+def wants_day_comparison(question):
+    return bool(re.match(r"^(?:e\s+)?rispetto\b",question.strip(),re.I))
+
+
+# Only documented, like-for-like observed daily indicators. No comparison of
+# forecast estimates, licensed GME data, partial aggregates or missing values.
+_COMPARABLE_DAILY = {
+    "AGSI+": (("fill_pct","Riempimento","%",True),("stock_twh","Giacenza","TWh",False),
+              ("withdrawal_gwh_d","Prelievo","GWh/g",False),("injection_gwh_d","Iniezione","GWh/g",False)),
+    "ALSI": (("inventory_gwh","Inventario GNL","GWh",False),("sendout_gwh_d","GNL immesso in rete","GWh/g",False)),
+    DAILY: (("demand_gwh","Prelievi SRG","GWh/g",False),("distribution_gwh","Distribuzione","GWh/g",False),
+            ("industry_gwh","Industria","GWh/g",False),("power_gwh","Termoelettrico","GWh/g",False)),
+}
+
+
+def day_comparison(previous,current):
+    """JSON-safe deterministic comparison, previous chat observation -> new day.
+
+    Compare only complete validated observations, identical source/scope and
+    distinct exact periods; never round before calculating. No model calls.
+    """
+    if previous is None:
+        return []
+    before=previous.assumptions.get("public_operational_context") or {}
+    after=current.assumptions.get("public_operational_context") or {}
+    if previous.assumptions.get("requested_country")!=current.assumptions.get("requested_country"):
+        return []
+    rows=[]
+    for key,specs in _COMPARABLE_DAILY.items():
+        a,b=before.get(key,{}),after.get(key,{})
+        if a.get("status")!="available" or b.get("status")!="available":
+            continue
+        if not a.get("scope") or a.get("scope")!=b.get("scope") or a.get("source")!=b.get("source"):
+            continue
+        if a.get("grain")!=b.get("grain") or a.get("unit")!=b.get("unit"):
+            continue
+        old_day=a.get("gas_day") or a.get("period")
+        new_day=b.get("gas_day") or b.get("period")
+        try:
+            if date.fromisoformat(old_day)==date.fromisoformat(new_day):
+                continue
+        except (ValueError,TypeError):
+            continue
+        if new_day!=current.assumptions.get("requested_day"):
+            continue
+        if previous.assumptions.get("requested_day") not in (None,old_day):
+            continue
+        av,bv=a.get("values",{}),b.get("values",{})
+        for field,label,unit,is_pct in specs:
+            x,y=av.get(field),bv.get(field)
+            if not all(type(v) in (float,int) and isfinite(v) for v in (x,y)):
+                continue
+            delta=y-x
+            if not isfinite(delta):
+                continue
+            rows.append({"source":a.get("source") or key,"scope":a["scope"],"metric":label,
+                         "before_day":old_day,"after_day":new_day,"before":x,"after":y,
+                         "unit":unit,"delta":delta,"delta_unit":"p.p." if is_pct else unit})
+    return rows
