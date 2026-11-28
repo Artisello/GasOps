@@ -82,8 +82,8 @@ def test_operational_controls_stay_in_flow_and_warnings_are_readable():
 def test_shared_page_header_avoids_decorative_dividers_and_duplicate_brand():
     visuals=(ROOT/"gasops_app/visuals.py").read_text()
     css=(ROOT/"gasops_app/theme.css").read_text()
-    demo=(ROOT/"gasops_app/presentation.py").read_text()
+    entry=(ROOT/"app.py").read_text()
     assert 'st.title(title)' in visuals
     assert 'gas-topline' not in visuals and 'gas-topline' not in css
-    assert 'demo-masthead' not in demo and 'demo-masthead' not in css
+    assert 'demo-masthead' not in entry and 'demo-masthead' not in css
     assert '.st-key-page_header h1' in css
