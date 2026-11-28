@@ -114,8 +114,12 @@ def requested_sources(question):
     direct=bool(re.search(r"\b(?:spot|day.ahead|within.day|front.month|future[sh]?|forward|intraday)\b",question))
     arera=bool(re.search(r"\barera\b|cmem",question))
     acer=bool(re.search(r"\bacer\b",question)) or (lng and price) or (ttf and bool(re.search(r"differenziale|spread|benchmark",question)) and lng)
-    ttf_quote=ttf and not acer
-    psv_quote=psv and direct
+    ttf_quote=ttf and not (lng and re.search(r"differenziale|spread|benchmark",question))
+    if ttf_quote and not lng and not re.search(r"benchmark\s+acer",question):
+        acer=False
+    psv_quote=psv and (direct or price and mentions_day(question) and not arera and not re.search(r"mensil",question))
+    if (price or ttf_quote or psv_quote) and DAILY in names and not re.search(r"entsog|preliev|consum|domanda",question):
+        names.remove(DAILY)
     if arera or (psv and not psv_quote) or (price and not (acer or gme or ttf_quote or psv_quote)):
         names.append(PRICE)
     if acer:
