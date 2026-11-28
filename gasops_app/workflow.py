@@ -34,9 +34,10 @@ def _scenario_args(question: str) -> ScenarioArguments:
             reduced = re.search(r"decreas|reduc|fall|drop|declin|ridu[cz]|diminui|cal[oa]", match[1], re.I)
             changes[key] = -amount if reduced and amount > 0 else amount
     price=re.search(r"\b(?:prezzo|prezzi|price)\b([^\d+−-]{0,40})([+−-]?\d+(?:[.,]\d+)?)\s*(?:€|EUR)\s*/\s*MWh\b",question,re.I)
-    if price and re.search(r"aument|cal[oa]|diminui|ridu[cz]|variaz|shock|increase|decrease|[+−-]",price[1]+price[2],re.I):
+    price_context=question[max(0,price.start()-32):price.end()] if price else ""
+    if price and (re.search(r"aument|cal[oa]|diminui|ridu[cz]|variaz|shock|increase|decrease",price_context,re.I) or price[2].startswith(("+","−","-"))):
         amount=Decimal(price[2].replace("−","-").replace(",","."))
-        reduced=re.search(r"cal[oa]|diminui|ridu[cz]|decrease",price[1],re.I)
+        reduced=re.search(r"cal[oa]|diminui|ridu[cz]|decrease",price_context,re.I)
         changes["price_delta_eur_mwh"]=-amount if reduced and amount>0 else amount
     return ScenarioArguments(**changes)
 
