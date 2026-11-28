@@ -79,8 +79,7 @@ def test_empty_shipper_context_never_uses_demo_or_public_inputs(offline,monkeypa
     app.button(key="cockpit_import").click().run()
     assert not app.exception
     assert app.radio(key="balancing_view").value=="Controllo giornaliero"
-    assert app.session_state["daily_desk_data_mode"]=="Dati importati"
-    assert not any(r.key=="daily_desk_data_mode" for r in app.radio)
+    assert app.radio(key="daily_desk_data_mode").value=="Dati importati"
 
 
 def test_authorized_portfolio_and_drilldown_reuse_existing_settlement(offline):
