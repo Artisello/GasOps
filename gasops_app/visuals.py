@@ -133,6 +133,35 @@ def evidence(citations: Iterable[Citation]) -> None:
             st.markdown(f"[Apri fonte]({citation.url})")
 
 
+CHART_FONT = "Inter, Avenir Next, system-ui, sans-serif"
+CHART_SURFACE = "rgba(0,0,0,0)"
+CHART_GRID = "rgba(153,180,214,0.12)"
+
+
+def chart_style(figure: go.Figure) -> go.Figure:
+    """Shared presentation layer; retain traces, scales, units and chart-specific layout.
+
+    The renderer applies this to every chart, including specialist desks that
+    do not use _frame. No trace data, colors, patterns, range or hover content
+    is inferred or replaced. Apply in place, without copying large arrays.
+    """
+    figure.update_layout(
+        template="plotly_dark", separators=",.",
+        paper_bgcolor=CHART_SURFACE, plot_bgcolor=CHART_SURFACE,
+        font=dict(family=CHART_FONT, color=MUTED, size=13),
+        legend=dict(font=dict(family=CHART_FONT, color=MUTED, size=12)),
+        hoverlabel=dict(bgcolor="#1e2b3c", bordercolor="#63768b",
+                        font=dict(family=CHART_FONT, color="#f1f5f9", size=13)),
+    )
+    # Do not impose date/number formats, grid visibility or zoom on all axes:
+    # categorical, financial and distribution charts have different semantics.
+    for axis in (*figure.select_xaxes(), *figure.select_yaxes()):
+        axis.update(automargin=True, tickfont=dict(family=CHART_FONT, color=MUTED, size=12))
+        if axis.gridcolor is None:
+            axis.gridcolor = CHART_GRID
+    return figure
+
+
 def _frame(fig: go.Figure, grain: str, unit: str, height: int) -> go.Figure:
     fig.update_layout(
         template="plotly_dark", height=height, separators=",.",
@@ -148,7 +177,7 @@ def _frame(fig: go.Figure, grain: str, unit: str, height: int) -> go.Figure:
                    linecolor="#253548", tickformat=",.0f" if unit == "GWh" else ",.1f",
                    zeroline=False, nticks=6, automargin=True),
     )
-    return fig
+    return chart_style(fig)
 
 
 def _line(name: str, x, y, color: str, unit: str, grain: str, dash: str = "solid") -> go.Scatter:
@@ -229,10 +258,11 @@ def error_chart(forecast: Forecast, grain: str) -> go.Figure:
     return _frame(fig, grain, "GWh", 220)
 
 
-def plot(figure: go.Figure, key: str) -> None:
-    st.plotly_chart(figure, key=key, width="stretch", theme=None,
-                    config={"displaylogo": False, "displayModeBar": "hover", "scrollZoom": False,
-                            "modeBarButtonsToRemove": ["lasso2d", "select2d"]})
+def plot(figure: go.Figure, key: str, *, interactive: bool = True) -> None:
+    """Single rendering path; read-only demonstrations retain fixed controls."""
+    st.plotly_chart(chart_style(figure), key=key, width="stretch", theme=None,
+                    config={"displaylogo": False, "displayModeBar": "hover" if interactive else False,
+                            "scrollZoom": False, "modeBarButtonsToRemove": ["lasso2d", "select2d"]})
 
 
 def ai_readout(run: Run, *, section_ids=None, usage=True):
