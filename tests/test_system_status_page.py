@@ -41,7 +41,7 @@ def test_system_status_has_four_kpis_nine_components_and_keeps_demo_separate(off
     assert app.date_input(key=DAY_KEY).value == date(2026,11,20)
     assert any("2/9 componenti" in c.value for c in app.caption)
     assert any("Indicatori di attenzione calcolati da I.G.O.R." == c.value for c in app.caption)
-    assert any("Bilancio non riconciliabile" in c.value for c in app.caption)
+    assert sum("Bilancio non riconciliabile" in c.value for c in app.caption)==1
     assert len(app.get("deck_gl_json_chart")) == 1
     assert not any(b.key == "net_refresh" for b in app.button)
     if mode == "demo":
