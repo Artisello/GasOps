@@ -238,7 +238,8 @@ def cached_national_inventory(store, platform, now):
     if result and not result["frame"].empty:
         source = "agsi" if platform=="AGSI+" else "alsi"
         health = journal(store).get("connections",{}).get(source,{})
-        return {**result,"failed":bool(result["failed"] or health.get("failed"))}
+        return {**result,"failed":bool(result["failed"] or health.get("failed")),
+                "refresh_diagnostic":health}
     return None
 
 
