@@ -46,7 +46,7 @@
 }
 .stApp {font-family:var(--gas-font);line-height:1.5;}
 .stApp header[data-testid="stHeader"] {background:var(--gas-bg);height:3rem;min-height:3rem;}
-.stApp [data-testid="stMainBlockContainer"] {max-width:1440px;padding:3.75rem clamp(1rem,3vw,2.5rem) 3rem;}
+.stApp [data-testid="stMainBlockContainer"] {max-width:1440px;padding:3.5rem clamp(1rem,2.2vw,2rem) 2rem;}
 .stApp h1,.stApp h2,.stApp h3 {font-family:var(--gas-font);letter-spacing:-.025em;line-height:1.25;overflow-wrap:anywhere;}
 .stApp h1 {font-size:clamp(1.75rem,2.6vw,2.25rem);font-weight:700;padding-block:0;}
 .stApp h2 {font-size:1.3rem;font-weight:650;padding:.15rem 0 .3rem;}
@@ -106,8 +106,8 @@ div[data-testid="stVerticalBlockBorderWrapper"] {border-color:var(--gas-border);
 .gas-panel-head {display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;flex-wrap:wrap;}
 .gas-panel-head h2 {font-size:1.12rem;padding:0;margin:0;}
 .gas-panel-head small,.gas-muted {color:var(--gas-muted);font-size:.82rem;}
-.gas-kpi-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,195px),1fr));gap:var(--gas-space-3);}
-.gas-kpi {border:1px solid var(--gas-border);background:var(--gas-panel);border-radius:var(--gas-radius);padding:1rem;min-width:0;min-height:7rem;box-sizing:border-box;}
+.gas-kpi-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,195px),1fr));gap:var(--gas-space-2);}
+.gas-kpi {border:1px solid var(--gas-border);background:var(--gas-panel);border-radius:var(--gas-radius);padding:var(--gas-space-3);min-width:0;min-height:0;box-sizing:border-box;}
 .gas-kpi .key {display:block;font-size:.84rem;font-weight:550;color:var(--gas-muted);line-height:1.35;overflow-wrap:anywhere;}
 .gas-kpi .readout {display:flex;align-items:baseline;flex-wrap:wrap;gap:.28rem;margin:.3rem 0;color:var(--gas-text);min-width:0;}
 .gas-kpi .value {font:700 clamp(1.5rem,2.25vw,2rem)/1.18 var(--gas-font);font-variant-numeric:tabular-nums;letter-spacing:-.035em;overflow-wrap:anywhere;min-width:0;}
@@ -122,7 +122,7 @@ div[data-testid="stVerticalBlockBorderWrapper"] {border-color:var(--gas-border);
 :is(.st-key-network_summary,.st-key-network_home_summary) .gas-kpi .key,:is(.st-key-network_summary,.st-key-network_home_summary) .gas-kpi .detail {font-size:.76rem;}
 .st-key-network_detail [data-testid="stMetricValue"] {font-size:1.45rem;}
 .st-key-network_detail h3 {font-size:1.08rem;line-height:1.35;overflow-wrap:anywhere;}
-.st-key-network_home_detail {gap:.65rem;}
+.st-key-network_home_detail {gap:var(--gas-space-2);}
 .st-key-network_home_title {padding-bottom:var(--gas-space-2);overflow:visible;}
 .stApp .st-key-network_home_title h1 {line-height:1.3;overflow:visible;}
 .st-key-network_home_detail h3 {font-size:1.05rem;}
@@ -163,7 +163,7 @@ div[data-testid="stVerticalBlockBorderWrapper"] {border-color:var(--gas-border);
 .st-key-system_status_kpis .gas-kpi .detail {font-size:.75rem;line-height:1.35;}
 .gas-balance-side {font-size:.8rem;font-weight:650;color:var(--gas-muted);margin:.45rem 0;}
 .gas-balance-strip {display:flex;flex-wrap:wrap;gap:.5rem;}
-.gas-balance-cell {flex:1 1 150px;min-width:0;border:1px solid var(--gas-border);border-radius:10px;padding:.65rem .75rem;background:var(--gas-panel);}
+.gas-balance-cell {flex:1 1 150px;min-width:0;border:1px solid var(--gas-border);border-radius:10px;padding:var(--gas-space-3);background:var(--gas-panel);}
 .gas-balance-label,.gas-balance-meta,.gas-balance-note {display:block;overflow-wrap:anywhere;}
 .gas-balance-label {font-size:.8rem;font-weight:600;min-height:1.2rem;}
 .gas-balance-cell strong {display:block;font-size:1.25rem;margin:.2rem 0;}
@@ -188,10 +188,10 @@ div[data-testid="stVerticalBlockBorderWrapper"] {border-color:var(--gas-border);
 [class*="st-key-network_map_frame_"] [data-testid="stElementContainer"]:has(iframe) {height:0!important;min-height:0!important;margin:0;padding:0;overflow:hidden;}
 :is(.st-key-network_overview,.st-key-network_explorer) {margin:0;}
 .st-key-network_overview [data-testid="stColumn"],.st-key-network_explorer [data-testid="stColumn"] {padding:0;}
-.stApp [data-testid="stMainBlockContainer"]:has(:is(.st-key-network_overview,.st-key-network_explorer)) {padding:3.25rem 1.25rem 2rem;}
-.st-key-network_home_detail {gap:.5rem;}
+.stApp [data-testid="stMainBlockContainer"]:has(:is(.st-key-network_overview,.st-key-network_explorer)) {padding:3.25rem clamp(.75rem,1.5vw,1.25rem) 2rem;}
+
 @media(max-width:640px) {
- .stApp [data-testid="stMainBlockContainer"]:has(:is(.st-key-network_overview,.st-key-network_explorer)) {padding:3.1rem .5rem 1.5rem;}
+ .stApp [data-testid="stMainBlockContainer"]:has(:is(.st-key-network_overview,.st-key-network_explorer)) {padding:3.1rem .75rem 1.5rem;}
 }
 :is(.st-key-network_overview,.st-key-network_explorer) [data-testid="stDeckGlJsonChart"] {border:1px solid #30485b;border-radius:10px;overflow:hidden;background:#0b1726;}
 @media(max-width:1100px) {
@@ -371,7 +371,7 @@ div[data-testid="stVerticalBlockBorderWrapper"] {border-color:var(--gas-border);
 .igor-direction-chip.both {color:var(--gas-text);border-color:var(--gas-control);}
 .igor-direction-context,.igor-flow-active {font-size:.72rem;color:var(--gas-muted);}
 .igor-flow-pair {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem;}
-.igor-flow-card {border:1px solid var(--gas-border);border-radius:var(--gas-radius);background:var(--gas-panel);padding:.65rem .75rem;min-width:0;}
+.igor-flow-card {border:1px solid var(--gas-border);border-radius:var(--gas-radius);background:var(--gas-panel);padding:var(--gas-space-3);min-width:0;}
 .igor-flow-card.entry.active {border-color:#39645e;box-shadow:inset 0 2px var(--gas-teal);}
 .igor-flow-card.exit.active {border-color:#405e87;box-shadow:inset 0 2px var(--gas-blue);}
 .igor-flow-label {font-size:.82rem;font-weight:600;}
@@ -445,3 +445,20 @@ div[data-testid="stVerticalBlockBorderWrapper"] {border-color:var(--gas-border);
   .stApp .st-key-page_header h1 {font-size:1.65rem;}
   .stApp .st-key-page_header .gas-header-meta {font-size:.875rem;}
 }
+
+
+/* Compact reading controls: context is available via native Info popover. */
+.stApp [class*="st-key-net_mode_"] [data-testid="stHorizontalBlock"] {
+  flex-direction:row;flex-wrap:wrap;gap:var(--gas-space-2);align-items:center;
+}
+.stApp [class*="st-key-net_mode_"] [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:first-child {
+  flex:5 1 16rem!important;width:auto!important;min-width:0!important;
+}
+.stApp [class*="st-key-net_mode_"] [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:last-child {
+  flex:1 1 5.5rem!important;width:auto!important;min-width:0!important;
+}
+.stApp [class*="st-key-net_mode_"] [data-testid="stPopover"] button {min-height:var(--gas-target);}
+.stApp :is(.st-key-network_home_detail,.st-key-network_detail) [data-testid="stVerticalBlock"] {
+  gap:var(--gas-space-2);
+}
+.stApp :is(.st-key-network_home_detail,.st-key-network_detail) h3 {padding-block:0;line-height:1.35;}
