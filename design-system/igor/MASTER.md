@@ -103,3 +103,8 @@ Build a PointIntelligenceIndex once per map render from the merged observations 
 ## Less is more — operational copy and layout
 
 Prefer one short label per control, plain Italian over decorative uppercase English, and a single contextual qualification instead of repeating it in captions and expanded content. Workspace and map navigation use flat containers with a subtle separator; retain 44 px interaction targets and selected-state/focus contrast. Keep date, coverage, direction, missing-data and simulation disclosures visible; preserve all source references and downloadable evidence. No new tabs, navigation states or hidden operational alerts. Review browser text assertions when wording intentionally changes. No change to source acquisition, polling or calculations in this pass.
+
+
+## Beginner-friendly progressive disclosure
+
+Use native information popovers with the Material info icon and a short accessible label (e.g. Info, Riconciliazione) for optional definitions, examples and reading instructions. Prefer plain Italian, explain abbreviations and technical terms in context, and avoid repeated headings inside named tabs. Keep actual warnings, missing-data and simulation disclosures, source identifiers, dates and coverage visible or in their existing evidence sections; never hide a warning merely for aesthetics. Preserve detailed methodology and technical evidence behind existing expanders. Use 8px spacing for compact groups and 12px for common card padding, responsive content gutters, and avoid unnecessary minimum card heights. Maintain 44px main interaction targets and keyboard focus. Browser acceptance must verify that optional help can be opened and closed independently of the selected map reading.

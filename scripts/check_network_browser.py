@@ -133,7 +133,7 @@ def main():
         for reading in ("FLOW","ATTENTION","SYSTEM"):
             page.locator(".st-key-net_reading_overview").get_by_text(labels[reading],exact=True).click()
             expect(page.get_by_role("radio",name=labels[reading],exact=True)).to_be_checked()
-            expect(page.get_by_text(hints[reading],exact=True)).to_be_visible(timeout=15000)
+            expect(page.locator(".st-key-net_mode_overview").get_by_role("button",name="Info",exact=True)).to_be_visible(timeout=15000)
             page.wait_for_function('document.querySelector("[data-testid=stApp]").dataset.testScriptState === "notRunning"')
             page.wait_for_timeout(400)
             scene = rendered_map(page)
@@ -142,6 +142,11 @@ def main():
                 assert scene["powerCount"] == 69
             report["reading_modes"].append({"mode":reading,"points":len(scene["pointIds"]),"power":scene["powerCount"]})
             page.screenshot(path=str(args.output/("reading-"+reading.lower()+".png")),full_page=True)
+        info_button = page.locator(".st-key-net_mode_overview").get_by_role("button",name="Info",exact=True)
+        info_button.click()
+        for reading,label in labels.items():
+            expect(page.get_by_text(label+" · "+hints[reading],exact=True)).to_be_visible()
+        page.keyboard.press("Escape")
         click_at(geometry["INET_CS_11"]["coordinates"],"Alessandro Volta")
         assert rendered_map(page)["powerCount"] == 69
         click_at(geometry["INET_BP_89"]["coordinates"],"Tarvisio")

@@ -36,7 +36,7 @@ def header(status, *, include_metrics=True):
             st.html('<div class="gas-map-status" role="status" aria-atomic="true">'+chip(day_status, "historical" if status.gas_day_status == "historical" else "ok")
                     +chip(data_status, "review" if status.source_status != "observed" else "ok")+'</div>')
             st.caption(f"{status.source_coverage.valid}/{status.source_coverage.expected} componenti · "
-                       f"06:00–06:00 Europe/Rome · {status.hours} ore")
+                       f"06:00–06:00 (ora italiana) · {status.hours} ore")
         with date_col:
             if REQUESTED_DAY not in st.session_state and DAY_KEY in st.session_state:
                 st.session_state[DAY_KEY] = status.gas_day
@@ -44,20 +44,20 @@ def header(status, *, include_metrics=True):
                 max_value=status.active_gas_day, min_value=status.active_gas_day.replace(year=2000, month=1, day=1),
                 key=DAY_KEY, format="DD/MM/YYYY", on_change=_remember_day)
         with settings, st.popover("Soglie", icon=":material/tune:", width="stretch"):
-            st.caption("Soglie informative I.G.O.R.")
+            st.caption("Soglie per gli indicatori, non limiti ufficiali.")
             st.number_input("Utilizzo capacità · %", min_value=1, max_value=200, value=90, key="system_capacity_pct")
             st.number_input("Scarto dalla mediana · %", min_value=1, max_value=1000, value=30, key="system_deviation_pct")
-            st.number_input("Giorni minimi della baseline", min_value=3, max_value=28, value=14, key="system_baseline_min_days")
+            st.number_input("Giorni minimi per il confronto", min_value=3, max_value=28, value=14, key="system_baseline_min_days")
             latest = data_it(status.latest_observed_gas_day) if status.latest_observed_gas_day else "N/A"
             st.caption(f"Ultimo giorno osservato: {latest} · ultimo giorno concluso: {data_it(status.last_completed_gas_day)}")
         if not include_metrics:
             with st.container(key="system_day_nav"):
                 previous, following, latest = st.columns([1,1,2],gap="small")
                 earliest = status.active_gas_day.replace(year=2000,month=1,day=1)
-                previous.button("D−1",icon=":material/chevron_left:",key="system_day_prev",
+                previous.button("Precedente",icon=":material/chevron_left:",key="system_day_prev",
                     disabled=status.gas_day<=earliest,width="stretch",on_click=_choose_day,
                     args=(max(earliest,status.gas_day-timedelta(days=1)),),help="Giorno gas precedente")
-                following.button("D+1",icon=":material/chevron_right:",key="system_day_next",
+                following.button("Successivo",icon=":material/chevron_right:",key="system_day_next",
                     disabled=status.gas_day>=status.active_gas_day,width="stretch",on_click=_choose_day,
                     args=(min(status.active_gas_day,status.gas_day+timedelta(days=1)),),help="Giorno gas successivo")
                 latest.button("Ultimo concluso",icon=":material/today:",key="system_day_latest",
@@ -70,12 +70,12 @@ def header(status, *, include_metrics=True):
 def metrics(status):
     demand = status.demand_forecast if status.demand_actual.value is None and status.demand_forecast.value is not None else status.demand_actual
     cards = []
-    for label, m in (("Ingressi stimati dalla fonte" if status.entry_flow_observed.status == "estimated" else "Ingressi osservati", status.entry_flow_observed), ("Send-out GNL", status.lng_sendout),
-                     ("Giacenza stoccaggi", status.storage_level),
-                     ("Prelievi SRG" if demand is status.demand_actual else "Prelievi SRG · previsione", demand)):
+    for label, m in (("Ingressi stimati dalla fonte" if status.entry_flow_observed.status == "estimated" else "Ingressi osservati", status.entry_flow_observed), ("GNL immesso in rete", status.lng_sendout),
+                     ("Gas in stoccaggio", status.storage_level),
+                     ("Prelievi rete Snam" if demand is status.demand_actual else "Prelievi rete Snam · previsione", demand)):
         detail = f"{m.source} · {data_it(m.gas_day)} · {m.coverage.valid}/{m.coverage.expected}"
         if m.value is not None and m.gas_day != status.gas_day:
-            detail += " · Ultima giacenza pubblicata"
+            detail += " · Ultimo dato pubblicato"
         if m.status == "estimated":
             detail += " · Stimato"
         if m.freshness == "stale":
