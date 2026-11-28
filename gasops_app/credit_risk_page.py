@@ -42,7 +42,7 @@ def _lng_panel():
 
 
 def credit_risk_panel():
-    st.subheader("Credit Risk Intelligence")
+    st.subheader("Verifica le garanzie")
     st.caption("DEMO-001 · simulazione · importi di bilanciamento IVA inclusa ove prevista.")
     a,b=st.columns(2)
     with a:
@@ -74,7 +74,7 @@ def credit_risk_panel():
               ("MEPSu",current["meps"],"€","G − C",2,""),
               ("Margine residuo",current["headroom"],"€","MEPSu − EPSu",2,
                "rose" if current["headroom"]<=0 else "")])
-    with st.expander("Early warning · stress su Patt",expanded=True):
+    with st.expander("Simula un aumento dell’esposizione"):
         check=st.checkbox("Regolarità dei pagamenti verificabile nel semestre applicabile",
                           value=True,key="credit_verified")
         a,b=st.columns(2)
@@ -85,7 +85,8 @@ def credit_risk_panel():
             tr=D(str(st.number_input("Importi irregolari trasporto (%)",0.,100.,0.,
                                      disabled=not check,key="credit_late_tr")))
         horizon=patt_horizon(bal,tr,verifiable=check)
-        st.caption(f"Orizzonte Patt: {horizon} giorni · 3 se regolare; 5 oltre 10% fino a 20%; 7 oltre 20% o non verificabile/nuovo.")
+        st.caption(f"Orizzonte: {horizon} giorni")
+        info("Info orizzonte", "3 giorni se regolare; 5 oltre il 10% fino al 20%; 7 oltre il 20% o non verificabile/nuovo.")
         a,b=st.columns(2)
         with a:
             daily=_amount("Ulteriore deficit giornaliero (MWh)",500,"daily",step=100.)
