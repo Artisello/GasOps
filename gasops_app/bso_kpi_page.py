@@ -204,8 +204,16 @@ def page():
             st.session_state["bso_mode"]=st.session_state["bso_mode"]
         _public(utc_now().astimezone(ROME))
         return
-    selection=source.radio("Dati da utilizzare",["Dati importati","Demo"],horizontal=True,key="bso_mode",
-                           format_func=lambda value:"Esempio guidato" if value=="Demo" else value)
+    saved=st.session_state.get(SETTLEMENT_STATE,{})
+    has_import={"Scadenze":bool(st.session_state.get(STATE,{}).get("tasks")),
+                "Balancing":bool(st.session_state.get("jarvis_public_snapshot_v1")),
+                "Settlement":bool(saved.get("rows")) and saved.get("authorized") is True and saved.get("origin")=="user_upload"}[section]
+    if has_import:
+        st.session_state["bso_mode"]="Dati importati"
+        selection="Dati importati"
+    else:
+        selection=source.radio("Dati da utilizzare",["Dati importati","Demo"],horizontal=True,key="bso_mode",
+                               format_func=lambda value:"Esempio guidato" if value=="Demo" else value)
     demo=selection=="Demo"
     now=DEMO_NOW if demo else utc_now().astimezone(ROME)
     if section!="Scadenze":
