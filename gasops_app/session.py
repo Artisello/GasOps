@@ -13,7 +13,7 @@ import streamlit as st
 
 from .agents import Assumptions, MarketContext
 from .data import Bundle, ROOT, ROME, jrc_archive, synthetic
-from .forecast import MODEL_CHOICES, ModelChoice
+from .forecast import AUTOMATIC, MODEL_CHOICES, ModelChoice
 from .italiano import MODALITA, MODELLI
 from .llm import CompatibleReasoner, configuration
 from .supervisor import ModelUnavailable
@@ -163,7 +163,7 @@ def ai_controls(*, prefix="sidebar") -> None:
                 st.warning("Contatore AI non disponibile. I calcoli locali restano utilizzabili.")
     with st.expander("Connessione e limiti AI", expanded=False):
         if config and st.session_state.get("execution_mode")=="Deterministic":
-            st.caption("Modello disponibile: attivalo dalla modalità di analisi o dall’assistente.")
+            st.caption("L’assistente usa automaticamente il modello. Selezionalo qui solo per gli altri strumenti.")
         if not config:
             st.write("Per Groq Cloud, imposta GROQ_API_KEY nei Secrets di Streamlit; "
                      "oppure i tre campi GASOPS_LLM_URL, GASOPS_LLM_MODEL, GASOPS_LLM_API_KEY.")
@@ -228,6 +228,15 @@ def reasoner() -> CompatibleReasoner | None:
     if config and st.session_state.get("execution_mode","Deterministic")==config.model:
         return CompatibleReasoner(config,reserve=None if config.local else _reserve_remote_request)
     return None
+
+
+def assistant_reasoner() -> CompatibleReasoner | None:
+    """Chat always uses the configured model; opening chat makes no API call."""
+    try:
+        config=_configuration()
+    except ValueError:
+        return None
+    return CompatibleReasoner(config,reserve=None if config.local else _reserve_remote_request) if config else None
 
 
 def activate_ai(model_name: str) -> None:
@@ -460,12 +469,14 @@ def _briefing_gie_key():
         return gie_key()
 
 
-def _collect_assistant_sources(context,selected,requested,*,full=False,day=None,scope="IT",question=""):
+def _collect_assistant_sources(context,selected,requested,*,full=False,day=None,scope="IT",question="",automatic=False):
     from .assistant_lookup import collect_context
     from .weather_source import STATE as WEATHER_STATE, enabled, refresh
     now,store=utc_now(),database()
-    include_gie=bool(st.session_state.get("briefing_gie",True)) and (full or bool(set(requested)&set(GIE)))
-    include_weather=enabled(st.session_state) and (full or WEATHER in requested)
+    include_gie=(automatic or bool(st.session_state.get("briefing_gie",True))) and (full or bool(set(requested)&set(GIE)))
+    weather_state={WEATHER_STATE:st.session_state.get(WEATHER_STATE,{})} if automatic else st.session_state
+    if automatic:weather_state["briefing_weather"]=True
+    include_weather=enabled(weather_state) and (full or WEATHER in requested)
     terna=()
     if full or set(requested)&set(POWER):
         from .terna_power import credentials
@@ -474,7 +485,9 @@ def _collect_assistant_sources(context,selected,requested,*,full=False,day=None,
         except (FileNotFoundError,KeyError):
             terna=credentials()
     if include_weather:
-        refresh(st.session_state,store,now)
+        refresh(weather_state,store,now)
+        if automatic and WEATHER_STATE in weather_state:
+            st.session_state[WEATHER_STATE]=weather_state[WEATHER_STATE]
     return collect_context(
         store,selected,context,now,st.session_state,requested=requested,full=full,
         key=_briefing_gie_key() if include_gie else "",terna=terna,include_gie=include_gie,
@@ -483,15 +496,38 @@ def _collect_assistant_sources(context,selected,requested,*,full=False,day=None,
     )
 
 
-def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool = False,
+def automatic_selection(question, *, full=False):
+    """Acquire one compatible public base only for tools that require a series."""
+    from .assistant_sources import DAILY as SRG, MONTHLY
+    names=set(requested_sources(question))
+    day=query_day(question,today=utc_now().astimezone(ROME).date())
+    daily=not full and (names=={SRG} or SRG in names and MONTHLY not in names or
+        bool(re.search(r"giornalier|settimanal|\bsrg\b|\bentsog\b",question,re.I)) or
+        day is not None and Agent.FORECAST in {call.agent for call in plan(question,False)})
+    name=DAILY if daily else PUBLIC
+    try:
+        bundle,warning=(load_daily(database()) if daily else load_monthly(database()))
+        if bundle.origin.archive or bundle.origin.kind not in (Kind.LIVE,Kind.HISTORICAL) or bundle.rows.empty:
+            raise ValueError("Serie pubblica non disponibile")
+        if warning:
+            visible,_=source_notices(warning)
+            if visible:st.warning(visible)
+    except (SourceUnavailable,ValueError,OSError,RuntimeError):
+        LOG.info("Automatic assistant base unavailable")
+        bundle=None
+    return Selection(name,AUTOMATIC,90 if daily else 24,bundle)
+
+
+def launch(selection: Selection | None, question: str = DAILY_BRIEFING, *, full: bool = False,
            persist: bool = False, planned_only: bool = False, compact: bool = False,
            ai_policy: str = "selected") -> Run | None:
     from .assistant_lookup import lookup_report
     from .country_analysis import requested_country, country_report, direct_market_question
-    if ai_policy not in ("selected","required","off"):
+    automatic=selection is None
+    if ai_policy not in ("selected","required","off","automatic"):
         raise ValueError("Modalità di analisi non valida.")
-    model = None if ai_policy == "off" else reasoner()
-    if ai_policy == "required" and model is None:
+    model = None if ai_policy == "off" else assistant_reasoner() if ai_policy=="automatic" else reasoner()
+    if ai_policy in ("required","automatic") and model is None:
         raise ModelUnavailable("AI non attiva. Nessuna domanda eseguita.")
     expanded,issue=expand_command(question)
     if issue:
@@ -507,28 +543,63 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
         report=lookup_report(question,{},utc_now(),issue="Indica un solo giorno valido, oppure usa Analista dati per confrontare più date.")
         st.session_state["last_run"]=report
         return report
-    targets={call.agent for call in plan(question,False)} if requested else set()
+    targets={call.agent for call in plan(question,False)} if (requested or automatic) else set()
+    base=selection.bundle if selection is not None else None
+    if automatic and not full and not country:
+        from .assistant_lookup import document_lookup_report
+        doc_question=bool(re.search(r"\b(?:pdf|document[oi]|archivio documentale|articolo|clausola|contratto|disciplinare|normativ\w*|regolament\w*|codice|riservat\w*|confidenzial\w*)\b",question,re.I)) or (not requested and Agent.REGULATORY in targets)
+        # Unknown questions search the actual document archive instead of
+        # silently running the default market agent on an unrelated dataset.
+        # A bounded, read-only model router is a fallback for natural language
+        # outside the known source aliases, never for a document/private query.
+        computation=bool(targets.intersection((Agent.FORECAST,Agent.SCENARIO,Agent.SETTLEMENT,Agent.QUALITY)))
+        if not requested and not doc_question and not computation and model is not None and re.search(r"\b(?:gas|metano|energia|energetic\w*|fornitur\w*|approvvigionament\w*)\b",question,re.I):
+            try:
+                requested=model.select_public_sources(question)
+            except Exception:
+                requested=()
+        if requested and day is None and mentions_day(question):
+            report=lookup_report(question,{},utc_now(),issue="Indica un solo giorno valido per la consultazione.")
+            st.session_state["last_run"]=report
+            return report
+        unknown=not requested and not computation
+        if doc_question or unknown:
+            with st.spinner("Ricerca nei documenti…"):
+                public=_collect_assistant_sources(None,None,requested,day=day,question=question,automatic=True) if requested else {}
+                report=document_lookup_report(question,public,utc_now(),reasoner=model)
+            st.session_state["last_run"]=report
+            return report
     # Explicitly named monthly balance components should use the national
     # source even when the selected base series is a daily SRG proxy.
     specific_market=bool(set(requested)&set(MARKET)) and bool(re.search(
         r"\beurostat\b|\bentsog\b|\bmensil\w*|import|esport|produzione nazionale",question,re.I))
-    standalone=bool(requested) and not targets.intersection((Agent.REGULATORY,Agent.SETTLEMENT,Agent.SCENARIO)) and (
-        not set(requested).intersection(MARKET) or (day is not None or selection.bundle is None or specific_market) and Agent.FORECAST not in targets)
+    standalone=bool(requested) and not targets.intersection((Agent.SETTLEMENT,Agent.SCENARIO)) and (automatic or Agent.REGULATORY not in targets) and (
+        not set(requested).intersection(MARKET) or (day is not None or base is None or specific_market) and Agent.FORECAST not in targets)
     scoped_lookup=country=="EU" or country=="DE" and requested==("AGSI+",)
     if scoped_lookup or (country is None and standalone):
         with st.spinner("Lettura delle fonti pertinenti…"):
-            public=_collect_assistant_sources(None,selection.bundle,requested,day=day,scope=country or "IT",question=question)
+            public=_collect_assistant_sources(None,base,requested,day=day,scope=country or "IT",question=question,automatic=automatic)
             report=lookup_report(question,public,utc_now(),day=day,scope=country or "IT",reasoner=model)
         st.session_state["last_run"]=report
         return report
     if country:
         with st.spinner("Consultazione delle fonti del mercato richiesto…"):
             report=country_report(
-                database(),question,country,selection.model,model,gie_key=_briefing_gie_key(),
-                include_gie=bool(st.session_state.get("briefing_gie",True)))
+                database(),question,country,AUTOMATIC if automatic else selection.model,model,gie_key=_briefing_gie_key(),
+                include_gie=automatic or bool(st.session_state.get("briefing_gie",True)))
         st.session_state["last_run"]=report
         return report
+    if automatic:
+        selection=automatic_selection(question,full=full)
     if selection.bundle is None:
+        if automatic:
+            with st.spinner("Lettura delle fonti disponibili…"):
+                public=_collect_assistant_sources(None,None,requested,full=full,question=question,day=day,automatic=True) if full or requested else {}
+                report=lookup_report(question,public,utc_now(),day=day,reasoner=None,
+                    issue="Serie di base non disponibile: calcolo richiesto non eseguibile. Fonti disponibili nei dettagli.")
+                report.warnings.append("Calcolo richiesto non eseguito: manca la serie pubblica compatibile.")
+            st.session_state["last_run"]=report
+            return report
         return None
     context = MarketContext(selection.bundle, selection.model, utc_now())
     status = st.status("Generazione del bollettino…" if full else "Analisi della domanda…", expanded=not compact)
@@ -537,17 +608,17 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
     try:
         source_direct=bool(requested) and targets<={Agent.QUALITY,Agent.MARKET,Agent.FORECAST}
         direct=not full and (direct_market_question(question) or source_direct)
-        docs = Library(include_notes=False) if direct else library()
+        docs = Library(include_notes=False) if direct or automatic else library()
         origin=selection.bundle.origin
         current_context=not origin.archive and origin.kind in (Kind.HISTORICAL,Kind.LIVE)
         public_context={}
         if current_context and (full or requested):
             with st.spinner("Lettura delle fonti pertinenti…"):
                 public_context=_collect_assistant_sources(context,selection.bundle,requested,full=full,question=question,
-                                                          day=day if Agent.FORECAST not in targets else None)
+                                                          day=day if Agent.FORECAST not in targets else None,automatic=automatic)
         requirements=tuple(public_context) if not full else ()
         report = run_workflow(
-            context, docs, assumptions(), question, full=full, reasoner=model,public_context=public_context,planned_only=planned_only or direct,
+            context, docs, Assumptions() if automatic else assumptions(), question, full=full, reasoner=model,public_context=public_context,planned_only=planned_only or direct or automatic,
             source_requirements=requirements,
             notify=lambda run: stage.html(steps(run, grid=True)),
         )

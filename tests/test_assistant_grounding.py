@@ -297,3 +297,100 @@ def test_daily_comparison_uses_chronological_values_and_percentage_points():
     assert sources.day_comparison(newer,_daily_turn(day="2026-11-20",review=True))==[]
     assert sources.day_comparison(newer,_daily_turn(day="2026-11-20",status="stale"))==[]
     assert sources.day_comparison(newer,newer)==[]
+
+
+def test_automatic_lookup_ignores_selected_dashboard_dataset(monkeypatch):
+    from gasops_app import session
+    calls=[]
+    def collect(context,base,requested,**kwargs):
+        calls.append((base,requested,kwargs))
+        return {"AGSI+":{"source":"GIE AGSI+","scope":"IT","gas_day":"2026-11-21",
+                         "status":"available","kind":"observed","values":{"stock_twh":70}}}
+    monkeypatch.setattr(session,"_collect_assistant_sources",collect)
+    monkeypatch.setattr(session,"automatic_selection",lambda *a,**k:pytest.fail("Lookup does not require a base series"))
+    app=AppTest.from_string("""
+from gasops_app import session
+import streamlit as st
+st.session_state["selected_source"]=session.DEMO
+session.launch(None,"Scorte AGSI+ del 21/11/2026",ai_policy="off")
+""").run()
+    assert not app.exception
+    assert len(calls)==1 and calls[0][0] is None
+    assert calls[0][1]==("AGSI+",) and calls[0][2]["automatic"]
+    assert app.session_state["selected_source"]==session.DEMO
+    assert app.session_state["last_run"].assumptions["public_operational_context"]["AGSI+"]["values"]["stock_twh"]==70
+
+
+def test_automatic_public_base_selects_grain_and_rejects_synthetic(monkeypatch):
+    from dataclasses import replace
+    from gasops_app import session
+    from gasops_app.data import synthetic
+    example=synthetic()
+    calls=[]
+    def load(grain):
+        def fake(*args,**kwargs):
+            calls.append(grain)
+            return replace(example,origin=example.origin.model_copy(update={"kind":Kind.HISTORICAL,"grain":grain})),None
+        return fake
+    monkeypatch.setattr(session,"database",lambda:None)
+    monkeypatch.setattr(session,"load_daily",load("daily"))
+    monkeypatch.setattr(session,"load_monthly",load("monthly"))
+    for question,grain in (("Previsione giornaliera della domanda","daily"),("Previsione mensile della domanda","monthly")):
+        selected=session.automatic_selection(question)
+        assert selected.bundle.origin.grain==grain and selected.model=="Automatic"
+    assert calls==["daily","monthly"]
+    monkeypatch.setattr(session,"load_monthly",lambda *a,**k:(example,None))
+    assert session.automatic_selection("Previsione mensile della domanda").bundle is None
+
+
+def test_fallback_source_router_is_allowlisted_and_read_only(monkeypatch):
+    model=CompatibleReasoner(LLMConfig("fixture","http://localhost:11434/v1"))
+    seen=[]
+    def reply(messages,**kwargs):
+        seen.extend(messages)
+        return {"content":json.dumps({"sources":["4","5","4"]})}
+    monkeypatch.setattr(model,"_chat",reply)
+    assert model.select_public_sources("Quanto gas abbiamo a disposizione?")==("AGSI+","ALSI")
+    assert "sources" in json.loads(seen[-1]["content"])
+    monkeypatch.setattr(model,"_chat",lambda *a,**k:{"content":'{"sources":["https://unknown.example"]}'})
+    with pytest.raises(ValueError):
+        model.select_public_sources("Consulta una fonte")
+
+
+def test_document_chat_retrieves_pdf_without_market_bundle_or_remote_transfer(monkeypatch):
+    import pymupdf
+    from gasops_app.document_desk import build
+    from gasops_app import session
+    with pymupdf.open() as pdf:
+        pdf.new_page().insert_text((72,72),"La garanzia economica richiede un deposito cauzionale.")
+        raw=pdf.tobytes()
+    library=build((("norme.pdf",raw),))
+    monkeypatch.setattr(assistant_lookup,"_document_libraries",lambda:([library],[]))
+    model=CompatibleReasoner(LLMConfig("fixture","https://api.groq.com/openai/v1"))
+    monkeypatch.setattr(model,"_chat",lambda *a,**k:pytest.fail("No PDF query or excerpt sent without separate consent"))
+    monkeypatch.setattr(session,"assistant_reasoner",lambda:model)
+    monkeypatch.setattr(session,"automatic_selection",lambda *a,**k:pytest.fail("PDF lookup requires no market bundle"))
+    app=AppTest.from_string("""
+from gasops_app.session import launch
+launch(None,"Secondo il documento, quale deposito cauzionale è previsto?",ai_policy="automatic")
+""").run()
+    assert not app.exception
+    report=app.session_state["last_run"]
+    assert report.assumptions["assistant_document_lookup"]
+    assert report.results[Agent.REGULATORY].evidence[0].page==1
+    assert "deposito cauzionale" in report.results[Agent.REGULATORY].evidence[0].evidence
+    assert report.mode=="Deterministic" and not report.ai_usage
+
+
+def test_local_document_rag_keeps_verified_page_citation(monkeypatch):
+    from gasops_app.regulatory import Library
+    hit=Citation(document="norme.pdf",page=5,evidence="Il preavviso richiesto è pari a sette giorni.")
+    monkeypatch.setattr(assistant_lookup,"_document_libraries",lambda:([Library(include_notes=False)],[]))
+    monkeypatch.setattr("gasops_app.document_desk.search",lambda *a,**k:[hit])
+    model=CompatibleReasoner(LLMConfig("fixture","http://localhost:11434/v1"))
+    monkeypatch.setattr(model,"_chat",lambda *a,**k:{"content":json.dumps({"claims":[
+        {"text":"Il preavviso è di sette giorni.","source":"D1","quote":hit.evidence}]})})
+    report=assistant_lookup.document_lookup_report("Preavviso nel PDF?",{},NOW,reasoner=model)
+    assert report.mode=="LLM-assisted"
+    assert report.assumptions["document_claims"][0]["citation"]["page"]==5
+    assert report.interpretation=="Il preavviso è di sette giorni."

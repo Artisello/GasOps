@@ -504,12 +504,14 @@ def test_assistant_session_history_isolated_and_shortcut_works(monkeypatch,tmp_p
     monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
     monkeypatch.setenv("GASOPS_PDF_DIR",str(tmp_path))
     monkeypatch.setattr(session,"reasoner",lambda:None)
-    monkeypatch.setattr(assistant_page,"reasoner",lambda:None)
+    monkeypatch.setattr(assistant_page,"assistant_reasoner",lambda:None)
     monkeypatch.setattr(assistant_page,"ai_configured",lambda:False)
     db=session.database()
     from gasops_app.store import Store
     db=Store(db.path)  # Seed legacy private history outside the public UI boundary.
     data=synthetic()
+    monkeypatch.setattr(session,"automatic_selection",lambda *a,**k:session.Selection(session.PUBLIC,"Seasonal regression",24,data))
+    monkeypatch.setattr(session,"_collect_assistant_sources",lambda *a,**k:{})
     foreign=Run(question="DOMANDA_DI_UN_ALTRO_VISITATORE",source=data.origin,input_sha256=data.fingerprint,assumptions={})
     db.save(foreign)
     app=AppTest.from_string("from gasops_app.assistant_page import assistant_page\nassistant_page()",default_timeout=30)
@@ -525,7 +527,7 @@ def test_assistant_session_history_isolated_and_shortcut_works(monkeypatch,tmp_p
     app.button(key="assistant_starter_Consumi").click().run()
     assert not app.exception
     history=app.session_state[assistant_page.HISTORY]
-    assert len(history)==1 and Agent.MARKET in history[0].results
+    assert len(history)==1 and history[0].assumptions["source_lookup"]
     assert history[0].mode=="Deterministic"
     assert len(db.recent())==1 and db.recent()[0].id==foreign.id
     assert any("Calcoli locali · senza risposta AI" in e.value for e in app.caption)
@@ -887,8 +889,9 @@ def test_assistant_retains_last_result_when_launch_fails(monkeypatch,tmp_path):
     monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
     monkeypatch.setenv("GASOPS_PDF_DIR",str(tmp_path))
     monkeypatch.setattr(session,"reasoner",lambda:None)
-    monkeypatch.setattr(assistant,"reasoner",lambda:None)
+    monkeypatch.setattr(assistant,"assistant_reasoner",lambda:None)
     monkeypatch.setattr(assistant,"ai_configured",lambda:False)
+    monkeypatch.setattr(session,"_collect_assistant_sources",lambda *a,**k:{})
     app=AppTest.from_string("from gasops_app.assistant_page import assistant_page\nassistant_page()",default_timeout=30)
     app.session_state["selected_source"]=DEMO
     app.session_state["assistant_view"]="Report locali"

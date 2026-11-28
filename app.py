@@ -62,12 +62,12 @@ def application(demo=True):
         </div>
         """)
         sidebar_navigation(pages, current)
-        if not demo:
+        if not demo and current.url_path!="operations":
             from gasops_app import session
             st.html('<div class="gas-nav-group gas-nav-settings">Analisi</div>')
             session.sidebar()
         else:
-            st.caption("Fonti pubbliche")
+            st.caption("Fonti automatiche" if current.url_path=="operations" else "Fonti pubbliche")
         st.html('<div class="gas-byline"><strong>Prototipo per Snam · creato da Igor</strong><small>Progetto indipendente, non ufficiale.</small></div>')
     if demo:
         demo_application.prepare(current.url_path)

@@ -12,7 +12,7 @@ from .models import Agent, AGENT_LABELS, Kind, Run, utc_now
 from .reports import markdown
 from . import session
 from zoneinfo import ZoneInfo
-from .session import launch, reasoner, source_filters, ai_activation_panel
+from .session import launch, assistant_reasoner
 from .visuals import evidence, info, local_time, steps, ai_readout, header
 from .workflow import DAILY_BRIEFING
 
@@ -113,7 +113,34 @@ def _source_evidence_panel(report):
                 st.caption(row["limitation"])
 
 
+def _document_report(report,*,fresh=False):
+    result=report.results[Agent.REGULATORY]
+    claims=report.assumptions.get("document_claims",[])
+    if claims:
+        st.caption("AI locale · riscontri nei PDF")
+        for claim in claims:
+            st.text(claim["text"])
+            cite=claim["citation"]
+            st.caption(cite["document"]+" · PDF p. "+str(cite["page"]))
+    else:
+        st.caption("Ricerca nei PDF · estratti locali")
+        st.text(result.summary)
+    for warning in report.warnings:
+        st.caption(warning)
+    if result.evidence:
+        with st.expander("Estratti dei PDF",expanded=not claims):
+            evidence(result.evidence)
+    _source_evidence_panel(report)
+    if gme:=report.assumptions.get("gme_request"):
+        from .gme_market_page import assistant_prices
+        assistant_prices(gme,report.started_at,report_id=report.id,refresh=fresh)
+    st.caption(str(report.assumptions.get("document_count",0))+" PDF consultabili · edizione e applicabilità da verificare")
+
+
 def _report(report:Run,selection,*,fresh=False):
+    if report.assumptions.get("assistant_document_lookup"):
+        _document_report(report,fresh=fresh)
+        return
     inferred=report.mode=="LLM-assisted" and bool(report.interpretation)
     mode=("AI · "+(report.model or "modello selezionato") if inferred else
           "Calcoli locali · AI non disponibile" if report.mode=="Deterministic fallback" else "Calcoli locali · senza risposta AI")
@@ -279,9 +306,9 @@ def assistant_page():
         panel()
         return
     local=view=="Report locali"
-    model=None if local else reasoner()
+    model=None if local else assistant_reasoner()
     if not local and model is None:
-        ai_activation_panel(prefix="assistant")
+        st.info("AI non configurata. I report locali restano disponibili.")
         st.chat_input("Fai una domanda sul mercato del gas",key="assistant_question",max_chars=600,disabled=True)
         previous=_history()
         if previous:
@@ -291,45 +318,28 @@ def assistant_page():
                 _report(previous,None)
         return
 
-    # Show the selected evidence perimeter in one line; detailed controls stay
-    # available without competing with the conversation.
-    source_slot=st.container(key="assistant_source_status")
-    with st.expander("Fonti e impostazioni",expanded=local):
-        selection=source_filters("ops",lookback=False)
-        if local:
-            info("Info report","Calcoli e controlli predefiniti, senza interpretazione AI.")
-        else:
-            info("Info assistente","Puoi cambiare il giorno dell’ultima consultazione puntuale: ad esempio «E il 20/11/2026?» o «E il giorno precedente?». Per confronti tra periodi indica il dato e le date.",
-                 "Le domande possono richiedere fino a tre chiamate. Lo storico è conservato nella sessione.")
-    with source_slot:
-        if selection.bundle is not None:
-            origin=selection.bundle.origin
-            period=origin.latest_period
-            st.caption(" · ".join(filter(None,[origin.name,period,"Report locali" if local else "AI attiva"])))
-            if origin.archive:
-                st.caption("Archivio storico · non mercato attuale.")
-            elif origin.kind==Kind.SYNTHETIC:
-                st.warning("Dati di esempio · non mercato reale.")
-            if origin.refresh_failed:
-                st.warning("Ultima copia valida · aggiornamento non riuscito.")
-        else:
-            st.caption("Fonte di base non disponibile. Apri Fonti e impostazioni per aggiornarla.")
-        if model and not model.config.local:
-            st.caption("Provider esterno · solo dati pubblici.")
+    # No dataset or model picker: all questions use automatic evidence routing.
+    selection=None
+    if local:
+        st.caption("Calcoli locali · fonti automatiche")
+    elif not model.config.local:
+        st.caption("AI attiva · fonti automatiche · provider esterno: solo dati pubblici")
+    else:
+        st.caption("AI attiva · fonti automatiche")
 
-    disabled=selection.bundle is None
     history_slot=st.container()
     answer_slot=st.container(key="assistant_answer")
     controls=st.columns([1,1,1,1.3],gap="small")
     shortcut=None
     for col,(label,question) in zip(controls[:3],STARTERS):
-        if col.button(label,key="assistant_starter_"+label,width="stretch",disabled=disabled,help=question):
+        if col.button(label,key="assistant_starter_"+label,width="stretch",help=question):
             shortcut=question
-    full=controls[3].button("Bollettino",key="assistant_briefing",width="stretch",disabled=disabled,
+    full=controls[3].button("Bollettino",key="assistant_briefing",width="stretch",
                             help="Genera bollettino locale" if local else "Genera bollettino AI")
     if not local:
         with st.popover("Info · comandi",icon=":material/info:"):
-            st.caption("Scrivi una domanda libera oppure un comando.")
+            st.caption("Scrivi una domanda libera: I.G.O.R. sceglie le fonti pertinenti, consulta i PDF disponibili e usa il modello previsionale automatico.")
+            st.caption("Non inserire dati riservati con un provider remoto. Gli estratti dei PDF rimangono locali senza consenso esplicito.")
             for command,example in COMMANDS.items():
                 st.markdown("**"+command+"** · "+example)
             st.caption("Esempi: /scorte 20/11/2026 · /mase 2025 · E il giorno precedente?")
@@ -353,7 +363,7 @@ def assistant_page():
         try:
             return launch(selection,resolved,full=full,persist=False,
                           planned_only=bool(local or full or shortcut),compact=True,
-                          ai_policy="off" if local else "required")
+                          ai_policy="off" if local else "automatic")
         except Exception as error:
             LOG.warning("Assistant workflow failed (%s)",type(error).__name__)
             return None
@@ -397,6 +407,4 @@ def assistant_page():
                 st.divider()
                 st.caption("Ultimo risultato conservato · non è la risposta alla nuova richiesta.")
             render(previous)
-    elif not attempted and disabled and local:
-        with answer_slot:
-            st.info("Seleziona una fonte disponibile per iniziare.")
+
