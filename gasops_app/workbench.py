@@ -231,8 +231,8 @@ def balancing() -> None:
     apply_intent("balancing")
     header("Bilanciamento", "")
     view=picker("Vista bilanciamento",["Cockpit","Controllo giornaliero","Stato sistema","Sbilanciamento del partecipante","Scenario di mercato"],
-                key="balancing_view",labels={"Cockpit":"Sistema e portafoglio","Controllo giornaliero":"Settlement",
-                    "Stato sistema":"Pubblicazioni Jarvis","Sbilanciamento del partecipante":"Calcola sbilanciamento","Scenario di mercato":"Scenari"})
+                key="balancing_view",labels={"Cockpit":"Sistema e utenti","Controllo giornaliero":"Bilanci e rettifiche",
+                    "Stato sistema":"Dati Snam","Sbilanciamento del partecipante":"Calcola saldo utente","Scenario di mercato":"Simula scenario"})
     if view=="Cockpit":
         from .balancing_cockpit_page import panel
         panel()
@@ -246,9 +246,9 @@ def balancing() -> None:
         _jarvis_panel(prefix="balancing")
     else:
         source,tool=st.columns([2,1],vertical_alignment="bottom")
-        labels={"Settlement e rettifiche":"Bilanci e rettifiche","Riconciliazione infrastrutture":"Allocazioni G+1",
+        labels={"Settlement e rettifiche":"Bilanci e rettifiche","Riconciliazione infrastrutture":"Allocazioni (G+1)",
                 "Aggiustamenti":"Aggiustamenti","Quadratura rete":"Quadratura rete"}
-        mode=tool.selectbox("Controllo di settlement",tuple(labels),key="balancing_daily_mode",format_func=labels.__getitem__)
+        mode=tool.selectbox("Tipo di controllo",tuple(labels),key="balancing_daily_mode",format_func=labels.__getitem__)
         if mode=="Riconciliazione infrastrutture":
             from .interface_reconciliation_page import panel
             panel()

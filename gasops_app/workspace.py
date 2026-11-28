@@ -90,9 +90,9 @@ def render(*, show_example=True):
 
 
 def getting_started():
-    st.button("Prova un esempio di settlement", key="workspace_example",
+    st.button("Prova un bilancio di esempio", key="workspace_example",
               icon=":material/play_arrow:", on_click=open_workspace, args=("settlement_example",))
-    with st.expander("Quale strumento usare?"):
+    with st.popover("Info · da dove iniziare",icon=":material/info:"):
         from .bso_reference import render_terms
         st.markdown("**Sistema gas** per le stime aggregate della rete. **Bilanci e rettifiche** per il saldo del partecipante. "
                     "**Fatture e garanzie** per confronti documentali e credito. **Operazioni gas** per attività e scadenze.")
@@ -106,7 +106,7 @@ def getting_started():
 def guide(key):
     instructions = {
         "system": ("Importa le pubblicazioni Jarvis nel modello CSV indicato.",
-                   "Scegli il giorno gas e confronta SAS, prelievi e versioni.",
+                   "Scegli il giorno gas e confronta le stime del sistema.",
                    "Verifica la data della pubblicazione ed esporta lo storico."),
         "settlement": ("Importa bilanci e prezzi, oppure scegli l’esempio guidato.",
                        "Leggi le eccezioni e confronta le rettifiche della giornata.",
@@ -115,7 +115,7 @@ def guide(key):
                        "Scegli area e mese: parti dalle attività scadute e prossime.",
                        "Esporta l’agenda; il calendario pubblico Snam resta un riferimento separato."),
     }
-    with st.expander("Come usare questa vista"):
+    with st.popover("Info · come usare questa vista",icon=":material/info:"):
         from .bso_reference import render_terms
         for number, text in enumerate(instructions[key], 1):
             st.markdown(f"**{number}.** {text}")

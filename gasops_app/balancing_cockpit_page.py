@@ -86,8 +86,8 @@ def _public(day_layout=None):
         retrieved_at=min(valid.retrieved_at,default=None),cached=bool(len(valid) and valid.cached.eq(True).all()),
         failed=bool(selected.failed.any()),partial=bool(selected.partial.any()))
     kpi_grid([("Posizione di sistema",position["value"],position["unit"],position["status"],1,""),
-              ("Direzioni confrontabili",sum(r["comparable"] for r in rows),"/ "+str(len(rows)),"Direzioni mappate · nomina, rinomina, allocazione e flusso",0,""),
-              ("Osservazioni utilizzabili",len(valid),"",freshness_label(freshness),0,"")])
+              ("Direzioni confrontabili",sum(r["comparable"] for r in rows),"/ "+str(len(rows)),"Confronto tra programma e misure",0,""),
+              ("Dati utilizzabili",len(valid),"",freshness_label(freshness),0,"")])
     st.caption(m.ESTIMATED+" · "+position["note"])
     _workflow(m.workflow(rows))
     available_assets={r["infrastructure_id"] for r in rows if r["available"]}
@@ -98,7 +98,7 @@ def _public(day_layout=None):
         key="cockpit_point"
         if st.session_state.get(key) not in options:
             st.session_state[key]=next((p for p in options if by_point[p]["infrastructure_id"]==st.session_state.get(SELECTED)),options[0])
-        point=st.selectbox("Punto da esaminare",options,key=key,
+        point=st.selectbox("Scegli un punto",options,key=key,
             format_func=lambda p:display_name(by_point[p]["point"])+" · "+arrow_text(by_point[p]["point_type"])+
                 (" · "+arrow_text(by_point[p]["direction"]) if by_point[p]["point_type"]=="Bidirezionale" else ""))
     from .gme_market import api_configured as gme_configured
@@ -271,6 +271,6 @@ def panel():
     selection,day=st.columns([2,1],vertical_alignment="bottom")
     with selection:
         context=picker("Contesto",("SYSTEM VIEW","PORTFOLIO / SHIPPER VIEW"),key="cockpit_context",
-                       labels={"SYSTEM VIEW":"Sistema gas","PORTFOLIO / SHIPPER VIEW":"Portafoglio importato"})
+                       labels={"SYSTEM VIEW":"Sistema gas","PORTFOLIO / SHIPPER VIEW":"Dati dell’utente (importati)"})
     if context=="SYSTEM VIEW":_public(day)
     else:_portfolio(day)

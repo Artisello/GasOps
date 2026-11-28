@@ -122,7 +122,7 @@ async function main(){
   await a.locator('[data-testid="stDeckGlJsonChart"] canvas').waitFor();
   report.checks.push({check:'overview_to_network',status:'PASS'});
   await chooseRadio(a,'Esplora dati');
-  await a.getByRole('heading',{name:'Gas Data Explorer',exact:true}).waitFor();
+  await a.getByRole('heading',{name:'Esplora dati',exact:true}).waitFor();
   assert.equal(await a.getByTestId('stException').count(),0);
   report.checks.push({check:'data_explorer',status:'PASS'});
   if(args['no-provider-keys']==='true'){
