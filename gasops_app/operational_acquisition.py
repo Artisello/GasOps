@@ -15,7 +15,7 @@ from .italian_network_sources import load_catalog, load_facility, load_point
 from .models import utc_now
 from .italian_network_events import load_interruptions
 from .operational_sources import load_agsi, load_alsi, load_iip
-from .public_data import SourceUnavailable, network_allowed
+from .public_data import SourceUnavailable, SourceNoObservation, network_allowed
 
 HISTORY_DAYS = 90
 REVISION_DAYS = 7
@@ -120,6 +120,17 @@ def _map_detail(store, network, detail, catalog, api_key, now):
     return output
 
 
+def inventory_error_code(reason):
+    # Store only bounded diagnostic codes, never raw provider content.
+    reason=str(reason).casefold()
+    if "http 429" in reason or "limite richieste" in reason:return "rate_limit"
+    if any(v in reason for v in ("http 401","http 403","accesso gie negato")):return "access_denied"
+    if "tempo di risposta" in reason or "timeout" in reason:return "timeout"
+    if "connessione" in reason:return "connection"
+    if "http " in reason:return "http_error"
+    return "validation_or_unavailable"
+
+
 def synchronize(store, network, work, now, *, api_key=None, clock=utc_now, pause=.4, detail=None):
     """No Streamlit state in the worker. Source loaders own validation and data persistence."""
     saved = journal(store)
@@ -139,6 +150,8 @@ def synchronize(store, network, work, now, *, api_key=None, clock=utc_now, pause
                     throttled.add(family)
         good = count = 0
         partial = False
+        reason_code = None
+        no_observation = False
         for _,key,binding,_,_,refresh in batch:
             count += 1
             delay = next_request-monotonic()
@@ -168,11 +181,17 @@ def synchronize(store, network, work, now, *, api_key=None, clock=utc_now, pause
                     loader = load_agsi if source=="agsi" else load_alsi
                     result = loader(store,api_key,"IT",first=first,last=last,now=now,refresh=refresh)
                     ok = not result["failed"]
+                    no_observation = bool(result.get("no_observation"))
+                    if not ok:reason_code=inventory_error_code(result.get("refresh_error",""))
                     if "HTTP 429" in (result.get("refresh_error") or ""):
                         throttled.add(family)
                     column = "stock_twh" if source=="agsi" else "sendout_gwh_d"
-                    observed = set(result["frame"].loc[result["frame"][column].notna(),"gas_day"])
+                    observed = set() if no_observation else set(result["frame"].loc[result["frame"][column].notna(),"gas_day"])
+            except SourceNoObservation:
+                ok = True
+                no_observation = True
             except FAILURES as error:
+                if family=="gie":reason_code=inventory_error_code(error)
                 ok = False
                 if isinstance(error,SourceUnavailable) and "HTTP 429" in str(error):
                     throttled.add(family)
@@ -185,6 +204,9 @@ def synchronize(store, network, work, now, *, api_key=None, clock=utc_now, pause
                 attempts[key] = dict(sorted(prior.items(),key=lambda item:(item[1][0],item[0]))[-180:])
         if last.isoformat()>=health.get(source,{}).get("last",""):
             health[source] = {"first":str(first),"last":str(last),"at":at,"valid":good,"expected":count,"failed":good<count,"partial":partial}
+            if family=="gie":
+                health[source].update(reason_code=reason_code,no_observation=no_observation,
+                    outcome="failed" if good<count else "no_observation" if no_observation else "partial" if partial else "acquired")
         store.cache(JOURNAL,at,json.dumps(saved,separators=(",",":")))
     if detail and not throttled:
         return _map_detail(store,network,detail,catalog or network.sources["opd"],api_key,now)
