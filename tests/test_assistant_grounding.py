@@ -506,6 +506,9 @@ def test_precise_srg_uses_bounded_historical_range(monkeypatch):
     "Qual è il PUN Index GME?",
     "Prezzo elettrico di oggi",
     "Costo giornaliero dell’elettricità",
+    "Costo settimanale dell’elettricità",
+    "Prezzo giornaliero dell'energia elettrica",
+    "Prezzo settimanale dell'energia elettrica",
     "Prezzo dell'elettricità secondo ARERA",
 ])
 def test_electricity_price_is_not_gas_or_terna(question):
@@ -586,3 +589,15 @@ def test_pdf_candidates_are_ranked_across_archives_before_truncation(monkeypatch
     hits=assistant_lookup.ranked_document_hits([[weaker],[stronger,stronger]],
                 "garanzia economica deposito cauzionale",1)
     assert hits==[stronger]
+
+
+def test_electricity_price_time_grain_keeps_explicit_srg_or_gas_demand():
+    for question in ("Prezzo giornaliero dell'elettricità e prelievi SRG",
+                     "Prezzo giornaliero dell'elettricità e consumi di gas"):
+        keys=sources.requested_sources(question)
+        assert sources.DAILY in keys
+        assert sources.ELECTRIC_PRICE in keys
+    keys=sources.requested_sources("Prezzo giornaliero dell'elettricità e consumi elettrici")
+    assert sources.DAILY not in keys
+    assert sources.POWER[0] in keys and sources.ELECTRIC_PRICE in keys
+    assert sources.requested_sources("Prelievi giornalieri SRG")== (sources.DAILY,)
