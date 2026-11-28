@@ -20,7 +20,7 @@ from .italiano import numero, data_it
 from .italian_network import (ASSETS, CATEGORIES, applicable, filter_infrastructure,
                               load_network_assets, map_kpis, merge_observations, selected_id,
                               kpi_status, point_intelligence, verified_bindings,
-                              validated_observations, reading_infrastructure, READING_MODES)
+                              validated_observations, reading_infrastructure, READING_MODES, PointIntelligenceIndex)
 from .italian_network_events import iip_events, verified_events, parse_interruptions
 from .italian_network_map import (deck, display_name, legend_symbol, nearby_points, NEARBY_METRES,
     FLOW_LENSES, FLOW_LENS_LABELS, flow_metric, DELTA_COLORS, UTILIZATION_BANDS, MISSING_COLOR)
@@ -154,13 +154,14 @@ def _resolve_selection(displayed, reading, previous, events=(), findings=()):
 def _reconcile_map(network, perimeter, observations, snapshots, day, now, saved, previous,
                    direction, policy, reading, events, findings, mode):
     # Eligibility uses a verified direction with data, not a stale direction from another item.
-    intelligence = _map_intelligence(network,perimeter,observations,snapshots,day,now,saved,None,None,policy)
+    index = PointIntelligenceIndex(network,observations,snapshots,now)
+    intelligence = _map_intelligence(network,perimeter,observations,snapshots,day,now,saved,None,None,policy,index=index)
     # Membership in Flow depends on any verified observed direction, not the
     # direction the user happens to inspect (which may legitimately be N/D).
     flow_displayed = _reading_items(perimeter,reading,intelligence,previous,events,findings) if reading=="FLOW" else None
     if previous in intelligence and direction in ("entry","exit"):
-        candidate = point_intelligence(network,previous,observations,day,now,direction=direction,
-            snapshots=snapshots,failures=saved.get("failures",()),ttl_hours=policy.network_ttl_hours)
+        candidate = index.point(previous,day,direction=direction,
+            failures=saved.get("failures",()),ttl_hours=policy.network_ttl_hours)
         if candidate.get("binding"):
             intelligence[previous] = candidate
     displayed = flow_displayed if flow_displayed is not None else _reading_items(perimeter,reading,intelligence,previous,events,findings)
@@ -230,11 +231,14 @@ def _initialize_layers():
         st.session_state["net_layer_defaults_nodes_v1"] = True
 
 
-def _map_intelligence(network, visible, observations, snapshots, day, now, saved, selected, direction, policy):
-    return {i.id:point_intelligence(network,i.id,observations,day,now,
-        direction=direction if i.id == selected else None,snapshots=snapshots,
+def _map_intelligence(network, visible, observations, snapshots, day, now, saved, selected, direction, policy, *, index=None):
+    if index is None:
+        index = PointIntelligenceIndex(network,observations,snapshots,now)
+    # Retain even unconfirmed catalogue entries in the result, as before.
+    mapped = {b.infrastructure_id for b in network.bindings if b.provider=="ENTSOG"}
+    return {i.id:index.point(i.id,day,direction=direction if i.id == selected else None,
         failures=saved.get("failures",()),ttl_hours=policy.network_ttl_hours)
-        for i in visible if network.bindings_for(i.id,"ENTSOG")}
+        for i in visible if i.id in mapped}
 
 
 def _reset_view(mode):
