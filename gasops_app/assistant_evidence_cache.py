@@ -130,6 +130,7 @@ def collect_cached(store,state,now,requested,day,collect,clock):
     remaining=list(dict.fromkeys(requested))
     public={}
     misses=[]
+    hits=[]
     for group in eligible:
         sources=group[0]
         ident=identity(sources,day,now)
@@ -138,11 +139,18 @@ def collect_cached(store,state,now,requested,day,collect,clock):
         if found is None:
             misses.append((group,ident,revision))
             continue
+        hits.append((group,ident,revision))
         public.update(found)
         remaining=[key for key in remaining if key not in sources]
     if remaining:
         public.update(collect(tuple(remaining)))
     checked=clock()
+    # Other sources may have taken long enough for an earlier hit to expire.
+    # Recheck only when work took place, and fall back once if invalidated.
+    if remaining and any(identity(group[0],day,checked)!=ident or
+                         lookup(state,ident,token(store,state,group,checked),checked) is None
+                         for group,ident,_ in hits):
+        return collect(requested)
     for group,ident,before in misses:
         if before is None or identity(group[0],day,checked)!=ident:continue
         after=token(store,state,group,checked)
