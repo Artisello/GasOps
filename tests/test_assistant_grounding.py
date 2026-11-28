@@ -601,3 +601,69 @@ def test_electricity_price_time_grain_keeps_explicit_srg_or_gas_demand():
     assert sources.DAILY not in keys
     assert sources.POWER[0] in keys and sources.ELECTRIC_PRICE in keys
     assert sources.requested_sources("Prelievi giornalieri SRG")== (sources.DAILY,)
+
+
+def test_catalog_preserves_router_ids_and_comparison_units():
+    assert list(sources.SOURCE_CATALOG)[:5]==[
+        sources.MONTHLY,sources.DAILY,sources.PRICE,"AGSI+","ALSI"]
+    assert sources._COMPARABLE_DAILY[sources.DAILY][0]==(
+        "demand_gwh","Prelievi SRG","GWh/g",False)
+    assert all(len({m.field for m in metrics})==len(metrics)
+               for metrics in sources.METRIC_CATALOG.values())
+    assert {m.quantity for m in sources.METRIC_CATALOG["AGSI+"]}=={"stock","ratio","flow"}
+
+
+@pytest.mark.parametrize("text",[
+    "Importazioni: 10 GWh/mese.",
+    "Produzione nazionale: 90 GWh/mese.",
+    "Riempimento degli stoccaggi: 2%.",
+    "Giacenza: 12 TWh.",
+    "CMEM,m: 86,60 €/MWh.",
+    "Differenziale GNL–TTF: 86,60 €/MWh.",
+    "Prezzo GNL UE: 3,40 €/MWh.",
+])
+def test_semantic_catalog_rejects_swapped_indicators_even_when_number_exists(text):
+    public={
+        sources.MONTHLY:{"status":"available","grain":"mese","unit":"GWh/mese",
+                         "values":{"production_gwh":10,"imports_gwh":90}},
+        "AGSI+":{"status":"available","values":{"fill_pct":80,"stock_twh":70},
+                 "changes_pct":{"fill_pct":2}},
+        "AGSI+ · UE":{"status":"available","values":{"stock_twh":12}},
+        sources.PRICE:{"status":"available","unit":"€/MWh","value":88.3585},
+        sources.ACER:{"status":"available","unit":"€/MWh","values":{
+            "eu":{"status":"available","value":86.598},
+            "benchmark":{"status":"available","value":3.40}}},
+    }
+    # The unrelated EU stock is not cited.
+    refs=["src:"+key for key in public if key!="AGSI+ · UE"]
+    with pytest.raises(InvalidSynthesis,match="indicatore esplicitamente citato"):
+        verify_measurements([{"text":text,"references":refs}],{},model_context(public))
+
+
+def test_semantic_catalog_accepts_correct_values_and_rounding():
+    public={
+        sources.MONTHLY:{"status":"available","grain":"mese","unit":"GWh/mese",
+                         "values":{"production_gwh":10,"imports_gwh":90}},
+        "AGSI+":{"status":"available","values":{"fill_pct":80,"stock_twh":70}},
+        sources.PRICE:{"status":"available","unit":"€/MWh","value":88.3585},
+        sources.ACER:{"status":"available","unit":"€/MWh","values":{
+            "eu":{"status":"available","value":86.598},
+            "benchmark":{"status":"available","value":3.40}}},
+    }
+    text=("Importazioni: 90 GWh/mese. Produzione nazionale: 10 GWh/mese. "
+          "Riempimento degli stoccaggi: 80%. Giacenza: 70 TWh. "
+          "CMEM,m: 88,36 €/MWh. Prezzo GNL UE: 86,60 €/MWh. "
+          "Differenziale GNL–TTF: 3,40 €/MWh.")
+    verify_measurements([{"text":text,"references":["src:"+key for key in public]}],
+                        {},model_context(public))
+
+
+def test_semantic_catalog_cannot_use_an_uncited_metric_source():
+    public={
+        sources.PRICE:{"status":"available","unit":"€/MWh","value":40},
+        sources.ACER:{"status":"available","unit":"€/MWh","values":{
+            "eu":{"status":"available","value":40}}},
+    }
+    with pytest.raises(InvalidSynthesis,match="indicatore esplicitamente citato"):
+        verify_measurements([{"text":"CMEM,m: 40 €/MWh.",
+                              "references":["src:"+sources.ACER]}],{},model_context(public))
