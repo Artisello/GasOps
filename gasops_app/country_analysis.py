@@ -26,9 +26,9 @@ def requested_country(question):
     matches=[code for code,pattern in COUNTRY_PATTERNS.items() if re.search(pattern,question,re.I)]
     european=bool(re.search(r"\b(?:ue|eu|europa|europe|europe[oaie]|unione europea)\b",question,re.I))
     if european:
-        from .assistant_sources import ACER, requested_sources
+        from .assistant_sources import ACER, TTF_QUOTE, requested_sources
         sources=set(requested_sources(question))
-        if not matches and sources and sources<={ACER,"AGSI+","ALSI"}:
+        if not matches and sources and sources<={ACER,TTF_QUOTE,"AGSI+","ALSI"}:
             return "EU"
         return "unsupported"
     if not matches or matches==["IT"]:return None
