@@ -55,9 +55,11 @@ def refresh(state,store,now,selected,*,gie=None,terna=None,clock=utc_now,progres
     records=dict(previous.get("sources",{}))
     state[STATUS]={"attempted":now,"sources":records}
     bundles=dict(state.get(BUNDLES,{}))
+    from .public_data import acquisition_error_code, SourceNoObservation
     evidence={}
     def validated(records,*,cached=False,failed=False):
-        evidence.update(validated=True,records=int(records),reachable=True if not cached and not failed else None)
+        evidence.update(validated=True,records=int(records),reachable=True if not cached and not failed else None,
+                        outcome="failed" if failed else "cached" if cached else "acquired")
     def attempt(name,fn):
         start=monotonic()
         evidence.clear()
@@ -65,14 +67,20 @@ def refresh(state,store,now,selected,*,gie=None,terna=None,clock=utc_now,progres
             note=fn()
             records[name]={"status":"Da verificare" if note else "Acquisito","at":clock().isoformat(),"note":note or ""}
         except SourceUnavailable as error:
+            evidence.update(outcome="no_observation" if isinstance(error,SourceNoObservation) else "failed",
+                            reason_code=evidence.get("reason_code") or acquisition_error_code(error))
             records[name]={"status":"Da aggiornare","at":clock().isoformat(),
                            "note":str(error) if name.startswith("terna") else
                            "Fonte temporaneamente non disponibile. Ultimo dato valido conservato, se presente."}
-        except Exception:
+        except Exception as error:
+            evidence.update(outcome="failed",reason_code=acquisition_error_code(error))
             records[name]={"status":"Da aggiornare","at":clock().isoformat(),
                            "note":"Fonte temporaneamente non disponibile. Ultimo dato valido conservato, se presente."}
         records[name]["duration_seconds"]=round(monotonic()-start,2)
         records[name].update(evidence)
+        records[name].setdefault("outcome","review" if records[name]["status"]=="Da verificare" else "completed_unverified")
+        if records[name]["outcome"]=="acquired" and records[name]["status"]=="Da verificare":
+            records[name]["outcome"]="partial"
     def market(name,loader,grain):
         bundle,warning=loader(store,refresh=True)
         bundles[name]=valid_bundle(bundle,now,grain)
@@ -88,6 +96,8 @@ def refresh(state,store,now,selected,*,gie=None,terna=None,clock=utc_now,progres
                 raise ValueError("Perimetro o copertura")
             state[key]={"attempted":now,"result":result}
             validated(evidence.get("records",0)+len(result["frame"]),cached=bool(result.get("cached")),failed=result["failed"])
+            if result["failed"]:evidence["reason_code"]=acquisition_error_code(result.get("refresh_error",""))
+            if result.get("no_observation"):evidence.update(outcome="no_observation",reason_code="no_observation")
             return "Cache non aggiornata." if result["failed"] else "Nessuna osservazione utilizzabile restituita." if result.get("no_observation") else ""
         except Exception:
             saved=state.get(key,{})
@@ -102,10 +112,11 @@ def refresh(state,store,now,selected,*,gie=None,terna=None,clock=utc_now,progres
                 note=inventory_scope(platform,loader,scope)
                 acquired+=1
                 if note:notes.append(scope+": "+note)
-            except Exception:
+            except Exception as error:
+                evidence["reason_code"]=acquisition_error_code(error)
                 notes.append(scope+": aggiornamento non disponibile; eventuale copia precedente conservata.")
         if not acquired:
-            raise ValueError("Nessun perimetro disponibile")
+            raise SourceUnavailable("Nessun perimetro disponibile")
         return " · ".join(notes)
     def network():
         from .italian_network import load_network_assets
