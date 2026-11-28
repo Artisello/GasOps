@@ -19,11 +19,6 @@ METADATA={"url","source_url","id","provenance","last_observed_values"}
 def compact_context(context):
     def compact(value):
         if isinstance(value,dict):
-            # A multi-series snapshot can be available overall while one
-            # constituent quote is stale. Never send that stale number.
-            if value.get("status") in ("unavailable","stale","failed"):
-                keep={"source","scope","status","period","gas_day","grain","acquired","reason","kind","limitation","definition"}
-                return {k:compact(v) for k,v in value.items() if k in keep and v is not None}
             return {k:compact(v) for k,v in value.items() if k not in METADATA and v is not None}
         if isinstance(value,list):
             return [compact(v) for v in value]
@@ -99,16 +94,26 @@ def _values(data, inherited=None):
 
 def model_context(context):
     """Expose usable tuples and keep source gaps as metadata only."""
+    def usable(value):
+        if isinstance(value,dict):
+            # A multi-series snapshot can be available overall while one
+            # constituent quote is stale. Filter at the model boundary only.
+            if value.get("status") in ("unavailable","stale","failed"):
+                keep={"source","scope","status","period","gas_day","grain","unit",
+                      "acquired","reason","kind","limitation","definition"}
+                return {k:usable(v) for k,v in value.items() if k in keep}
+            return {k:usable(v) for k,v in value.items()}
+        if isinstance(value,list):
+            return [usable(v) for v in value]
+        return value
+
     safe={}
     for key,item in compact_context(context).items():
         # GME observations stay in the local view even if another analysis
         # attaches market prices to a Run in the future.
         if re.search(r"\bGME\b|Gestore dei Mercati Energetici",key+" "+str(item.get("source","")),re.I):
             continue
-        if item.get("status") in ("unavailable","stale"):
-            item={field:value for field,value in item.items() if field in
-                  ("source","scope","status","period","gas_day","grain","acquired","reason","kind","limitation")}
-        safe[key]=item
+        safe[key]=usable(item)
     return safe
 
 
