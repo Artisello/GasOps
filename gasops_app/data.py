@@ -25,7 +25,7 @@ FIELDS = {
     "net_imports_gwh": "Importazioni nette",
     "stock_change_gwh": "Variazione delle scorte",
     "industry_gwh": "Consumi industriali",
-    "power_gwh": "Generazione elettrica",
+    "power_gwh": "Gas per termoelettrico",
     "distribution_gwh": "Consumi residenziali e commerciali",
 }
 META = ["period", "timestamp_utc", "energy_unit", "price_unit", "source_flag"]
