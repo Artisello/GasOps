@@ -518,6 +518,74 @@ def automatic_selection(question, *, full=False):
     return Selection(name,AUTOMATIC,90 if daily else 24,bundle)
 
 
+def _precise_period_lookup(question,requested,days,*,monthly,scope,model):
+    """Bounded point-in-time lookups. Never treat a monthly stock as a flow."""
+    from .assistant_lookup import lookup_report
+    from .assistant_sources import MONTHLY, DAILY as SRG, PRICE, MASE, LABELS, period_comparison
+    from .gas_calendar import closed_gas_day
+    now=utc_now()
+    # These are observed point-in-time series, not period aggregates.
+    supported={MONTHLY,PRICE,MASE} if monthly else {SRG,"AGSI+","ALSI"}
+    if scope=="DE":
+        supported={MONTHLY} if monthly else {"AGSI+"}
+    elif scope=="EU":
+        supported=set() if monthly else {"AGSI+","ALSI"}
+    elif scope!="IT":
+        supported=set()
+    # Don't invent a monthly interpretation of a generic daily source alias.
+    if monthly and MONTHLY in requested and not re.search(r"\bsrg\b|\bentsog\b|giornalier",question,re.I):
+        requested=tuple(key for key in requested if key!=SRG)
+    if len(days)==2:
+        supported.discard(MASE)  # Its separate year/region archive has different schema.
+    snapshots=[]
+    for day in days:
+        usable=tuple(key for key in requested if key in supported)
+        public={}
+        if not monthly and day>closed_gas_day(now):
+            usable=()
+        if monthly and day>=now.astimezone(ROME).date().replace(day=1):
+            usable=()
+        if usable:
+            if scope=="DE" and monthly:
+                from . import eurostat
+                from .briefing_market_sources import market_context
+                try:
+                    item=market_context(eurostat.load(database(),geo="DE"),utc_now(),day=day)
+                    # market_context's monthly fields are Eurostat balance
+                    # components; its Italy label must never leak to Germany.
+                    item={**item,"scope":"Germania"}
+                    item.pop("price",None)
+                    public[MONTHLY]=item
+                except Exception:
+                    LOG.info("Historical German Eurostat observation unavailable")
+            else:
+                # The MASE adapter resolves the explicit month passed in day.
+                public=_collect_assistant_sources(None,None,usable,day=day,scope=scope,
+                                                  question=question,automatic=True)
+        for key in requested:
+            if key not in public:
+                public[key]={"source":LABELS.get(key,key),"status":"unavailable","scope":scope,
+                    "period":day.isoformat(),"reason":(
+                        "Periodo non concluso o dato non ancora pubblicato." if
+                        (day>=now.astimezone(ROME).date().replace(day=1) if monthly else day>closed_gas_day(now))
+                        else "Fonte o granularità non disponibile per questo periodo e perimetro.")}
+        snapshots.append(public)
+    if len(days)==1:
+        return lookup_report(question,snapshots[0],utc_now(),day=days[0],scope=scope,reasoner=model)
+    first,last=(day.isoformat() for day in days)
+    rows=period_comparison(*snapshots,first=first,last=last,monthly=monthly)
+    # No model needed for arithmetic, and no mixed dates in a synthesis prompt.
+    report=lookup_report(question,snapshots[-1],utc_now(),scope=scope,
+                         issue="Confronto tra periodi." if rows else "Nessuna coppia di osservazioni confrontabili.")
+    report.assumptions.update({"assistant_period_comparison":True,"source_lookup":False,
+        "assistant_periods":[first,last],"assistant_period_grain":"mese" if monthly else "giorno gas",
+        "assistant_period_evidence":snapshots,"assistant_comparison":rows})
+    import hashlib,json
+    report.input_sha256=hashlib.sha256(json.dumps(snapshots,sort_keys=True,ensure_ascii=False,
+                                               allow_nan=False).encode()).hexdigest()
+    return report
+
+
 def launch(selection: Selection | None, question: str = DAILY_BRIEFING, *, full: bool = False,
            persist: bool = False, planned_only: bool = False, compact: bool = False,
            ai_policy: str = "selected") -> Run | None:
@@ -539,6 +607,41 @@ def launch(selection: Selection | None, question: str = DAILY_BRIEFING, *, full:
     country=requested_country(question) if not full else None
     requested=() if full else requested_sources(question)
     day=None if full else query_day(question,today=utc_now().astimezone(ROME).date())
+    if automatic and not full and requested:
+        from .assistant_sources import (query_days, query_months, explicit_period_comparison,
+                                       MONTHLY, MASE)
+        dates=query_days(question,today=utc_now().astimezone(ROME).date())
+        months=query_months(question)
+        # Forecasts and scenarios must use their own models, not be mistaken
+        # for a two-observation comparison.
+        computation=bool({call.agent for call in plan(question,False)} &
+                         {Agent.FORECAST,Agent.SCENARIO,Agent.SETTLEMENT})
+        documents=bool(re.search(r"\b(?:pdf|document[oi]|clausola|contratto|normativ\w*|codice)\b",question,re.I))
+        if not computation and not documents:
+            if dates is None or dates and months or len(dates or ())>2 or len(months)>2:
+                report=lookup_report(question,{},utc_now(),issue="Indica uno o due periodi validi della stessa granularità.")
+                st.session_state["last_run"]=report
+                return report
+            periods=months or dates or ()
+            if len(periods)==2 and not explicit_period_comparison(question):
+                report=lookup_report(question,{},utc_now(),issue="Vuoi confrontare i due periodi oppure calcolare un totale o una media dell’intervallo?")
+                st.session_state["last_run"]=report
+                return report
+            if months or len(periods)==2 or country=="DE" and day and MONTHLY in requested:
+                # Explicit monthly MASE requests retain the same month/region
+                # resolver; for Germany only a national Eurostat observation.
+                monthly=bool(months) or country=="DE" and len(periods)==1 and MONTHLY in requested
+                if monthly:
+                    periods=tuple(sorted({p.replace(day=1) for p in periods}))
+                with st.spinner("Consultazione dei periodi richiesti…"):
+                    report=_precise_period_lookup(question,requested,periods,monthly=monthly,
+                                                  scope=country or "IT",model=model)
+                st.session_state["last_run"]=report
+                return report
+            if not periods and MASE not in requested and re.search(r"\b(?:nel|del|anno|annuale)\s+(?:19|20)\d{2}\b",question,re.I):
+                report=lookup_report(question,{},utc_now(),issue="Per un totale annuale serve una serie completa. Indica un mese o consulta l’archivio MASE per la produzione.")
+                st.session_state["last_run"]=report
+                return report
     if requested and day is None and mentions_day(question):
         report=lookup_report(question,{},utc_now(),issue="Indica un solo giorno valido, oppure usa Analista dati per confrontare più date.")
         st.session_state["last_run"]=report
