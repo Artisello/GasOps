@@ -239,3 +239,61 @@ def test_terna_uses_requested_historical_day_without_substituting_latest():
     assert exact["values"]["load"]["value"]==100
     with pytest.raises(ValueError):
         power_context(item,NOW,day=date(2026,11,11))
+
+
+def _daily_turn(question="Scorte AGSI+ in Italia del 21/11/2026?", day="2026-11-21",
+                *, stock=70., fill=80., scope="IT", kind="observed", status="available", review=False):
+    item={"source":"GIE AGSI+","scope":scope,"gas_day":day,"kind":kind,"status":status,
+          "quality_review":review,"values":{"stock_twh":stock,"fill_pct":fill}}
+    return SimpleNamespace(question=question,assumptions={"source_lookup":True,"requested_day":day,
+        "requested_country":scope,"public_operational_context":{"AGSI+":item}})
+
+
+@pytest.mark.parametrize("query,expected",[
+    ("E il 20/11/2026?","2026-11-20"),
+    ("E il 20 novembre 2026?","2026-11-20"),
+    ("E ieri?","2026-11-21"),
+    ("E il giorno precedente?","2026-11-20"),
+    ("E rispetto al 19/11/2026?","2026-11-19"),
+    ("E rispetto allo stesso giorno della settimana precedente?","2026-11-14"),
+    ("E rispetto al giorno precedente?","2026-11-20"),
+])
+def test_followup_replaces_date_without_losing_source_or_scope(query,expected):
+    from gasops_app.country_analysis import requested_country
+    prior=_daily_turn("Scorte AGSI+ in Germania del 21/11/2026?",scope="DE")
+    resolved,issue=sources.resolve_followup(query,prior,today=NOW.date())
+    assert issue is None and sources.query_day(resolved)==date.fromisoformat(expected)
+    assert sources.requested_sources(resolved)==("AGSI+",)
+    assert requested_country(resolved)=="DE"
+    assert resolved.count("2026")==1
+
+
+@pytest.mark.parametrize("query",["E il 31/11/2026?","E in Francia?","E rispetto alla settimana precedente?",
+                                  "Fammi un grafico","Spiegami perché","E i consumi?"])
+def test_unresolved_followup_never_starts_an_unrelated_analysis(query):
+    resolved,issue=sources.resolve_followup(query,_daily_turn(),today=NOW.date())
+    assert resolved is None and issue
+
+
+def test_followup_without_context_or_with_unsupported_grain_requests_clarification():
+    assert sources.resolve_followup("E ieri?",None,today=NOW.date())[0] is None
+    prior=SimpleNamespace(question="Produzione nazionale mensile Eurostat",assumptions={"source_lookup":True})
+    assert sources.resolve_followup("E ieri?",prior,today=NOW.date())[0] is None
+    assert sources.resolve_followup("/consumi",_daily_turn(),today=NOW.date())==("/consumi",None)
+    assert sources.resolve_followup("Qual è il prezzo ARERA?",_daily_turn(),today=NOW.date())==("Qual è il prezzo ARERA?",None)
+
+
+def test_daily_comparison_uses_chronological_values_and_percentage_points():
+    newer=_daily_turn(stock=74,fill=83)
+    older=_daily_turn(day="2026-11-20",stock=70,fill=80)
+    result={row["metric"]:row for row in sources.day_comparison(newer,older)}
+    assert result["Giacenza"]["delta"]==4 and result["Giacenza"]["delta_unit"]=="TWh"
+    assert result["Riempimento"]["delta"]==3 and result["Riempimento"]["delta_unit"]=="p.p."
+    assert result["Giacenza"]["before_day"]=="2026-11-20"
+    assert result["Giacenza"]["after_day"]=="2026-11-21"
+    assert sources.day_comparison(newer,_daily_turn(day="2026-11-20",scope="DE"))==[]
+    assert sources.day_comparison(newer,_daily_turn(day="2026-11-20",kind="estimated"))==[]
+    assert sources.day_comparison(newer,_daily_turn(day="2026-11-20",status="partial"))==[]
+    assert sources.day_comparison(newer,_daily_turn(day="2026-11-20",review=True))==[]
+    assert sources.day_comparison(newer,_daily_turn(day="2026-11-20",status="stale"))==[]
+    assert sources.day_comparison(newer,newer)==[]

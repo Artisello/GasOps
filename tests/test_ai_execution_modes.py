@@ -147,3 +147,40 @@ def test_gme_question_without_cached_prices_does_not_start_market_acquisition(mo
     result=gme._assistant_price_readout({"kinds":["igi"],"day":"2026-11-20"},now)
     assert result["cards"]==[]
     assert "Mercato e previsioni" in result["message"]
+
+
+def test_followup_chat_keeps_latest_turn_separate_from_selected_history(monkeypatch):
+    from datetime import datetime, timezone
+    from gasops_app.assistant_sources import query_day
+    model=SimpleNamespace(config=LLMConfig("fixture-local","http://localhost:11434/v1"))
+    monkeypatch.setattr(assistant_page,"reasoner",lambda:model)
+    monkeypatch.setattr(assistant_page,"source_filters",lambda *a,**k:session.Selection(session.PUBLIC,"Automatico",24,None))
+    monkeypatch.setattr(assistant_page,"utc_now",lambda:datetime(2026,11,22,12,tzinfo=timezone.utc))
+    monkeypatch.setattr(assistant_page,"_report",lambda *a,**k:None)
+    calls=[]
+    def fake(selection,question,**kwargs):
+        calls.append(question)
+        day=query_day(question).isoformat()
+        return Run(question=question,source=synthetic().origin,input_sha256="fixture",
+                   assumptions={"source_lookup":True,"requested_day":day,"requested_country":"IT",
+                       "public_operational_context":{"AGSI+":{"source":"GIE AGSI+","scope":"IT","gas_day":day,
+                           "status":"available","kind":"observed","values":{"stock_twh":70}}}})
+    monkeypatch.setattr(assistant_page,"launch",fake)
+    app=AppTest.from_string("from gasops_app.assistant_page import assistant_page\nassistant_page()").run()
+    app.chat_input(key="assistant_question").set_value("Scorte AGSI+ in Italia del 21/11/2026?").run()
+    assert not app.exception and len(calls)==1
+    original=app.session_state[assistant_page.CONTEXT]
+    app.chat_input(key="assistant_question").set_value("E rispetto al giorno precedente?").run()
+    assert not app.exception and len(calls)==2 and "2026-11-20" in calls[-1]
+    result=app.session_state[assistant_page.HISTORY][0]
+    assert result.assumptions["assistant_user_question"]=="E rispetto al giorno precedente?"
+    assert result.assumptions["assistant_comparison"][0]["delta"]==0
+    app.selectbox(key=assistant_page.SELECTED).set_value(original).run()
+    assert not app.exception and len(calls)==2
+    app.chat_input(key="assistant_question").set_value("E il giorno precedente?").run()
+    assert not app.exception and len(calls)==3 and "2026-11-19" in calls[-1]
+    app.button(key="assistant_clear").click().run()
+    assert not app.exception and assistant_page.CONTEXT not in app.session_state
+    app.chat_input(key="assistant_question").set_value("E ieri?").run()
+    assert not app.exception and len(calls)==3
+    assert any("A quale dato" in x.value for x in app.info)
