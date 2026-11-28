@@ -122,9 +122,10 @@ def balance(status, *, compact=False):
                     +'<span class="gas-balance-meta">'+KINDS[m.status]+f' · {m.coverage.valid}/{m.coverage.expected}'+'</span>'
                     +('</div>' if not warnings else '<span class="gas-balance-note">'+escape(warnings)+'</span></div>'))
             st.html('<div class="gas-balance-side">'+label+'</div><div class="gas-balance-strip">'+''.join(cells)+'</div>')
-        st.caption(status.balance_message)
+        if not compact:
+            st.caption(status.balance_message)
         with st.expander("Dati, periodi e copertura"):
-            st.caption("La copertura conta componenti disponibili, comprese quelle osservate solo in parte. Non misura una quota del bilancio fisico. Gli ingressi escludono il GNL; i prelievi SRG sono distinti dalle importazioni. Nessuna somma tra aggregati sovrapposti.")
+            st.caption("Copertura = componenti disponibili, anche parziali; non quota del bilancio fisico. Ingressi escluso GNL; prelievi SRG distinti dalle importazioni. Aggregati sovrapposti non sommati.")
             st.dataframe([{"Componente":c.label, "Valore":str(c.measure.value) if c.measure.value is not None else None,
                 "Unità":c.measure.unit, "Giorno gas":c.measure.gas_day, "Fonte":c.measure.source_id,
                 "Stato":KINDS[c.measure.status], "Freschezza":freshness_label(measure_evidence(c.measure,utc_now())),
@@ -132,7 +133,7 @@ def balance(status, *, compact=False):
                 "Pubblicato":local_time(c.measure.observed_at), "Acquisito":local_time(c.measure.retrieved_at),
                 "Perimetro":c.measure.scope, "Note":" · ".join(c.measure.warnings)} for c in status.components],
                 hide_index=True, width="stretch")
-            st.caption("Qualità delle fonti · controlli già disponibili nella sessione")
+            st.caption("Verifiche delle fonti")
             st.dataframe([{"Fonte":r["source"], "Stato":r["status"], "Ultimo periodo":r["latest"],
                 "Copertura":f"{r['valid']}/{r['expected']}"} for r in status.source_health], hide_index=True, width="stretch")
             st.caption(f"Avvisi ENTSOG consultati su {status.event_coverage.valid}/{status.event_coverage.expected} punti/direzioni. Copertura non nazionale; nessuna conclusione sull’assenza di indisponibilità.")
@@ -154,7 +155,7 @@ def attention(status, network, open_point, *, compact=False):
                 "".join(f'<span><strong>{count}</strong> {escape(categories[category])}</span>'
                         for category,count in counts.items() if count)+'</div>')
         if not status.attention:
-            st.caption("Nessuna regola attivata sui dati confrontabili. Le componenti N/A e la copertura degli avvisi restano indicate sopra.")
+            st.caption("Nessun indicatore attivo sui dati confrontabili. Copertura limitata ai dati disponibili.")
         def row(f):
             info, action = st.columns([5, 1], vertical_alignment="top")
             summary = categories[f.category]+" · "+f.description
@@ -166,8 +167,7 @@ def attention(status, network, open_point, *, compact=False):
                 st.caption("Regola: "+f.rule+" · severità informativa")
                 st.caption("Valore: "+(numero(f.observed_value,1)+" "+f.unit if f.observed_value is not None else "N/A")
                            +" · soglia: "+(numero(f.threshold,1)+" "+f.unit if f.threshold is not None else "N/A"))
-                st.caption("Fonte: "+f.source_id)
-                st.caption("Pubblicato: "+local_time(f.observed_at)+" · acquisito: "+local_time(f.retrieved_at))
+                st.caption("Fonte: "+f.source_id+" · pubblicato: "+local_time(f.observed_at)+" · acquisito: "+local_time(f.retrieved_at))
                 if f.evidence_ids:
                     st.caption(f"Evidenze: {len(set(f.evidence_ids))} riferimenti")
                     st.download_button("Scarica riferimenti tecnici", "\n".join(f.evidence_ids),
