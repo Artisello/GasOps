@@ -100,8 +100,16 @@ def collect(store, context, now, *, key="", include_gie=False, include_weather=F
             elif name=="IIP":
                 tasks[name]=lambda: iip_context(load_iip(store,key,now=now),checked_at())
             else:
-                tasks[name]=lambda name=name: inventory_context(
-                    loaders[name](store,key,scope,now=now),checked_at(),name,day=day)
+                def inventory_task(name=name):
+                    # An explicitly requested day may be outside the default
+                    # recent window; request that exact closed gas day.
+                    from .gas_calendar import closed_gas_day
+                    if day is not None and day>closed_gas_day(now):
+                        raise ValueError("Giorno gas non concluso")
+                    bounds={"first":day,"last":day} if day is not None else {}
+                    return inventory_context(loaders[name](store,key,scope,now=now,**bounds),
+                                             checked_at(),name,day=day)
+                tasks[name]=inventory_task
     if include_weather and (only is None or "Open-Meteo" in only):
         origin=context.bundle.origin if context is not None else None
         if origin is None or origin.kind in (Kind.HISTORICAL,Kind.LIVE) and not origin.archive:
