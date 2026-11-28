@@ -42,11 +42,6 @@ def regulatory():
     document_page(ready_example=True)
 
 
-def examples():
-    from .presentation import page
-    page()
-
-
 def connections():
     from .connections_page import page
     page()
