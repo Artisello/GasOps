@@ -410,7 +410,8 @@ def _assistant_price_readout(request, as_of):
     if not g.FIRST_DAY<=ending<=closed_gas_day(utc_now()):
         return {"cards":[],"message":"La data richiesta non è un giorno gas concluso del periodo supportato."}
     kinds=tuple(kind for kind in ("igi","prices") if kind in request.get("kinds",()))
-    _automatic_sources(_headline_windows(ending,kinds))
+    # Price acquisition belongs to the market workspace. Only use the existing
+    # validated session cache for explicitly requested GME readouts.
     cards=[]
     for kind in kinds:
         day=ending
@@ -422,7 +423,7 @@ def _assistant_price_readout(request, as_of):
             if latest:
                 day=date.fromisoformat(latest)
         cards.extend(_prices(day,include_extremes=True,kinds=(kind,)))
-    return {"cards":cards,"message":"Nessuna osservazione GME validata per il periodo richiesto."}
+    return {"cards":cards,"message":"Nessun dato GME già acquisito per il periodo richiesto. Aggiorna i prezzi in Mercato e previsioni."}
 
 
 def balancing(day):
