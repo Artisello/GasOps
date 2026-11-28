@@ -82,16 +82,17 @@ def _valid(value):
 
 def cacheable(public,sources,now,dependency_token):
     from .assistant_sources import useful_source
-    stamps={_stamp(row[1]) for row in dependency_token[-1]}
+    stamps=[_stamp(row[1]) for row in dependency_token[-1]]
     for source in sources:
         item=public.get(source)
         if not isinstance(item,dict) or item.get("status")!="available" or not useful_source(item) or not _valid(item):
             return False
         at=_stamp(item.get("acquired"))
-        if at is None or at>now or at not in stamps:return False
+        expected=stamps[1] if source==PRICE and MONTHLY in sources else stamps[0]
+        if at is None or at>now or at!=expected:return False
         if source==MONTHLY:
             price=item.get("price")
-            if not isinstance(price,dict) or _stamp(price.get("acquired")) not in stamps:
+            if not isinstance(price,dict) or _stamp(price.get("acquired"))!=stamps[1]:
                 return False
     return True
 
@@ -147,9 +148,9 @@ def collect_cached(store,state,now,requested,day,collect,clock):
     checked=clock()
     # Other sources may have taken long enough for an earlier hit to expire.
     # Recheck only when work took place, and fall back once if invalidated.
-    if remaining and any(identity(group[0],day,checked)!=ident or
-                         lookup(state,ident,token(store,state,group,checked),checked) is None
-                         for group,ident,_ in hits):
+    if any(identity(group[0],day,checked)!=ident or
+           lookup(state,ident,token(store,state,group,checked) if remaining else revision,checked) is None
+           for group,ident,revision in hits):
         return collect(requested)
     for group,ident,before in misses:
         if before is None or identity(group[0],day,checked)!=ident:continue
