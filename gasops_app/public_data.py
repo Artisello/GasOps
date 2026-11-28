@@ -35,6 +35,32 @@ class SourceNoObservation(SourceUnavailable):
     """The provider responded, but no usable observation was returned."""
 
 
+DIAGNOSTIC_CODES=frozenset(("rate_limit","access_denied","timeout","connection","http_error",
+                            "validation_or_unavailable","no_observation","deferred","unknown"))
+
+
+def acquisition_error_code(error):
+    """Classify controlled errors; never return arbitrary message text."""
+    if isinstance(error,SourceNoObservation):return "no_observation"
+    if isinstance(error,requests.Timeout):return "timeout"
+    if isinstance(error,requests.ConnectionError):return "connection"
+    status=getattr(error,"status",None)
+    if isinstance(error,requests.HTTPError) and error.response is not None:
+        status=error.response.status_code
+    if status==429:return "rate_limit"
+    if status in (401,403):return "access_denied"
+    if type(status) is int:return "http_error"
+    # Only controlled adapter messages can supply textual error codes.
+    if isinstance(error,(SourceUnavailable,SourceSchemaError,str)):
+        reason=str(error).casefold()
+        if "http 429" in reason or "limite richieste" in reason:return "rate_limit"
+        if any(v in reason for v in ("http 401","http 403","accesso gie negato")):return "access_denied"
+        if "tempo di risposta" in reason or "timeout" in reason:return "timeout"
+        if "connessione" in reason:return "connection"
+        if "http " in reason:return "http_error"
+    return "validation_or_unavailable"
+
+
 def network_allowed():
     return _NETWORK_ALLOWED.get()
 
