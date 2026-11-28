@@ -12,7 +12,7 @@ import pandas as pd
 
 from .data import ROME
 from .models import utc_now
-from .public_data import SourceSchemaError, SourceUnavailable, retrieve
+from .public_data import NoObservation, SourceNoObservation, SourceSchemaError, SourceUnavailable, retrieve
 
 AGSI_URL = "https://agsi.gie.eu/api"
 AGSI_SOURCE = "https://agsi.gie.eu/"
@@ -106,8 +106,12 @@ def _inventory_rows(text, platform):
     data=payload.get("data")
     if isinstance(data,dict):
         data=[data]
-    if not isinstance(data,list) or not data:
-        raise SourceSchemaError("Nessun record "+platform)
+    if not isinstance(data,list):
+        raise SourceSchemaError("Formato record "+platform+" non valido")
+    if not data:
+        if str(payload.get("last_page")) in ("0","1") and str(payload.get("total",0))=="0":
+            raise NoObservation("Nessuna osservazione "+platform)
+        raise SourceSchemaError("Copertura vuota "+platform+" non verificabile")
     if int(payload.get("last_page",0))!=1:
         raise SourceSchemaError("Risposta "+platform+" paginata o incompleta")
     if len(data)>92 or any(not isinstance(row,dict) for row in data):
@@ -138,7 +142,7 @@ def parse_agsi(text, acquired, *, scope, cached=False, failed=False, first=None,
         rows[day]=row
     frame=pd.DataFrame(list(rows.values())).sort_values("gas_day").reset_index(drop=True)
     if not frame["stock_twh"].notna().any():
-        raise SourceSchemaError("Giacenze AGSI non disponibili.")
+        raise NoObservation("Giacenze AGSI non disponibili.")
     # Keep source percentages as published (including values above 100%).
     # Show a mismatch rather than overwriting the publisher's fields.
     frame[list(STORAGE_COLUMNS.values())]=frame[list(STORAGE_COLUMNS.values())].astype(float)
@@ -239,7 +243,7 @@ def parse_alsi(text, acquired, *, scope, cached=False, failed=False, first=None,
     measure_columns=[c for c in frame.columns if c not in ("gas_day","status")]
     frame[measure_columns]=frame[measure_columns].astype(float)
     if not frame[["sendout_gwh_d","inventory_1000m3_lng","inventory_gwh"]].notna().any().any():
-        raise SourceSchemaError("Dati ALSI non disponibili.")
+        raise NoObservation("Dati ALSI non disponibili.")
     denominator=frame["dtrs_gwh_d"].where(frame["dtrs_gwh_d"]>0)
     frame["sendout_reference_pct"]=100*frame["sendout_gwh_d"]/denominator
     return {"frame":frame,"scope":scope,"acquired":acquired,"cached":cached,"failed":failed,
@@ -282,6 +286,10 @@ def _load_inventory(store, api_key, platform, scope, now, refresh, first, last):
             parse=parse,ttl=timedelta(hours=24),params=params,attempts=1,
             headers={"x-key":api_key.strip(),"Accept":"application/json"},timeout=(5,20),
             diagnostics=True,refresh=refresh)
+    except SourceNoObservation:
+        if previous:
+            return {**previous,"failed":False,"no_observation":True,"attempted_at":now.isoformat()}
+        raise
     except SourceUnavailable as error:
         if previous:
             return {**previous,"failed":True,"refresh_error":str(error)}

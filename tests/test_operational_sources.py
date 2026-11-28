@@ -246,3 +246,15 @@ def test_iip_legacy_and_nested_page_conflict():
     from gasops_app.operational_sources import parse_iip
     with pytest.raises(ValueError,match="conflitto"):
         parse_iip(json.dumps({"last_page":2,"meta":{"last_page":1},"data":[{"messageId":"x"}]}),NOW)
+
+
+@pytest.mark.parametrize("platform",["AGSI+","ALSI"])
+def test_empty_inventory_requires_verified_metadata(platform):
+    from gasops_app.operational_sources import parse_alsi
+    from gasops_app.public_data import NoObservation,SourceSchemaError
+    parse=parse_agsi if platform=="AGSI+" else parse_alsi
+    with pytest.raises(NoObservation):
+        parse(json.dumps({"data":[],"last_page":1,"total":0}),NOW,scope="IT")
+    with pytest.raises(SourceSchemaError) as error:
+        parse(json.dumps({"data":[],"last_page":2,"total":12}),NOW,scope="IT")
+    assert not isinstance(error.value,NoObservation)

@@ -219,3 +219,45 @@ def test_concurrent_sessions_share_one_work_item(monkeypatch,tmp_path):
     finally:
         finish.set()
         job.result(timeout=4)
+
+
+def test_gie_empty_publication_is_not_failed_refresh(provider):
+    network,store,run=provider
+    run["inventory_gap"]=DAY
+    acquire(network,store,run,first=DAY,last=DAY,sources=("agsi","alsi"))
+    j=ops.journal(store)
+    for source in ("agsi","alsi"):
+        h=j["connections"][source]
+        assert h["outcome"]=="no_observation" and h["partial"] and not h["failed"]
+        assert j["attempts"][source][DAY.isoformat()][1:]==[True,False]
+    assert not ops.failures(j,DAY)
+    run.update(now=NOW+timedelta(minutes=16),inventory_gap=None)
+    acquire(network,store,run,first=DAY,last=DAY,sources=("agsi","alsi"))
+    assert all(ops.journal(store)["connections"][s]["outcome"]=="acquired" for s in ("agsi","alsi"))
+
+
+def test_empty_gie_refresh_preserves_exact_cache_timestamp(provider):
+    network,store,run=provider
+    acquire(network,store,run,first=DAY,last=DAY,sources=("agsi",))
+    run.update(now=NOW+timedelta(minutes=2),inventory_gap=DAY)
+    acquire(network,store,run,first=DAY,last=DAY,sources=("agsi",),force=True)
+    j=ops.journal(store)
+    assert j["connections"]["agsi"]["outcome"]=="no_observation"
+    assert j["attempts"]["agsi"][DAY.isoformat()][1:]==[True,False]
+    raw=store.cached(f"agsi-public-range-v1:IT:{DAY}:{DAY}")
+    assert raw[0]==NOW.isoformat()
+    result=load_agsi(store,"fixture","IT",first=DAY,last=DAY,now=run["now"],refresh=True)
+    assert result["no_observation"] and not result["failed"] and result["cached"]
+    assert result["acquired"]==NOW and result["frame"].iloc[0]["stock_twh"]==30
+
+
+def test_gie_transport_failure_is_distinct_from_empty_publication(provider):
+    network,store,run=provider
+    run["error"]=True
+    acquire(network,store,run,first=DAY,last=DAY,sources=("agsi","alsi"))
+    j=ops.journal(store)
+    for source in ("agsi","alsi"):
+        h=j["connections"][source]
+        assert h["outcome"]=="failed" and h["failed"] and not h["no_observation"]
+        assert h["reason_code"]=="timeout"
+    assert ops.failures(j,DAY)=={"agsi","alsi"}

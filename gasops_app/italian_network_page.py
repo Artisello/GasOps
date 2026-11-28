@@ -485,6 +485,9 @@ def _status_state(context, saved, now, day):
     state[STATE] = {**old,"facilities":facilities,"failures":{**old.get("failures",{}),**dict.fromkeys(signals,True)}}
     state["operational_connections"] = {"srg":{"failed":"srg" in signals}}
     for source,field in (("agsi","AGSI+_IT"),("alsi","ALSI_IT")):
+        diagnostic=details.get("connections",{}).get(source,{})
+        if field in state and state[field].get("result"):
+            state[field]={**state[field],"result":{**state[field]["result"],"refresh_diagnostic":diagnostic}}
         if source in signals and field in state:
             state[field] = {**state[field],"error":"Aggiornamento non riuscito"}
     return state

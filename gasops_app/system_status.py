@@ -403,9 +403,14 @@ def build_status(network, snapshots, state, now, *, gas_day=None, interruptions=
         elif measure.freshness == "stale" and measure.source_id not in seen:
             seen.add(measure.source_id)
             flags.append("stale:"+measure.source_id)
-            finding("quality", measure.source+" · copia non recente o aggiornamento fallito", "stale_critical_source", measure.source_id,
-                value=Decimal(str((now-measure.retrieved_at).total_seconds()/3600)),
-                threshold=Decimal(str(policy.inventory_ttl_hours if measure.source_id.startswith("GIE:") else policy.network_ttl_hours)),
+            age_hours=(now-measure.retrieved_at).total_seconds()/3600
+            is_gie=measure.source_id.startswith("GIE:")
+            ttl=policy.inventory_ttl_hours if is_gie else policy.network_ttl_hours
+            failed_recent=is_gie and age_hours<=ttl
+            finding("quality", measure.source+(" · aggiornamento fallito; copia ancora entro soglia" if failed_recent else " · copia non recente o aggiornamento fallito"),
+                "refresh_failed_critical_source" if failed_recent else "stale_critical_source", measure.source_id,
+                value=Decimal(str(age_hours)),
+                threshold=None if failed_recent else Decimal(str(ttl)),
                 unit="ore", observed=measure.observed_at, retrieved=measure.retrieved_at, evidence=measure.evidence_ids)
         if measure.value is not None and measure.coverage.valid < measure.coverage.expected:
             flags.append("partial:"+measure.source_id)

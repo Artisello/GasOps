@@ -244,6 +244,12 @@ def _inventory_panel(platform,loader,key):
         with action:
             result=_load_once(platform+"_"+scope,"Aggiorna dati",loader,key,scope)
     if result is None:
+        if scope=="IT":
+            diagnostic=connections.get(source,{})
+            if diagnostic.get("outcome")=="no_observation":
+                st.caption("Nessuna osservazione utilizzabile restituita per il periodo.")
+            elif diagnostic.get("failed"):
+                st.caption("Aggiornamento fallito · nessuna copia valida disponibile.")
         return
     if result["scope"]!=scope:
         st.error("La fonte ha restituito un’area diversa da quella selezionata.")
@@ -256,11 +262,18 @@ def _inventory_panel(platform,loader,key):
         return
     age=(utc_now().astimezone(ROME).date()-recent["gas_day"]).days
     state=st.session_state.get(platform+"_"+scope,{})
-    if age>2 or age<0 or result["failed"] or state.get("error"):
-        st.caption("Ultima pubblicazione disponibile · aggiornamento da verificare.")
+    diagnostic=result.get("refresh_diagnostic",{})
+    if result["failed"] or state.get("error"):
+        st.caption("Aggiornamento fallito · ultima copia valida conservata.")
+    elif result.get("no_observation") or diagnostic.get("outcome")=="no_observation" or (diagnostic.get("outcome")=="partial" and age>1):
+        st.caption("Ultimo giorno non restituito o copertura incompleta · nessun valore imputato.")
+    elif age>2 or age<0:
+        st.caption("Ultima pubblicazione disponibile · data da verificare.")
+    elif utc_now()-result.get("acquired_by_day",{}).get(recent["gas_day"],result["acquired"])>timedelta(hours=24):
+        st.caption("Copia da aggiornare.")
     status={"C":"Confermato","E":"Stimato","N":"Assente"}.get(recent["status"],recent["status"])
     st.markdown("**"+scope_label(scope)+"**")
-    st.caption(f"Ultimo dato: {data_it(recent['gas_day'])} · {status} · acquisito {local_time(result['acquired'])}"+
+    st.caption(f"Ultimo dato: {data_it(recent['gas_day'])} · {status} · acquisito {local_time(result.get('acquired_by_day',{}).get(recent['gas_day'],result['acquired']))}"+
                (" · cache" if result["cached"] else ""))
     if is_storage and frame["review"].any():
         st.warning("Alcuni valori di capacità/riempimento richiedono verifica.")
