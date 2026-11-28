@@ -299,7 +299,7 @@ def public_series(state):
     from .live_sources import BUNDLES
     candidates = (*state.get(BUNDLES,{}).values(),state.get("active_bundle"))
     return {bundle.origin.grain:bundle for bundle in candidates
-            if bundle is not None and bundle.rows and not bundle.origin.archive
+            if bundle is not None and not bundle.rows.empty and not bundle.origin.archive
             and bundle.origin.kind in (Kind.LIVE,Kind.HISTORICAL)}
 
 
