@@ -597,6 +597,8 @@ def launch(selection: Selection | None, question: str = DAILY_BRIEFING, *, full:
     model = None if ai_policy == "off" else assistant_reasoner() if ai_policy=="automatic" else reasoner()
     if ai_policy in ("required","automatic") and model is None:
         raise ModelUnavailable("AI non attiva. Nessuna domanda eseguita.")
+    from .assistant_sources import fast_lookup_command
+    fast_readout=automatic and not full and fast_lookup_command(question)
     expanded,issue=expand_command(question)
     if issue:
         report=lookup_report(question,{},utc_now(),issue=issue)
@@ -607,6 +609,14 @@ def launch(selection: Selection | None, question: str = DAILY_BRIEFING, *, full:
     country=requested_country(question) if not full else None
     requested=() if full else requested_sources(question)
     day=None if full else query_day(question,today=utc_now().astimezone(ROME).date())
+    if fast_readout:
+        with st.spinner("Lettura dei dati…"):
+            public=_collect_assistant_sources(None,None,requested,question=question,automatic=True)
+            report=lookup_report(question,public,utc_now(),reasoner=None)
+        report.assumptions["assistant_fast_lookup"]=True
+        report.assumptions["ai_mode_reason"]="Comando diretto · nessuna chiamata al modello"
+        st.session_state["last_run"]=report
+        return report
     if automatic and not full and requested:
         from .assistant_sources import (query_days, query_months, explicit_period_comparison,
                                        MONTHLY, MASE)
