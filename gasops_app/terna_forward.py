@@ -4,7 +4,7 @@ from hashlib import sha256
 import json,re
 import pandas as pd
 from .data import ROME
-from .terna_power import CATALOG,PORTAL,get_token,_json_request,_timestamp,number
+from .terna_power import CATALOG,PORTAL,get_token,_json_request,_timestamp,number,TernaHTTPError
 from .public_data import SourceSchemaError,SourceUnavailable
 from .models import utc_now
 from .entsog import _start
@@ -137,6 +137,8 @@ def acquire(client,secret,first,last,now=None,clock=utc_now):
             rows.extend(part)
         except (SourceUnavailable,SourceSchemaError) as error:
             notes.append(kind+": "+str(error))
+            if isinstance(error,TernaHTTPError) and error.status in (401,429):
+                break
         except (ValueError,TypeError,KeyError):
             notes.append(kind+": fonte non validabile")
     if not rows:
