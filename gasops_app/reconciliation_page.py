@@ -78,11 +78,11 @@ def daily_panel(balances,user,year,month,balance_sha):
 
 
 def documents_panel():
-    st.subheader("Riconciliazione documenti importati")
+    st.subheader("Controlla le fatture")
     st.caption("Partite mensili DS · imponibili ordinari · IVA esclusa")
     balances=st.session_state.get(BALANCE_STATE)
     if not balances:
-        st.caption("Importa il registro bilanci in Bilanciamento → Controllo giornaliero.")
+        st.info("Per controllare le fatture, [importa prima i bilanci](/balancing).")
         return
     now=utc_now()
     with st.expander("Importa documenti DS"):
