@@ -26,7 +26,7 @@ def compact_context(context):
     return {key:compact(value) for key,value in context.items() if isinstance(value,dict)}
 
 
-_UNIT=r"(?:€|EUR)\s*/\s*MWh|GWh(?:\s*/\s*(?:giorno(?: gas)?|mese|[dg]))?|TWh|MWh|MW|bcm|Sm[3³]|°\s*C|%|€|EUR"
+_UNIT=r"(?:€|EUR)\s*/\s*MWh|GWh(?:\s+elettrici)?(?:\s*/\s*(?:giorno(?: gas)?|mese|[dg]))?|TWh|MWh|MW|bcm|Sm[3³]|°\s*C|%|€|EUR"
 _CLAIM=re.compile(
     r"(?<![\w.,])(?P<number>[+−-]?(?:\d{1,3}(?:[. \u00a0]\d{3})+(?:,\d+)?|\d+(?:[,.]\d+)?))"
     r"\s*(?P<unit>"+_UNIT+r")(?![\w/])",re.I)
@@ -44,7 +44,7 @@ def _unit(raw):
         match=re.match(_UNIT,raw.strip(),re.I)
         if match:
             unit=re.sub(r"\s+","",match[0].lower())
-            return "gwh" if unit.startswith("gwh/") else "sm3" if unit=="sm³" else _EURO_UNITS.get(unit,unit)
+            return "gwh" if unit.startswith(("gwh/","gwhelettrici")) else "sm3" if unit=="sm³" else _EURO_UNITS.get(unit,unit)
     return None
 
 
@@ -69,27 +69,92 @@ def _claims(text):
                 continue
 
 
-def _values(data, inherited=None):
+def _grain(raw):
+    """Normalize documented period labels and energy denominators only."""
+    if not isinstance(raw,str):
+        return None
+    text=re.sub(r"\s+","",raw.casefold())
+    if text in ("month","monthly","mese","mensile","gwh/mese","gwhelettrici/mese"):
+        return "mese"
+    if text in ("day","daily","gas_day","giorno","giornogas","giornaliero","giornaliera",
+                "gwh/giorno","gwh/giornogas","gwh/g","gwh/d",
+                "gwhelettrici/giorno","gwhelettrici/giornogas","gwhelettrici/g","gwhelettrici/d"):
+        return "giorno gas"
+    return None
+
+
+def _measurements(data, inherited=None, grain=None, *, metrics=None):
+    """Keep the period denominator attached to each energy value.
+
+    Observation dates do not turn inventories into daily flows. Explicit
+    field/metric units override the source's observation frequency.
+    """
     if isinstance(data,dict):
         if data.get("status") in ("stale","unavailable","failed"):
             return
-        unit=_unit(data.get("unit")) or inherited
+        raw_unit=data.get("unit")
+        unit=_unit(raw_unit) or inherited
+        declared=_grain(data.get("grain"))
+        denominator=_grain(raw_unit)
+        if declared and denominator and declared!=denominator:
+            grain=None
+        else:
+            grain=denominator or declared or grain
         for key,value in data.items():
             field_unit=next((u for tail,u in _SUFFIX_UNITS.items()
                              if key==tail or key.endswith("_"+tail) or "_"+tail+"_" in key),None)
             if inherited=="%" or key.endswith("_pct"):
                 field_unit="%"
+            metric=(metrics or {}).get(key)
+            field_grain=grain
+            if metric is not None:
+                field_grain=_grain(metric.unit) if metric.quantity in ("flow","period_total") else None
+                if grain and field_grain and grain!=field_grain:
+                    field_grain=None
+            elif re.search(r"(?:^|_)gwh_[dg](?:_|$)",key):
+                field_grain="giorno gas" if grain in (None,"giorno gas") else None
+            elif re.search(r"(?:^|_)gwh_(?:month|mese)(?:_|$)",key):
+                field_grain="mese" if grain in (None,"mese") else None
+            elif re.search(r"(?:^|_)(?:inventory|stock|capacity|storage|giacenza|scorte)(?:_|$)",key):
+                field_grain=None
             if isinstance(value,(dict,list)):
-                yield from _values(value,field_unit or unit)
+                yield from _measurements(value,field_unit or unit,field_grain,metrics=metrics)
             elif type(value) in (int,float):
                 field_unit=field_unit or _SEMANTIC_FIELDS.get(key) or (unit if key=="value" else None)
                 if field_unit:
                     amount=Decimal(str(value))
                     if amount.is_finite():
-                        yield field_unit,amount
+                        yield field_unit,amount,field_grain if field_unit=="gwh" else None
     elif isinstance(data,list):
         for item in data:
-            yield from _values(item,inherited)
+            yield from _measurements(item,inherited,grain,metrics=metrics)
+
+
+def _values(data, inherited=None):
+    for unit,amount,_ in _measurements(data,inherited):
+        yield unit,amount
+
+
+def _source_measurements(name,item):
+    from .assistant_sources import METRIC_CATALOG, DAILY, MONTHLY, POWER
+    family="AGSI+" if name.startswith("AGSI+ ·") or name=="AGSI+ Germania" else name
+    # The canonical source IDs supply a denominator even for legacy
+    # snapshots lacking a grain; a generic date is not sufficient.
+    default="mese" if family==MONTHLY else "giorno gas" if family in (DAILY,*POWER) else None
+    metrics={m.field:m for m in METRIC_CATALOG.get(family,())}
+    return set(_measurements(item,grain=default,metrics=metrics))
+
+
+def _statement_measurements(text,grain=None):
+    for pattern in (_CLAIM,_LOWER_UPPER):
+        for match in pattern.finditer(text):
+            try:
+                unit=_unit(match["unit"])
+                explicit=_grain(match["unit"])
+                for amount,_ in _decimal_forms(match["number"]):
+                    yield unit,amount,(explicit or grain) if unit=="gwh" else None
+            except InvalidOperation:
+                continue
 
 
 def model_context(context):
@@ -194,42 +259,34 @@ def verify_measurements(sections, tools, public):
     """Check unit-bearing figures against the sources cited in each section."""
     verify_price_semantics(sections,public)
     verify_metric_bindings(sections,public)
-    numbers={"src:"+name:set(_values(item)) for name,item in public.items()}
+    measurements={"src:"+name:_source_measurements(name,item) for name,item in public.items()}
     for agent,item in tools.items():
         if item.get("status") not in ("completed","review"):
             continue
-        statements=[item["summary"],*(ref["support"] for ref in item.get("sources",[]))]
-        numbers[agent]={(unit,amount) for statement in statements for unit,forms in _claims(statement)
-                        for amount,_ in forms} | set(_values(item.get("projection",{})))
+        grain=_grain(item.get("grain")) if agent in (Agent.MARKET.value,Agent.FORECAST.value) else None
+        values=set(_statement_measurements(item["summary"],grain))
+        # Supporting excerpts may contain quantities of different frequencies;
+        # only an explicit denominator in the excerpt can qualify them.
+        for ref in item.get("sources",[]):
+            values.update(_statement_measurements(ref["support"]))
+        values.update(_measurements(item.get("projection",{}),grain=grain))
+        measurements[agent]=values
     for section in sections:
-        allowed=set().union(*(numbers.get(ref,set()) for ref in section["references"]))
-        # Canonical energy quantities still support ordinary GWh citations.
-        # Explicit monthly/daily denominators must also match known source grain.
-        for match in _CLAIM.finditer(section["text"]):
-            raw_unit=re.sub(r"\s+","",match["unit"].casefold())
-            if not raw_unit.startswith("gwh/"):
-                continue
-            grain="mese" if raw_unit=="gwh/mese" else "giorno gas"
-            compatible=set()
-            for ref in section["references"]:
-                item=public.get(ref[4:],{}) if ref.startswith("src:") else {}
-                known=item.get("grain")
-                unit=str(item.get("unit","")).casefold()
-                if not known and unit.startswith("gwh/"):
-                    known="mese" if "mese" in unit else "giorno gas"
-                if known in (None,grain):
-                    compatible.update(numbers.get(ref,set()))
-            try:
-                forms=_decimal_forms(match["number"])
-            except InvalidOperation:
-                continue
-            if not any(unit=="gwh" and abs(amount-known)<=Decimal("0.5").scaleb(-places)
-                       for unit,known in compatible for amount,places in forms):
-                raise InvalidSynthesis("La sintesi confonde una quantità giornaliera e mensile.")
-        for unit,forms in _claims(section["text"]):
-            if not any(unit==known_unit and abs(amount-known)<=Decimal("0.5").scaleb(-places)
-                       for known_unit,known in allowed for amount,places in forms):
-                raise InvalidSynthesis("La sintesi riporta un valore o un’unità non riscontrabili nelle fonti citate.")
+        allowed=set().union(*(measurements.get(ref,set()) for ref in section["references"]))
+        for pattern in (_CLAIM,_LOWER_UPPER):
+            for match in pattern.finditer(section["text"]):
+                unit=_unit(match["unit"])
+                grain=_grain(match["unit"])
+                try:
+                    forms=_decimal_forms(match["number"])
+                except InvalidOperation:
+                    continue
+                matching={(u,value,g) for u,value,g in allowed if u==unit and
+                          any(abs(amount-value)<=Decimal("0.5").scaleb(-places) for amount,places in forms)}
+                if unit=="gwh" and grain and not any(g==grain for _,_,g in matching):
+                    raise InvalidSynthesis("La sintesi confonde una quantità giornaliera e mensile.")
+                if not matching:
+                    raise InvalidSynthesis("La sintesi riporta un valore o un’unità non riscontrabili nelle fonti citate.")
 
 
 class InvalidSynthesis(ModelUnavailable):
