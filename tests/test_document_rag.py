@@ -39,3 +39,25 @@ def test_local_without_remote_consent(monkeypatch):
     model=CompatibleReasoner(LLMConfig("fixture","http://localhost:11434/v1"))
     monkeypatch.setattr(model,"_chat",lambda *a,**k:{"content":'{"claims":[]}'})
     assert answer(model,"garanzia",[Citation(document="a",page=1,evidence="Testo documento")])==[]
+
+
+def test_excerpt_budget_is_bounded_and_quotes_remain_exact(monkeypatch):
+    from gasops_app.document_rag import MAX_CONTEXT_CHARS,MAX_PASSAGES,MAX_EXCERPT
+    model=CompatibleReasoner(LLMConfig("fixture","http://localhost:11434/v1"))
+    hits=[Citation(document=f"private-{i}.pdf",page=i+1,
+                   evidence="Testo originale della disposizione. "+"x"*1800)
+          for i in range(MAX_PASSAGES+1)]
+    def respond(messages,*,structured):
+        payload=json.loads(messages[-1]["content"])
+        excerpts=payload["excerpts"]
+        assert len(excerpts)==MAX_PASSAGES
+        assert sum(map(len,excerpts.values()))<=MAX_CONTEXT_CHARS
+        assert all(len(v)<=MAX_EXCERPT for v in excerpts.values())
+        assert all(hits[i].evidence.startswith(value) for i,value in enumerate(excerpts.values()))
+        assert "private-" not in messages[-1]["content"]
+        return {"content":json.dumps({"claims":[{"text":"Disposizione citata.",
+            "source":"D2","quote":"Testo originale della disposizione."}]})}
+    monkeypatch.setattr(model,"_chat",respond)
+    result=answer(model,"disposizione",hits)
+    assert result[0]["citation"].document==hits[1].document
+    assert result[0]["citation"].page==2

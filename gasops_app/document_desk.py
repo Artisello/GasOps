@@ -111,6 +111,9 @@ def search(library,query,mode="keywords",document=None,limit=MAX_RESULTS):
     if not query:
         return []
     limit=max(1,min(int(limit),MAX_RESULTS))
+    if mode=="hybrid":
+        from .document_retrieval import hybrid
+        return hybrid(library,query,STOP,document=document,limit=limit)
     if mode=="keywords":
         # Avoid matches due entirely to question filler; never inject offline aliases.
         tokens=[t for t in re.findall(r"[\w-]+",query) if len(t)>=2 and t.casefold() not in STOP]

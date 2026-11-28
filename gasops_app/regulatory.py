@@ -241,7 +241,7 @@ class Library:
             raise ValueError("Testo non estraibile. Usa un PDF con testo ricercabile.")
         return pdf, passages
 
-    def search(self, query: str, limit: int = 5, document: str | None = None, *, expand_aliases: bool = True) -> list[Passage]:
+    def search(self, query: str, limit: int = 5, document: str | None = None, *, expand_aliases: bool = True, unique_pages: bool = True) -> list[Passage]:
         query = query.strip()[:600]
         if not query or self.matrix is None:
             return []
@@ -258,7 +258,7 @@ class Library:
             if document is not None and source.document != document:
                 continue
             key = (source.document, source.page, hit.is_pdf)
-            if key in seen:
+            if unique_pages and key in seen:
                 continue
             seen.add(key)
             matches.append(hit)

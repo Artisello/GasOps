@@ -478,7 +478,7 @@ def _ask(cached):
         elif model and not model.config.local and not consent:
             st.warning("Autorizzazione necessaria per usare un provider remoto. Puoi usare Cerca senza inviare dati.")
         elif model:
-            hits=search(docs,question,document=None if scope=="Tutti i PDF" else scope,limit=MAX_PASSAGES)
+            hits=search(docs,question,mode="hybrid",document=None if scope=="Tutti i PDF" else scope,limit=MAX_PASSAGES)
             claims,notice=[],None
             if hits:
                 with st.spinner("Lettura degli estratti e verifica delle citazioni…"):
