@@ -7,10 +7,11 @@ import streamlit as st
 
 from .italiano import ESITI, GRAVITA, TIPI, numero
 from .market import demand_trend_question, demand_readout
-from .assistant_sources import source_rows, COMMANDS
+from .assistant_sources import source_rows, COMMANDS, resolve_followup
 from .models import Agent, AGENT_LABELS, Kind, Run, utc_now
 from .reports import markdown
 from . import session
+from zoneinfo import ZoneInfo
 from .session import launch, reasoner, source_filters, ai_activation_panel
 from .visuals import evidence, info, local_time, steps, ai_readout, header
 from .workflow import DAILY_BRIEFING
@@ -19,6 +20,7 @@ LOG=logging.getLogger(__name__)
 HISTORY="assistant_history_v1"
 REVIEWS="assistant_reviews_v1"
 SELECTED="assistant_selected_v1"
+CONTEXT="assistant_context_v1"
 HISTORY_LIMIT=12
 STARTERS=(
     ("Consumi","Come è cambiata la domanda di gas nell’ultimo periodo?"),
@@ -42,7 +44,18 @@ def _clear():
     st.session_state.pop(HISTORY,None)
     st.session_state.pop(REVIEWS,None)
     st.session_state.pop(SELECTED,None)
+    st.session_state.pop(CONTEXT,None)
     st.session_state.pop("assistant_gme_readouts_v1",None)
+
+
+def _previous_turn():
+    # Historical selection and local reports do not become conversation context.
+    identifier=st.session_state.get(CONTEXT)
+    return next((r for r in st.session_state.get(HISTORY,[]) if r.id==identifier),None)
+
+
+def _user_question(report):
+    return report.assumptions.get("assistant_user_question") or report.question
 
 
 def _review(report):
@@ -105,6 +118,8 @@ def _report(report:Run,selection,*,fresh=False):
     mode=("AI · "+(report.model or "modello selezionato") if inferred else
           "Calcoli locali · AI non disponibile" if report.mode=="Deterministic fallback" else "Calcoli locali · senza risposta AI")
     st.caption(mode+" · "+local_time(report.finished_at))
+    if report.assumptions.get("assistant_user_question"):
+        st.caption("Quesito interpretato: "+report.question)
     period=report.assumptions.get("source_period") or report.source.latest_period or "non indicato"
     if report.assumptions.get("scope_unavailable"):
         st.info(report.summary)
@@ -216,7 +231,7 @@ def _history(local=False):
             def label(k):
                 item=entries[k]
                 mode="AI" if item.mode=="LLM-assisted" and item.interpretation else "Locale"
-                return local_time(item.started_at)+" · "+mode+" · "+item.question[:80]
+                return local_time(item.started_at)+" · "+mode+" · "+_user_question(item)[:80]
             st.selectbox("Consulta un’analisi",list(entries),key=SELECTED,format_func=label)
         else:
             st.caption("Nessun risultato locale. Le risposte AI sono consultabili in Assistente operativo.")
@@ -259,7 +274,7 @@ def assistant_page():
         previous=_history()
         if previous:
             with st.chat_message("user"):
-                st.text(previous.question)
+                st.text(_user_question(previous))
             with st.chat_message("assistant"):
                 _report(previous,None)
         return
@@ -272,7 +287,7 @@ def assistant_page():
         if local:
             info("Info report","Calcoli e controlli predefiniti, senza interpretazione AI.")
         else:
-            info("Info assistente","Ogni domanda è indipendente. L’assistente consulta le fonti pertinenti; le risposte AI sono distinte dai calcoli locali.",
+            info("Info assistente","Puoi cambiare il giorno dell’ultima consultazione puntuale: ad esempio «E il 20/11/2026?» o «E il giorno precedente?». Per confronti tra periodi indica il dato e le date.",
                  "Le domande possono richiedere fino a tre chiamate. Lo storico è conservato nella sessione.")
     with source_slot:
         if selection.bundle is not None:
@@ -305,9 +320,11 @@ def assistant_page():
             st.caption("Scrivi una domanda libera oppure un comando.")
             for command,example in COMMANDS.items():
                 st.markdown("**"+command+"** · "+example)
-            st.caption("Esempi: /scorte 20/11/2026 · /mase 2025")
+            st.caption("Esempi: /scorte 20/11/2026 · /mase 2025 · E il giorno precedente?")
     question=None if local else st.chat_input("Chiedi qualcosa sul gas…",key="assistant_question",max_chars=600)
     requested=DAILY_BRIEFING if full else shortcut or (question.strip() if question else "")
+    resolved,issue=(resolve_followup(requested,_previous_turn(),today=utc_now().astimezone(ZoneInfo("Europe/Rome")).date())
+                    if requested and not (local or full or shortcut) else (requested,None))
 
     def render(report,*,fresh=False):
         if local:
@@ -315,13 +332,13 @@ def assistant_page():
             _report(report,selection,fresh=fresh)
         else:
             with st.chat_message("user"):
-                st.text(report.question)
+                st.text(_user_question(report))
             with st.chat_message("assistant"):
                 _report(report,selection,fresh=fresh)
 
     def generate():
         try:
-            return launch(selection,requested,full=full,persist=False,
+            return launch(selection,resolved,full=full,persist=False,
                           planned_only=bool(local or full or shortcut),compact=True,
                           ai_policy="off" if local else "required")
         except Exception as error:
@@ -343,15 +360,23 @@ def assistant_page():
                 with st.chat_message("user"):
                     st.text(requested)
                 with st.chat_message("assistant"):
-                    generated=generate()
-                    if generated:
-                        _remember(generated)
-                        _report(generated,selection,fresh=True)
+                    if issue:
+                        st.info(issue)
                     else:
-                        st.error("Analisi non disponibile. Verifica le fonti o specifica la domanda.")
+                        # Failed requests must not silently reuse the earlier turn.
+                        st.session_state.pop(CONTEXT,None)
+                        generated=generate()
+                        if generated:
+                            if resolved!=requested:
+                                generated.assumptions["assistant_user_question"]=requested
+                            _remember(generated)
+                            st.session_state[CONTEXT]=generated.id
+                            _report(generated,selection,fresh=True)
+                        else:
+                            st.error("Analisi non disponibile. Verifica le fonti o specifica la domanda.")
     with history_slot:
         previous=_history(local)
-    if not generated and previous:
+    if not generated and previous and not issue:
         with answer_slot:
             if attempted:
                 st.divider()
