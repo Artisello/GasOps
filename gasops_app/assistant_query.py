@@ -120,7 +120,7 @@ def metric_keys(question,grain):
             add("AGSI+","fill_pct")
         if re.search(r"\b(?:giacenz\w*|scorte|gas in stoccaggio)\b",text):
             add("AGSI+","stock_twh")
-        if re.search(r"preliev",text):
+        if re.search(r"preliev",text) and (not re.search(r"\b(?:srg|entsog)\b",text) or re.search(r"preliev\w*\s+(?:da(?:gli)?|degli|di)\s+stoccagg",text)):
             add("AGSI+","withdrawal_gwh_d")
         if re.search(r"iniezion|immiss",text):
             add("AGSI+","injection_gwh_d")
@@ -303,7 +303,7 @@ def query_report(question,store,now,*,gie_key=""):
     except ValueError as error:
         return Run(question=question,source=Origin(name="Motore analitico",kind=Kind.HISTORICAL,grain="daily",
             fields=(),description="Nessuna acquisizione eseguita.",retrieved_at=now),input_sha256="",
-            assumptions={"assistant_data_query":True},summary=str(error),finished_at=now,validated_at=now)
+            assumptions={"assistant_data_query":True},summary=str(error),started_at=now,finished_at=now,validated_at=now)
     items,issues=acquire(store,plan,now,gie_key)
     payload=calculate(plan,items,issues)
     digest=sha256(json.dumps(payload,ensure_ascii=False,sort_keys=True,allow_nan=False).encode()).hexdigest()
@@ -313,4 +313,4 @@ def query_report(question,store,now,*,gie_key=""):
         retrieved_at=now,latest_period=plan["to"]),input_sha256=digest,
         assumptions={"assistant_data_query":True,"assistant_query_evidence":payload},
         summary="Calcolo locale completato." if found else "Nessun risultato calcolabile per l'intervallo richiesto.",
-        finished_at=now,validated_at=now)
+        started_at=now,finished_at=now,validated_at=now)
