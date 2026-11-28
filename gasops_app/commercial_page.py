@@ -10,7 +10,7 @@ import streamlit as st
 
 from .commercial_controls import (BILL_REF, LNG_REF, PRICE_REF, demo_invoices,
                                   imbalance_prices, lng_deadlines, reconcile)
-from .commercial_view import reconciliation_summary, calendar_rows
+from .commercial_view import calendar_rows
 from .italiano import numero, data_it
 from .visuals import info, kpi_grid, header
 from .operations_ledger import sample_rows
@@ -43,7 +43,6 @@ def _invoice_panel(records):
             if present and issue is not None:
                 invoices.append(replace(original,amount=D(str(amount)),issue_date=issue))
     rows=reconcile(records,invoices,"DEMO-001",2026,9)
-    summary=reconciliation_summary(rows)
     for r in rows:
         with st.container(border=True):
             label="Acquisto per DS negativo" if r["group"]=="short" else "Vendita per DS positivo"
@@ -60,7 +59,7 @@ def _invoice_panel(records):
     st.download_button("Scarica riconciliazione CSV",_csv([{**r,"mode":"SIMULAZIONE"} for r in rows]),
                        "igor-riconciliazione.csv","text/csv",key="commercial_reconcile_export")
     info("Info fatture",BILL_REF,"Le due partite sono separate. Una differenza non è una nota di credito. Fatture multiple, IVA e rettifiche richiedono verifica. Non vengono emesse fatture.")
-    return rows,summary
+    return rows
 
 
 def _price_panel():
@@ -110,7 +109,9 @@ def _guarantee_panel():
 
 def _calendar_panel(invoice_rows):
     st.subheader("Scadenze commerciali")
-    st.caption("Scadenze calcolate da ipotesi · nessun pagamento verificato")
+    st.caption("Scadenze calcolate · nessun pagamento verificato")
+    if invoice_rows:
+        st.caption("Fatture di esempio · dati sintetici")
     as_of=st.date_input("Data di riferimento",date(2026,11,18),key="commercial_as_of")
     with st.expander("Parametri calendario GNL"):
         a,b=st.columns(2)
@@ -147,10 +148,12 @@ def commercial_workbench(ledger_view):
     from .workspace import picker
     from .reconciliation_page import documents_panel, BALANCE_STATE
     header("Fatture e garanzie", "")
-    # Preserve draft inputs when their widgets are not rendered on another view.
-    for key in ("invoice_present_short","invoice_present_long","invoice_amount_short","invoice_amount_long",
-                "invoice_date_short","invoice_date_long","commercial_as_of","price_day"):
-        if key in st.session_state:
+    # Keep explicit draft fields when switching between tasks in the same session.
+    for key in list(st.session_state):
+        if key.startswith(("invoice_present_","invoice_amount_","invoice_date_")) or key in (
+                "commercial_example","commercial_as_of","price_day","credit_g","credit_c",
+                "credit_pfat","credit_pdet","credit_patt","credit_verified","credit_late_bal",
+                "credit_late_tr","credit_daily","credit_price","credit_vat","credit_psv"):
             st.session_state[key]=st.session_state[key]
     view=picker("Strumento",("Fatture","Garanzie","Scadenze","Prezzi","Bilanci e GNL"),
                 key="commercial_view",labels={"Bilanci e GNL":"Calcolo GNL"})
@@ -158,8 +161,9 @@ def commercial_workbench(ledger_view):
         documents_panel()
         if not st.session_state.get(BALANCE_STATE):
             if st.toggle("Prova con dati di esempio",key="commercial_example"):
-                rows,_=_invoice_panel(sample_rows())
-                st.session_state["commercial_example_rows"]=rows
+                st.session_state["commercial_example_rows"]=_invoice_panel(sample_rows())
+            else:
+                st.session_state.pop("commercial_example_rows",None)
     elif view=="Garanzie":
         _guarantee_panel()
     elif view=="Scadenze":
