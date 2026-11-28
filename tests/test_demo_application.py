@@ -68,6 +68,7 @@ def test_every_feature_route_is_reachable_offline_and_preserves_imports(monkeypa
     saved={"sha":"existing-evidence","rows":rows,"name":"session.csv"}
     app=AppTest.from_file(ROOT/"app.py",default_timeout=60)
     app.session_state["settlement_desk_csv_v1"]=saved
+    app.session_state["selected_source"]=session.ARCHIVE  # Explicit offline test source, not production default.
     app.run()
     assert not app.exception
     links={x.proto.page:x.proto.page_script_hash for x in app.get("page_link")}
@@ -87,7 +88,7 @@ def test_every_feature_route_is_reachable_offline_and_preserves_imports(monkeypa
         if path=="balancing":
             assert app.radio(key="balancing_view").value=="Cockpit"
             app.radio(key="balancing_view").set_value("Controllo giornaliero").run()
-            assert app.radio(key="daily_desk_data_mode").value=="Esempio guidato"
+            assert app.radio(key="daily_desk_data_mode").value=="Dati importati"
         if path=="operations":
             assert app.session_state["assistant_history_v1"]==[]
             assert app.radio(key="assistant_view").value=="Report locali"
