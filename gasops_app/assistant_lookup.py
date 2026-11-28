@@ -220,27 +220,22 @@ def _document_libraries():
 
 
 def ranked_document_hits(libraries,question,limit):
-    """Merge ranked candidates across archives before truncation.
-
-    TF-IDF scores from independent indexes are not comparable. Rank by
-    query-term coverage across all candidates, then local retrieval rank.
-    Keep exact citations; no embeddings, model call or shared private cache.
-    """
-    from .document_desk import search, STOP
-    from unicodedata import normalize, combining
-    def terms(value):
-        clean="".join(ch for ch in normalize("NFKD",value.casefold()) if not combining(ch))
-        return {token for token in re.findall(r"[\w-]+",clean) if len(token)>=2 and token not in STOP}
-    query=terms(question)
+    """Rank actual PDF evidence across independently scoped archives."""
+    from .document_desk import search, STOP, MAX_RESULTS
+    from .document_retrieval import score
+    question=question.strip()[:600]
+    if not question or limit<=0:return []
     candidates={}
     for docs in libraries:
-        for rank,hit in enumerate(search(docs,question,limit=limit)):
-            key=(hit.document,hit.page,hit.evidence)
-            matches=query & terms(hit.evidence)
-            title_matches=query & terms(hit.document)
-            score=(len(matches),len(title_matches),-rank)
-            if key not in candidates or score>candidates[key][0]:
-                candidates[key]=(score,hit)
+        for rank,hit in enumerate(search(docs,question,mode="hybrid",limit=MAX_RESULTS)):
+            relevance=score(question,hit,STOP)
+            if relevance is None:continue
+            # The digest-bearing document title identifies the PDF edition.
+            # Do not let duplicated copies crowd out other pages.
+            key=(hit.document,hit.page)
+            quality=(relevance,-rank)
+            if key not in candidates or quality>candidates[key][0]:
+                candidates[key]=(quality,hit)
     return [hit for _,hit in sorted(candidates.values(),key=lambda row:row[0],reverse=True)[:limit]]
 
 
