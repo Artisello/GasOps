@@ -132,7 +132,7 @@ def _compare(rows,by_point,point,day):
         with st.container(key="cockpit_reconciliation_table"):
             title,options=st.columns([3,1],vertical_alignment="center")
             title.markdown("**Dalla nomina al flusso fisico**")
-            extended=options.toggle("Scostamenti",key="cockpit_show_deltas",help="Mostra anche le differenze tra nomina, rinomina, allocazione e flusso fisico.")
+            extended=options.toggle("Scostamenti",key="cockpit_show_deltas",help="Differenze tra passaggi consecutivi: nomina, rinomina, allocazione e flusso.")
             names={"point":"Punto","point_type":"Tipologia","direction":"Direzione dati","Nomination":"Nomina","Renomination":"Rinomina",
                 "Allocation":"Allocazione","Physical Flow":"Flusso fisico","delta_renomination_nomination":"Δ rinomina",
                 "delta_allocation_renomination":"Δ allocazione","delta_physical_allocation":"Δ flusso","state":"Stato"}
@@ -148,7 +148,7 @@ def _compare(rows,by_point,point,day):
                 column_order=list(display.columns) if extended else [c for c in display.columns if not c.startswith("Δ")],
                 column_config={"Punto":st.column_config.TextColumn(width="medium"),"Tipologia":st.column_config.TextColumn(width="medium"),"Direzione dati":st.column_config.TextColumn(width="medium"),
                     **{c:st.column_config.NumberColumn(format="%.1f",width="small") for c in number_columns}})
-            st.caption("GWh/d · una riga per direzione · N/D ≠ zero. Gli scostamenti confrontano passaggi consecutivi. Il CSV conserva tutte le colonne, fonti e versioni.")
+            st.caption("GWh/d · una riga per direzione · N/D ≠ zero · CSV completo di fonti e versioni.")
         if point:
             chart_col, readout_col = st.columns([1.25,1],gap="medium")
             with chart_col:
@@ -171,7 +171,7 @@ def _compare(rows,by_point,point,day):
 def _publications(frame,point,day,now):
     from .entsog_vintages import audit_rows, STATE as VINTAGES
     with st.container():
-        st.caption("Pubblicazione e acquisizione sono distinte. Una sola versione non costituisce una revisione.")
+        st.caption("Pubblicazione ≠ acquisizione. Una sola versione non è una revisione.")
         try:audit=audit_rows(frame,day,now,batches=st.session_state.get(VINTAGES,()))
         except ValueError:
             audit=audit_rows(frame,day,now)
