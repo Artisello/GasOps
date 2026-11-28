@@ -275,3 +275,56 @@ def test_cached_public_forecast_is_estimated_and_synthetic_or_archival_runs_are_
     for source in (origin.model_copy(update={"kind":Kind.SYNTHETIC}), origin.model_copy(update={"archive":True}),
                    origin.model_copy(update={"grain":"monthly"})):
         assert build_status(network, (), {"last_run":run.model_copy(update={"source":source})}, NOW, gas_day=DAY).demand_forecast.value is None
+
+
+def test_event_monitoring_without_copies_is_unavailable_not_zero_active(network):
+    from gasops_app.system_status import event_monitoring_label
+    status=build_status(network,(),{},NOW,gas_day=DAY)
+    assert status.event_monitoring["status"]=="unavailable"
+    assert status.event_monitoring["active_event_count"] is None
+    assert status.event_coverage.valid==0
+    assert event_monitoring_label(status)=="Monitoraggio eventi non disponibile"
+
+
+def test_event_coverage_excludes_partial_stale_and_outside_day_copies(network):
+    from gasops_app.italian_network import verified_bindings
+    bindings=tuple(verified_bindings(network))[:4]
+    copies=tuple(dict(point_direction=b.point_direction,records=(),first=DAY,last=DAY,
+                      acquired=NOW-timedelta(hours=1),partial=False,failed=False) for b in bindings)
+    partial={**copies[1],"partial":True}
+    stale={**copies[2],"acquired":NOW-timedelta(hours=13)}
+    outside={**copies[3],"first":DAY-timedelta(days=1),"last":DAY-timedelta(days=1)}
+    status=build_status(network,(),{},NOW,gas_day=DAY,interruptions=(copies[0],partial,stale,outside))
+    assert status.event_coverage.valid==1
+    assert status.event_monitoring["entsog_queried"]==3
+    assert status.event_monitoring["entsog_stale"]==1
+    assert status.event_monitoring["status"]=="partial"
+    assert status.event_monitoring["active_event_count"] is None
+
+
+def test_event_monitoring_keeps_iip_coverage_separate(network):
+    from gasops_app.data import ROME
+    start,stop=gas_day_bounds(DAY)
+    result={"messages":[],"source_url":"https://iip.gie.eu/","acquired":NOW,
+            "request_from":start.astimezone(ROME).date().isoformat(),
+            "request_to":stop.astimezone(ROME).date().isoformat(),
+            "pagination_verified":True,"partial":False,"reported_total":0}
+    status=build_status(network,(),{"gie_iip":{"result":result}},NOW,gas_day=DAY)
+    assert status.event_monitoring["iip_status"]=="complete"
+    assert status.event_monitoring["iip_received_records"]==0
+    assert status.event_monitoring["active_event_count"] is None
+    assert status.event_coverage.valid==0
+    result["request_from"]=(DAY+timedelta(days=2)).isoformat()
+    status=build_status(network,(),{"gie_iip":{"result":result}},NOW,gas_day=DAY)
+    assert status.event_monitoring["iip_status"]=="window_unverified"
+    assert status.event_monitoring["iip_received_records"] is None
+
+
+def test_unknown_interruption_quantity_cannot_certify_coverage(network):
+    b=binding(network)
+    start,stop=gas_day_bounds(DAY)
+    event=dict(source="ENTSOG TP Interruptions",value=None,period_from=start,period_to=stop)
+    result=dict(point_direction=b.point_direction,records=(event,),acquired=NOW,first=DAY,last=DAY,partial=False)
+    status=build_status(network,(),{},NOW,gas_day=DAY,interruptions=(result,))
+    assert status.event_coverage.valid==0
+    assert status.event_monitoring["unresolved"]==1
