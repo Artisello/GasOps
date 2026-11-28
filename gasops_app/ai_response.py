@@ -143,9 +143,57 @@ def verify_price_semantics(sections, public):
                     raise InvalidSynthesis("PSV, TTF e CMEM,m non sono fonti dei prezzi elettrici.")
 
 
+def verify_metric_bindings(sections, public):
+    """Check explicit metric/value phrases, not just numbers sharing a unit.
+
+    Deliberately narrow grammar: only direct labelled observations from public
+    sources. Complex agent calculations and ambiguous prose still go through
+    the existing numeric checks. No extra inference call.
+    """
+    from .assistant_sources import METRIC_CATALOG, metric_value
+    for section in sections:
+        refs=section["references"]
+        if not refs or not all(ref.startswith("src:") for ref in refs):
+            continue
+        text=section["text"]
+        for match in _CLAIM.finditer(text):
+            prefix=text[max(0,match.start()-150):match.start()]
+            unit=_unit(match["unit"])
+            candidates=[]
+            for source,metrics in METRIC_CATALOG.items():
+                for metric in metrics:
+                    if not metric.aliases or _unit(metric.unit)!=unit:
+                        continue
+                    pattern=r"(?<!\w)(?:"+"|".join(re.escape(a) for a in metric.aliases)+r")\s*(?:(?:è|sono)\s*(?:pari\s+a\s*)?|[:=])?\s*$"
+                    label=re.search(pattern,prefix,re.I)
+                    if label:
+                        # Changes and comparisons are not absolute observations.
+                        if re.search(r"(?:variazione|aumento|incremento|calo|diminuzione|differenza)\s+(?:del(?:la|le|lo)?|di|dei)\s*$",prefix[:label.start()],re.I):
+                            continue
+                        candidates.append((source,metric))
+            if not candidates:
+                continue
+            try:
+                forms=_decimal_forms(match["number"])
+            except InvalidOperation:
+                continue
+            values=[]
+            for source,metric in candidates:
+                for ref in refs:
+                    key=ref[4:]
+                    if key==source or source=="AGSI+" and key.startswith("AGSI+ ·"):
+                        value=metric_value(source,public.get(key,{}),metric)
+                        if value is not None:
+                            values.append(Decimal(str(value)))
+            if not any(abs(amount-value)<=Decimal("0.5").scaleb(-places)
+                       for value in values for amount,places in forms):
+                raise InvalidSynthesis("Valore non associabile all’indicatore esplicitamente citato.")
+
+
 def verify_measurements(sections, tools, public):
     """Check unit-bearing figures against the sources cited in each section."""
     verify_price_semantics(sections,public)
+    verify_metric_bindings(sections,public)
     numbers={"src:"+name:set(_values(item)) for name,item in public.items()}
     for agent,item in tools.items():
         if item.get("status") not in ("completed","review"):

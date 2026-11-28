@@ -264,21 +264,8 @@ class CompatibleReasoner:
 
     def select_public_sources(self, question):
         """Fallback router for unfamiliar wording; no data, URLs or tool arguments."""
-        from .assistant_sources import MONTHLY, DAILY, PRICE, ACER, MASE, NETWORK, WEATHER, POWER
-        catalog={
-            MONTHLY:"Bilancio nazionale mensile: consumi, produzione, importazioni, esportazioni",
-            DAILY:"Prelievi giornalieri SRG: industria, distribuzione, termoelettrico",
-            PRICE:"Prezzo di riferimento ARERA CMEM,m mensile",
-            "AGSI+":"Scorte, riempimento, prelievi e iniezioni stoccaggi",
-            "ALSI":"Inventario e send-out dei terminali GNL",
-            "IIP":"Avvisi UMM e indisponibilità pubblicati dagli operatori",
-            NETWORK:"Misure e capacità dei punti ENTSOG nominati nella domanda",
-            ACER:"Prezzi GNL UE e differenziale GNL–TTF",
-            MASE:"Archivio storico produzione nazionale e regionale",
-            WEATHER:"Meteo e HDD",
-            POWER[0]:"Consuntivi elettrici italiani",
-            POWER[1]:"Previsioni elettriche Terna",
-        }
+        from .assistant_sources import SOURCE_CATALOG
+        catalog=SOURCE_CATALOG
         codes={str(i):key for i,key in enumerate(catalog,1)}
         payload={"question":question[:600],"sources":{code:catalog[key] for code,key in codes.items()}}
         message=self._chat([{"role":"system","content":SOURCE_ROUTER},
