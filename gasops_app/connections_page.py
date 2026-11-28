@@ -154,18 +154,17 @@ def refresh_all(state,store,configuration,now=None,*,selected=None,network_days=
 def page():
     from .visuals import header
     header("Fonti e API", "")
-    st.caption("Acquisizione dati pubblici · ultime copie valide conservate.")
     configuration=access()
     choices=[*configuration["available"],*(["ai"] if configuration["ai"] else []),*(["documents"] if configuration["documents"] else [])]
     labels={key:name for key,name,_,_ in CATALOG}
-    with st.popover("Opzioni importazione"):
+    with st.popover("Opzioni",icon=":material/settings:"):
         if "connections_sources" in st.session_state:
             st.session_state["connections_sources"]=[k for k in st.session_state["connections_sources"] if k in choices]
         selected=st.multiselect("Fonti da acquisire",choices,default=choices,key="connections_sources",format_func=labels.__getitem__)
         network_days=st.selectbox("Storico dei punti rete",(7,30),format_func=lambda n:f"Ultimi {n} giorni gas conclusi",key="connections_network_days")
         europe=st.checkbox("Includi aggregati GIE europei",key="connections_europe",disabled=not configuration["gie"])
         st.caption("Le altre fonti conservano i propri periodi e frequenze. AI e archivio PDF eseguono solo una verifica di accesso.")
-    if st.button("Aggiorna fonti connesse",type="primary",key="connections_refresh",disabled=not selected):
+    if st.button("Aggiorna fonti",type="primary",key="connections_refresh",disabled=not selected):
         bar=st.progress(0,text="Avvio acquisizione…")
         with st.spinner("Verifica e acquisizione delle fonti disponibili…"):
             changed=refresh_all(st.session_state,session.database(),configuration,selected=selected,
@@ -183,13 +182,3 @@ def page():
         st.caption("Configurazione, raggiungibilità, risposta validata e dati nel periodo sono verifiche distinte. Una cella vuota indica verifica pendente. Acquisizione recente ≠ osservazione corrente.")
         st.dataframe(rows,hide_index=True,width="stretch")
         st.caption("Nessuna fonte non raggiungibile viene sostituita da dati simulati.")
-    with st.expander("Catalogo delle funzionalità"):
-        st.markdown(
-            "- [Bilanciamento, settlement e rettifiche](/balancing)\n"
-            "- [Fatture, garanzie, scadenze e GNL](/ledger)\n"
-            "- [Operazioni gas, agenda, indicatori e monitoraggio](/kpi)\n"
-            "- [Mercato, previsioni, Terna e analisi Snam](/market)\n"
-            "- [Scorte, GNL, avvisi, HS1 e interconnessioni](/security-of-supply)\n"
-            "- [Rischi e stress test](/risk)\n"
-            "- [Assistente AI e analista dati](/operations)\n"
-            "- [PDF, ricerca, verifiche e dossier](/regulatory)")
