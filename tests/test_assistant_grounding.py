@@ -169,3 +169,73 @@ def test_forecast_projection_supplies_selected_point_and_interval(monkeypatch):
     monkeypatch.setattr(model,"_chat",chat)
     answer,refs=model.interpret("Previsione per il 21/11/2026",{Agent.FORECAST:forecast})
     assert "108 GWh" in answer and refs==[Agent.FORECAST]
+
+
+def test_shortcuts_expand_to_targeted_queries_and_unknown_commands_fail_closed():
+    from gasops_app.workflow import DAILY_BRIEFING, plan
+    for cmd,expected in (("/consumi",sources.MARKET),("/scorte",("AGSI+",)),
+                         ("/gnl",("ALSI",)),("/prezzi",(sources.PRICE,)),
+                         ("/produzione",(sources.MONTHLY,)),("/mase",(sources.MASE,))):
+        question,issue=sources.expand_command(cmd)
+        assert not issue and set(sources.requested_sources(question))==set(expected)
+    question,issue=sources.expand_command("/scorte 21/11/2026")
+    assert not issue and sources.query_day(question)==DAY
+    assert sources.expand_command("/bollettino")== (DAILY_BRIEFING,None)
+    assert sources.expand_command("/xyz")[0] is None
+    assert sources.expand_command("/bollettino 21/11/2026")[0] is None
+    assert sources.requested_sources("Consumi mensili italiani")== (sources.MONTHLY,)
+    assert sources.requested_sources("Gas importato in Italia")== (sources.MONTHLY,)
+    assert Agent.SCENARIO not in {c.agent for c in plan("La domanda è aumentata del 10%?",False)}
+    assert Agent.SCENARIO not in {c.agent for c in plan("Dimmi se la domanda è aumentata del 10%",False)}
+    scenario=next(c.arguments for c in plan("Simula un aumento del prezzo di 12,5 €/MWh",False)
+                  if c.agent==Agent.SCENARIO)
+    assert scenario.price_delta_eur_mwh==Decimal("12.5")
+
+
+def test_mase_exact_archive_period_and_scope():
+    from gasops_app.mase_archive import observations
+    annual=assistant_lookup.mase_context("MASE produzione 2025")
+    assert annual["status"]=="available" and annual["period"]=="2025"
+    assert annual["kind"]=="historical archive"
+    actual=next(r for r in observations() if r["period"]=="2025" and r["geography"]=="IT")
+    assert annual["values"]["Produzione nazionale"]["value"]==float(actual["value"])
+    assert annual["values"]["Produzione nazionale"]["unit"]==actual["unit"]
+    assert annual["source_url"]==actual["source_url"]
+    assert "non API live" in annual["limitation"]
+    assert assistant_lookup.mase_context("MASE febbraio 2026")["period"]=="2026-02"
+    assert assistant_lookup.mase_context("MASE Lombardia 2025")["scope"]=="Lombardia"
+    assert assistant_lookup.mase_context("MASE novembre 2026")["status"]=="unavailable"
+    assert assistant_lookup.mase_context("MASE 2024 e 2025")["status"]=="unavailable"
+
+
+def test_public_readout_keeps_balance_components_and_frequency():
+    monthly={"status":"available","values":{"demand_gwh":100,"production_gwh":5,"imports_gwh":90,"exports_gwh":0}}
+    result=sources.source_evidence(sources.MONTHLY,monthly)
+    assert "Produzione nazionale 5,0 GWh/mese" in result
+    assert "Esportazioni 0,0 GWh/mese" in result
+    assert "Importazioni 90,0 GWh/mese" in result
+    daily={"status":"available","values":{"demand_gwh":100,"industry_gwh":20}}
+    assert "Industria 20,0 GWh/giorno gas" in sources.source_evidence(sources.DAILY,daily)
+
+
+def test_archive_units_are_checked_against_reference():
+    public={sources.MASE:{"status":"available","values":{"Produzione nazionale":{"unit":"bcm","value":2.5}}}}
+    def check(answer):
+        verify_measurements([{"text":answer,"references":["src:"+sources.MASE]}],{},model_context(public))
+    check("2,5 bcm.")
+    with pytest.raises(InvalidSynthesis):
+        check("5 bcm.")
+    with pytest.raises(InvalidSynthesis):
+        check("2,5 Sm3.")
+
+
+def test_terna_uses_requested_historical_day_without_substituting_latest():
+    from gasops_app.briefing_market_sources import power_context
+    rows=[{"gas_day":d,"metric":"load","gwh":value,"valid_slots":24,"expected_slots":24}
+          for d,value in (("2026-11-10",100),("2026-11-20",999))]
+    item={"acquired":NOW.isoformat(),"rows":rows}
+    exact=power_context(item,NOW,day=date(2026,11,10))
+    assert exact["period"]=="2026-11-10" and exact["status"]=="available"
+    assert exact["values"]["load"]["value"]==100
+    with pytest.raises(ValueError):
+        power_context(item,NOW,day=date(2026,11,11))
