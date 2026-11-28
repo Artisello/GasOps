@@ -172,7 +172,7 @@ def requested_sources(question):
     if electricity_price_question(question):
         # The existing Terna adapters cover energy/load, not electricity
         # price. Do not silently substitute ARERA gas or ACER LNG.
-        explicit_gas=bool(re.search(r"\b(?:cmem|psv|ttf|arera|igi|gnl|lng|acer)\b|prezz\w*.{0,16}\bgas\b|\bgas\b.{0,16}prezz",question))
+        explicit_gas=bool(re.search(r"\b(?:cmem|psv|ttf|igi|gnl|lng|acer)\b|prezz\w*.{0,16}\bgas\b|\bgas\b.{0,16}prezz",question))
         if not explicit_gas:
             names=[name for name in names if name not in (PRICE,ACER,GME)]
         elif not re.search(r"\b(?:arera|cmem|psv)\b|prezz\w*.{0,16}\bgas\b|\bgas\b.{0,16}prezz",question):
