@@ -184,25 +184,40 @@ def _document_libraries():
     return libraries,notices
 
 
+def ranked_document_hits(libraries,question,limit):
+    """Merge ranked candidates across archives before truncation.
+
+    TF-IDF scores from independent indexes are not comparable. Rank by
+    query-term coverage across all candidates, then local retrieval rank.
+    Keep exact citations; no embeddings, model call or shared private cache.
+    """
+    from .document_desk import search, STOP
+    from unicodedata import normalize, combining
+    def terms(value):
+        clean="".join(ch for ch in normalize("NFKD",value.casefold()) if not combining(ch))
+        return {token for token in re.findall(r"[\w-]+",clean) if len(token)>=2 and token not in STOP}
+    query=terms(question)
+    candidates={}
+    for docs in libraries:
+        for rank,hit in enumerate(search(docs,question,limit=limit)):
+            key=(hit.document,hit.page,hit.evidence)
+            matches=query & terms(hit.evidence)
+            title_matches=query & terms(hit.document)
+            score=(len(matches),len(title_matches),-rank)
+            if key not in candidates or score>candidates[key][0]:
+                candidates[key]=(score,hit)
+    return [hit for _,hit in sorted(candidates.values(),key=lambda row:row[0],reverse=True)[:limit]]
+
+
 def document_lookup_report(question,public,now,*,reasoner=None):
     """Retrieve actual PDF passages independently of market-series availability.
     Private and visitor excerpts never travel to a remote model from chat.
     For a local model use the existing citation-checked document RAG.
     """
-    from .document_desk import search
     from .document_rag import answer, MAX_PASSAGES
     from .models import Agent, Result, Step, utc_now
     libraries,notices=_document_libraries()
-    hits=[]
-    seen=set()
-    # Deduplicate identical passages across public and personal archives.
-    for docs in libraries:
-        for hit in search(docs,question,limit=MAX_PASSAGES):
-            key=(hit.document,hit.page,hit.evidence)
-            if key not in seen:
-                seen.add(key)
-                hits.append(hit)
-    hits=hits[:MAX_PASSAGES]
+    hits=ranked_document_hits(libraries,question,MAX_PASSAGES)
     summary=("Passaggi pertinenti nei PDF. Verifica l’edizione applicabile." if hits else
              "Nessun passaggio pertinente trovato nei documenti consultabili.")
     run=lookup_report(question,public,now,reasoner=None,issue=summary)
