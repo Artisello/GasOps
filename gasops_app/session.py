@@ -474,7 +474,7 @@ def _collect_assistant_sources(context,selected,requested,*,full=False,day=None,
     from .weather_source import STATE as WEATHER_STATE, enabled, refresh
     now,store=utc_now(),database()
     include_gie=(automatic or bool(st.session_state.get("briefing_gie",True))) and (full or bool(set(requested)&set(GIE)))
-    weather_state=dict(st.session_state) if automatic else st.session_state
+    weather_state={WEATHER_STATE:st.session_state.get(WEATHER_STATE,{})} if automatic else st.session_state
     if automatic:weather_state["briefing_weather"]=True
     include_weather=enabled(weather_state) and (full or WEATHER in requested)
     terna=()
@@ -546,12 +546,19 @@ def launch(selection: Selection | None, question: str = DAILY_BRIEFING, *, full:
     targets={call.agent for call in plan(question,False)} if (requested or automatic) else set()
     base=selection.bundle if selection is not None else None
     if automatic and not full and not country:
-        from .workflow import INTENTS
         from .assistant_lookup import document_lookup_report
-        doc_question=bool(re.search(r"\b(?:pdf|document[oi]|archivio documentale|articolo|clausola|contratto|disciplinare)\b",question,re.I)) or Agent.REGULATORY in targets
+        doc_question=bool(re.search(r"\b(?:pdf|document[oi]|archivio documentale|articolo|clausola|contratto|disciplinare|normativ\w*|regolament\w*|codice)\b",question,re.I)) or (not requested and Agent.REGULATORY in targets)
         # Unknown questions search the actual document archive instead of
         # silently running the default market agent on an unrelated dataset.
-        unknown=not requested and not any(re.search(pattern,question,re.I) for pattern in INTENTS.values())
+        # A bounded, read-only model router is a fallback for natural language
+        # outside the known source aliases, never for a document/private query.
+        computation=bool(targets.intersection((Agent.FORECAST,Agent.SCENARIO,Agent.SETTLEMENT,Agent.QUALITY)))
+        if not requested and not doc_question and not computation and model is not None and re.search(r"\b(?:gas|metano|energia|energetic\w*|fornitur\w*|approvvigionament\w*)\b",question,re.I):
+            try:
+                requested=model.select_public_sources(question)
+            except Exception:
+                requested=()
+        unknown=not requested and not computation
         if doc_question or unknown:
             with st.spinner("Ricerca nei documenti…"):
                 public=_collect_assistant_sources(None,None,requested,day=day,question=question,automatic=True) if requested else {}
@@ -562,8 +569,8 @@ def launch(selection: Selection | None, question: str = DAILY_BRIEFING, *, full:
     # source even when the selected base series is a daily SRG proxy.
     specific_market=bool(set(requested)&set(MARKET)) and bool(re.search(
         r"\beurostat\b|\bentsog\b|\bmensil\w*|import|esport|produzione nazionale",question,re.I))
-    standalone=bool(requested) and not targets.intersection((Agent.REGULATORY,Agent.SETTLEMENT,Agent.SCENARIO)) and (
-        not set(requested).intersection(MARKET) or (day is not None or base is None or specific_market) and Agent.FORECAST not in targets)
+    standalone=bool(requested) and not targets.intersection((Agent.SETTLEMENT,Agent.SCENARIO)) and (automatic or Agent.REGULATORY not in targets) and (
+        (not set(requested).intersection(MARKET) or day is not None or base is None or specific_market) and Agent.FORECAST not in targets)
     scoped_lookup=country=="EU" or country=="DE" and requested==("AGSI+",)
     if scoped_lookup or (country is None and standalone):
         with st.spinner("Lettura delle fonti pertinenti…"):
@@ -597,7 +604,7 @@ def launch(selection: Selection | None, question: str = DAILY_BRIEFING, *, full:
     try:
         source_direct=bool(requested) and targets<={Agent.QUALITY,Agent.MARKET,Agent.FORECAST}
         direct=not full and (direct_market_question(question) or source_direct)
-        docs = Library(include_notes=False) if direct else library()
+        docs = Library(include_notes=False) if direct or automatic else library()
         origin=selection.bundle.origin
         current_context=not origin.archive and origin.kind in (Kind.HISTORICAL,Kind.LIVE)
         public_context={}
