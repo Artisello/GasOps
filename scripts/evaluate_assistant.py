@@ -87,7 +87,11 @@ def synthesis_case(name, question, public, replies, expected_mode, calls, *,
     if live_config is None:
         checks["exact_calls"] = len(bodies) == model.calls == calls
         checks["each_payload_budget"] = all(len(json.dumps(body).encode()) <= 12_000 for body in bodies)
-    return checks, model.usage_summary()
+        checks["expected_repair"] = model.format_retries == calls - 1
+    usage = model.usage_summary()
+    if live_config is None:
+        usage.pop("provider_elapsed_ms", None)
+    return checks, usage
 
 
 def launch_case(question, expected_keys, expected_mode, *, compare=False):
@@ -96,7 +100,7 @@ def launch_case(question, expected_keys, expected_mode, *, compare=False):
     state, acquired = {}, []
 
     def collect(context, base, requested, **kwargs):
-        acquired.append(tuple(requested))
+        acquired.append((tuple(requested), kwargs.get("day")))
         if base is not None or not kwargs.get("automatic"):
             raise AssertionError("Assistant required a manual base")
         if compare:
@@ -127,13 +131,17 @@ def launch_case(question, expected_keys, expected_mode, *, compare=False):
     if compare:
         rows = report.assumptions.get("assistant_comparison", [])
         checks["comparison"] = len(rows) == 1 and rows[0]["delta"] == 10 and rows[0]["delta_pct"] == 25
+        checks["exact_periods"] = [(keys, day.isoformat()) for keys, day in acquired] == [
+            ((src.PRICE,), "2026-09-01"), ((src.PRICE,), "2026-10-01")]
     elif expected_keys == (src.ELECTRIC_PRICE,):
         checks["coverage_gap"] = public[src.ELECTRIC_PRICE]["status"] == "unavailable"
     elif expected_keys == ("AGSI+",):
         checks["direct_readout"] = bool(report.assumptions.get("assistant_fast_lookup")) and "70" in report.summary
     else:
         checks["clarification"] = "Comando non riconosciuto" in report.summary
-    return checks, model.usage_summary()
+    usage = model.usage_summary()
+    usage.pop("provider_elapsed_ms", None)
+    return checks, usage
 
 
 def route_case(question, expected):
@@ -181,6 +189,9 @@ def cases(live_config=None):
         "invented_citation_fallback", "Valore CMEM,m", {src.PRICE: PRICE},
         [answer("34,12 €/MWh.", "S99"), answer("34,12 €/MWh.", "S99")],
         "Deterministic fallback", 2)
+    yield "omitted_required_source_fallback", "citations", lambda: synthesis_case(
+        "omitted_required_source_fallback", "CMEM,m e stoccaggi", {src.PRICE: PRICE, "AGSI+": STORAGE},
+        [answer("CMEM,m: 34,12 €/MWh.", "S1")] * 2, "Deterministic fallback", 2)
     yield "commodity_swap_fallback", "semantics", lambda: synthesis_case(
         "commodity_swap_fallback", "Valore CMEM,m", {src.PRICE: PRICE},
         [answer("Prezzo elettrico: 34,12 €/MWh.", "S1")] * 2,
