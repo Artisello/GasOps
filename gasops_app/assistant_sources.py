@@ -420,8 +420,8 @@ _COMPARABLE_DAILY = {
 def day_comparison(previous,current):
     """JSON-safe deterministic comparison, previous chat observation -> new day.
 
-    Compare only complete validated observations, identical source/scope and
-    distinct exact periods; never round before calculating. No model calls.
+    Compare only available observed snapshots, identical source/scope and
+    distinct exact periods; calculate from stored precision. No model calls.
     """
     if previous is None:
         return []
@@ -434,7 +434,9 @@ def day_comparison(previous,current):
         a,b=before.get(key,{}),after.get(key,{})
         if a.get("status")!="available" or b.get("status")!="available":
             continue
-        if not a.get("scope") or a.get("scope")!=b.get("scope") or a.get("source")!=b.get("source"):
+        if any(item.get("kind")!="observed" or item.get("quality_review") for item in (a,b)):
+            continue
+        if not a.get("source") or not a.get("scope") or a.get("scope")!=b.get("scope") or a.get("source")!=b.get("source"):
             continue
         if a.get("grain")!=b.get("grain") or a.get("unit")!=b.get("unit"):
             continue
@@ -454,10 +456,12 @@ def day_comparison(previous,current):
             x,y=av.get(field),bv.get(field)
             if not all(type(v) in (float,int) and isfinite(v) for v in (x,y)):
                 continue
-            delta=y-x
+            first_day,last_day=sorted((old_day,new_day))
+            first,last=(x,y) if old_day==first_day else (y,x)
+            delta=last-first
             if not isfinite(delta):
                 continue
             rows.append({"source":a.get("source") or key,"scope":a["scope"],"metric":label,
-                         "before_day":old_day,"after_day":new_day,"before":x,"after":y,
+                         "before_day":first_day,"after_day":last_day,"before":first,"after":last,
                          "unit":unit,"delta":delta,"delta_unit":"p.p." if is_pct else unit})
     return rows
