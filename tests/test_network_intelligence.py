@@ -466,3 +466,56 @@ def test_search_labels_distinguish_operational_points_from_geographic_nodes(asse
     assert labels["INET_BP_12"]=="Bizzarone · ↗ Solo uscita"
     assert labels["INET_BP_65"]=="Mazara del Vallo · ↘ Solo ingresso"
     assert all("Bidirezionale" not in labels[i.id] for i in network.infrastructure if i.category=="node")
+
+
+def test_render_index_matches_single_point_reference_across_directions_and_freshness(assets):
+    from gasops_app.italian_network import PointIntelligenceIndex, verified_bindings, validated_observations
+    network,_,_=assets
+    bindings=verified_bindings(network)
+    rows=[]
+    for b in bindings:
+        rows.extend((reading(b,value="0"),reading(b,value="2",day=DAY-timedelta(days=1)),
+                     reading(b,"Firm Technical","4")))
+    b=point(network)
+    rows.append(reading(b,value="9",retrieved_at=NOW+timedelta(hours=1)))
+    rows.append(reading(b,"Firm Available","2",mapping_confidence="unverified"))
+    snapshots=tuple(Snapshot(b.point_direction,tuple(o for o in rows if o.point_direction==b.point_direction),
+                             DAY-timedelta(days=1),DAY,NOW-timedelta(hours=1)) for b in bindings)
+    for now in (NOW,NOW+timedelta(hours=15)):
+        index=PointIntelligenceIndex(network,rows,snapshots,now)
+        assert index.observations==validated_observations(network,rows,now)
+        for identifier in {b.infrastructure_id for b in bindings}|{"unknown"}:
+            for direction in (None,"entry","exit"):
+                options={"direction":direction,"failures":(b.point_direction,),"ttl_hours":12}
+                expected=point_intelligence(network,identifier,rows,DAY,now,snapshots=snapshots,**options)
+                assert index.point(identifier,DAY,**options)==expected
+
+
+def test_render_index_validates_only_once_for_many_points(assets,monkeypatch):
+    from gasops_app import italian_network as model
+    network,_,_=assets
+    calls=[]
+    original=model._validate_observations
+    def counted(*args,**kwargs):
+        calls.append(1)
+        return original(*args,**kwargs)
+    monkeypatch.setattr(model,"_validate_observations",counted)
+    bindings=model.verified_bindings(network)
+    index=model.PointIntelligenceIndex(network,(reading(b) for b in bindings),(),NOW)
+    for b in bindings:
+        index.point(b.infrastructure_id,DAY,direction=b.direction)
+    assert len(calls)==1
+
+
+def test_nearby_geometry_cache_is_bounded_and_respects_visible_subset(assets):
+    from gasops_app.italian_network_map import nearby_points, _nearby_geometry
+    network,_,_=assets
+    points=tuple(i for i in network.infrastructure if i.id in ("INET_BP_78","INET_CO_77"))
+    _nearby_geometry.cache_clear()
+    first=nearby_points(network,points)
+    assert first["INET_BP_78"]==("INET_CO_77",)
+    first.clear()
+    assert nearby_points(network,points)["INET_BP_78"]==("INET_CO_77",)
+    assert _nearby_geometry.cache_info().hits==1
+    assert nearby_points(network,points[:1])=={}
+    assert _nearby_geometry.cache_info().maxsize==16
