@@ -71,16 +71,15 @@ def _deadlines(demo,now):
     with b:
         months=sorted({(now.year,now.month),*((local_day(x["due_at"]).year,local_day(x["due_at"]).month) for x in tasks)},reverse=True)
         ym=(now.year,now.month)
-        y,m=st.selectbox("Mese per la puntualità",months,index=months.index(ym),
+        y,m=st.selectbox("Mese di riferimento",months,index=months.index(ym),
                          format_func=lambda x:data_it(date(x[0],x[1],1),day=False),key="bso_ops_month")
-    with settings, st.popover("Target e definizioni",icon=":material/info:",width="stretch"):
+    with settings, st.popover("Info e obiettivo",icon=":material/info:",width="stretch"):
         target=st.number_input("Puntualità target (%)",0.,100.,100.,step=1.,key="bso_sla_target")
         st.caption("Target di studio, non SLA Snam. Puntualità = attività completate entro termine / attività con termine trascorso nel mese. Le attività aperte in ritardo sono nel denominatore; quelle non ancora dovute sono escluse. Conteggi di agenda: tutte le date del registro, area selezionata. Date senza orario: scadenza a fine giorno locale; completamento datato senza ora non certifica l'orario.")
         if not demo:
             st.text("SHA-256: "+saved["sha256"])
     r=operations_metrics(tasks,now,y,m,area)
-    st.caption("L’agenda mostra le attività dell’area in tutte le date del registro.")
-    kpi_grid([("Scadute aperte",len(r["overdue"]),"","Anche mesi precedenti",0,"rose" if r["overdue"] else ""),
+    kpi_grid([("In ritardo",len(r["overdue"]),"","Anche mesi precedenti",0,"rose" if r["overdue"] else ""),
               ("Entro 24 ore",r["next24"],"","Attività aperte",0,""),
               ("Entro 7 giorni",r["next7"],"","Include le prossime 24 h",0,""),
               ("Puntualità",r["on_time_pct"],"%",f'{r["on_time"]}/{r["due"]} · target {numero(target,0)}%',1,
@@ -180,7 +179,7 @@ def page():
     apply_intent("kpi")
     header("Operazioni gas", "")
     view=picker("Vista operazioni gas",["Registro operativo","Panoramica","Monitoraggio fonti","Executive demo","Centro operativo"],
-                key="bso_view",index=1,labels={"Panoramica":"Indicatori","Registro operativo":"Agenda e scadenze","Executive demo":"Esempio completo"})
+                key="bso_view",index=1,labels={"Panoramica":"Indicatori","Registro operativo":"Agenda e scadenze","Executive demo":"Esempio completo","Monitoraggio fonti":"Stato fonti","Centro operativo":"Strumenti avanzati"})
     if view=="Centro operativo":
         from .agentic_operations_page import panel
         panel()
@@ -198,7 +197,7 @@ def page():
         panel()
         return
     source,section_control=st.columns([2,1],vertical_alignment="bottom")
-    labels={"Scadenze":"Agenda","Calendario Snam":"Calendario Snam","Balancing":"KPI bilanciamento","Settlement":"KPI settlement"}
+    labels={"Scadenze":"Agenda","Calendario Snam":"Calendario Snam","Balancing":"Indicatori bilanciamento","Settlement":"Indicatori bilanci"}
     section=section_control.selectbox("Consulta",tuple(labels),key="bso_register_section",format_func=labels.__getitem__)
     if section=="Calendario Snam":
         if "bso_mode" in st.session_state:
