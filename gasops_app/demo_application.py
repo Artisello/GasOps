@@ -29,7 +29,7 @@ def _prepare_assistant():
     st.session_state["demo_assistant_prepared_v1"]=True
     if st.session_state.get(HISTORY):return
     st.session_state.setdefault(HISTORY,[])
-    st.session_state.setdefault("assistant_view","Report locali")
+    st.session_state.setdefault("assistant_view","Assistente operativo")
 
 
 def risk():
