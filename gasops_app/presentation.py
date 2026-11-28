@@ -61,7 +61,7 @@ def _overview(pack, *, network=True):
         panel(mode="overview")
         st.divider()
         st.subheader("Prova con un esempio")
-        st.caption("Casi simulati separati dai dati pubblici della mappa")
+        st.caption("Simulazioni · separate dai dati pubblici")
     else:
         _heading("BSO, in sintesi", "Demo", "Casi simulati e dati pubblici storici")
     b, r, o = pack["balancing"], pack["revision"], pack["operations"]
