@@ -926,3 +926,16 @@ def test_public_source_choices_hide_only_redundant_synthetic_series():
     assert session.available_source_choices(state)==(session.PUBLIC,session.DAILY,session.ARCHIVE)
     empty=replace(acquired,rows=acquired.rows.iloc[:0])
     assert session.DEMO in session.available_source_choices({BUNDLES:{"daily":empty}})
+
+
+def test_srg_chart_explicitly_names_gas_withdrawals():
+    import pandas as pd
+    from gasops_app.visuals import demand_chart
+    from gasops_app.forecast import Forecast,ForecastPoint
+    frame=pd.DataFrame({"demand_gwh":[100.],"supply_gwh":[float("nan")]},
+                       index=pd.to_datetime(["2026-11-17"]))
+    forecast=Forecast(model="Seasonal naive",points=[ForecastPoint(period="2026-11-18",estimate=105)])
+    fig=demand_chart(frame,forecast,"daily",srg=True)
+    names=[trace.name for trace in fig.data]
+    assert "Prelievi SRG osservati" in names and "Prelievi SRG previsti" in names
+    assert "Consumi osservati" not in names
