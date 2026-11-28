@@ -31,10 +31,15 @@ def render_rows(rows,*,key="source_health",filterable=True,kpis=True,download=Tr
                        "Stato del dato":freshness_label(r),
                        "Copertura":f'{r["valid"]}/{r["expected"]}' if r["expected"] else "—",
                        "Perimetro":r["scope"],"Tipo":r["kind"],"Acquisizione dato":r["acquired"],
-                       "Ultimo tentativo":r["attempt"],**({"Stato fonte":r.get("state"),
+                       "Ultimo tentativo":r["attempt"],"Esito tentativo":{
+                           "not_recorded":"Non registrato","failed":"Fallito","acquired":"Acquisito",
+                           "partial":"Parziale","cached":"Cache","no_observation":"Nessun dato",
+                           "review":"Da verificare","completed_unverified":"Esito non verificato","deferred":"Rinviato"
+                       }.get(r.get("attempt_outcome"),"—"),**({"Stato fonte":r.get("state"),
                         "Età copia più vecchia · h":r.get("cache_age_hours"),"Pubblicazione dato":r.get("published_at"),
                         "Anomalie timestamp":r.get("timestamp_issues"),
-                        "Errore aggiornamento":r.get("refresh_error"),"Righe con revisioni":r.get("revision_rows"),
+                        "Codice errore":r.get("attempt_reason_code"),"Durata (s)":r.get("attempt_duration_seconds"),
+                        "Ambito tentativo":r.get("attempt_basis"),"Errore aggiornamento":r.get("refresh_error"),"Righe con revisioni":r.get("revision_rows"),
                         "Base copertura":r.get("coverage_basis")} if enriched else {})} for r in visible],hide_index=True,width="stretch",
                      column_config={"Serie":st.column_config.TextColumn(width="medium"),
                                     "Qualità":st.column_config.TextColumn(width="medium")})
@@ -51,9 +56,12 @@ def panel():
         from .italian_network_page import assets,bundled_interruptions
         from .gas_data import collect
         from .session import database
+        from .operational_acquisition import journal
+        store=database()
+        state=dict(st.session_state,operational_acquisition=journal(store))
         network,_,snapshots=assets()
-        frame=collect(network,snapshots,st.session_state,now,store=database(),interruptions=(bundled_interruptions(),))
-        rows=session_health(st.session_state,now,gas_rows=frame)
+        frame=collect(network,snapshots,state,now,store=store,interruptions=(bundled_interruptions(),))
+        rows=session_health(state,now,gas_rows=frame)
     except (OSError,ValueError,KeyError):
         rows=session_health(st.session_state,now)
         st.caption("Dati della mappa non disponibili per il controllo.")

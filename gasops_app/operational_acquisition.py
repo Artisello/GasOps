@@ -15,7 +15,7 @@ from .italian_network_sources import load_catalog, load_facility, load_point
 from .models import utc_now
 from .italian_network_events import load_interruptions
 from .operational_sources import load_agsi, load_alsi, load_iip
-from .public_data import SourceUnavailable, SourceNoObservation, network_allowed
+from .public_data import SourceUnavailable, SourceNoObservation, network_allowed, acquisition_error_code
 
 HISTORY_DAYS = 90
 REVISION_DAYS = 7
@@ -121,14 +121,7 @@ def _map_detail(store, network, detail, catalog, api_key, now):
 
 
 def inventory_error_code(reason):
-    # Store only bounded diagnostic codes, never raw provider content.
-    reason=str(reason).casefold()
-    if "http 429" in reason or "limite richieste" in reason:return "rate_limit"
-    if any(v in reason for v in ("http 401","http 403","accesso gie negato")):return "access_denied"
-    if "tempo di risposta" in reason or "timeout" in reason:return "timeout"
-    if "connessione" in reason:return "connection"
-    if "http " in reason:return "http_error"
-    return "validation_or_unavailable"
+    return acquisition_error_code(reason)
 
 
 def synchronize(store, network, work, now, *, api_key=None, clock=utc_now, pause=.4, detail=None):
@@ -149,6 +142,7 @@ def synchronize(store, network, work, now, *, api_key=None, clock=utc_now, pause
                 if isinstance(error,SourceUnavailable) and "HTTP 429" in str(error):
                     throttled.add(family)
         good = count = 0
+        started = monotonic()
         partial = False
         reason_code = None
         no_observation = False
@@ -167,6 +161,7 @@ def synchronize(store, network, work, now, *, api_key=None, clock=utc_now, pause
                         raise ValueError("Associazione ENTSOG non verificata")
                     result = load_point(store,binding,first,last,now=now,refresh=refresh)
                     ok = not result.failed
+                    if not ok:reason_code=acquisition_error_code(" ".join(result.warnings))
                     if any("HTTP 429" in warning for warning in result.warnings):
                         throttled.add(family)
                     observed = {row.gas_day for row in result.records
@@ -174,6 +169,7 @@ def synchronize(store, network, work, now, *, api_key=None, clock=utc_now, pause
                 elif source=="srg":
                     result = load_range(store,first,last,now=now,refresh=refresh)
                     ok = not result.failed
+                    if not ok:reason_code="unknown"
                     observed = {day for day,_ in result.values if all(
                         result.values.get((day,field)) is not None
                         for field in FIELDS)}
@@ -191,7 +187,7 @@ def synchronize(store, network, work, now, *, api_key=None, clock=utc_now, pause
                 ok = True
                 no_observation = True
             except FAILURES as error:
-                if family=="gie":reason_code=inventory_error_code(error)
+                reason_code=acquisition_error_code(error)
                 ok = False
                 if isinstance(error,SourceUnavailable) and "HTTP 429" in str(error):
                     throttled.add(family)
@@ -204,9 +200,9 @@ def synchronize(store, network, work, now, *, api_key=None, clock=utc_now, pause
                 attempts[key] = dict(sorted(prior.items(),key=lambda item:(item[1][0],item[0]))[-180:])
         if last.isoformat()>=health.get(source,{}).get("last",""):
             health[source] = {"first":str(first),"last":str(last),"at":at,"valid":good,"expected":count,"failed":good<count,"partial":partial}
-            if family=="gie":
-                health[source].update(reason_code=reason_code,no_observation=no_observation,
-                    outcome="failed" if good<count else "no_observation" if no_observation else "partial" if partial else "acquired")
+            health[source].update(reason_code=reason_code,no_observation=no_observation,
+                duration_seconds=round(monotonic()-started,2),
+                outcome="failed" if good<count else "no_observation" if no_observation else "partial" if partial else "acquired")
         store.cache(JOURNAL,at,json.dumps(saved,separators=(",",":")))
     if detail and not throttled:
         return _map_detail(store,network,detail,catalog or network.sources["opd"],api_key,now)
