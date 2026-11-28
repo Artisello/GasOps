@@ -96,8 +96,8 @@ def _measurements(data, inherited=None, grain=None, *, metrics=None):
         unit=_unit(raw_unit) or inherited
         declared=_grain(data.get("grain"))
         denominator=_grain(raw_unit)
-        if declared and denominator and declared!=denominator:
-            grain=None
+        if grain=="conflict" or declared and denominator and declared!=denominator:
+            grain="conflict"
         else:
             grain=denominator or declared or grain
         for key,value in data.items():
@@ -110,11 +110,11 @@ def _measurements(data, inherited=None, grain=None, *, metrics=None):
             if metric is not None:
                 field_grain=_grain(metric.unit) if metric.quantity in ("flow","period_total") else None
                 if grain and field_grain and grain!=field_grain:
-                    field_grain=None
+                    field_grain="conflict"
             elif re.search(r"(?:^|_)gwh_[dg](?:_|$)",key):
-                field_grain="giorno gas" if grain in (None,"giorno gas") else None
+                field_grain="giorno gas" if grain in (None,"giorno gas") else "conflict"
             elif re.search(r"(?:^|_)gwh_(?:month|mese)(?:_|$)",key):
-                field_grain="mese" if grain in (None,"mese") else None
+                field_grain="mese" if grain in (None,"mese") else "conflict"
             elif re.search(r"(?:^|_)(?:inventory|stock|capacity|storage|giacenza|scorte)(?:_|$)",key):
                 field_grain=None
             if isinstance(value,(dict,list)):
@@ -124,7 +124,7 @@ def _measurements(data, inherited=None, grain=None, *, metrics=None):
                 if field_unit:
                     amount=Decimal(str(value))
                     if amount.is_finite():
-                        yield field_unit,amount,field_grain if field_unit=="gwh" else None
+                        yield field_unit,amount,field_grain if field_unit=="gwh" and field_grain in ("mese","giorno gas") else None
     elif isinstance(data,list):
         for item in data:
             yield from _measurements(item,inherited,grain,metrics=metrics)
@@ -283,10 +283,10 @@ def verify_measurements(sections, tools, public):
                     continue
                 matching={(u,value,g) for u,value,g in allowed if u==unit and
                           any(abs(amount-value)<=Decimal("0.5").scaleb(-places) for amount,places in forms)}
-                if unit=="gwh" and grain and not any(g==grain for _,_,g in matching):
-                    raise InvalidSynthesis("La sintesi confonde una quantità giornaliera e mensile.")
                 if not matching:
                     raise InvalidSynthesis("La sintesi riporta un valore o un’unità non riscontrabili nelle fonti citate.")
+                if unit=="gwh" and grain and not any(g==grain for _,_,g in matching):
+                    raise InvalidSynthesis("La sintesi confonde una quantità giornaliera e mensile.")
 
 
 class InvalidSynthesis(ModelUnavailable):
