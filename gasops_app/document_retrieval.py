@@ -23,7 +23,7 @@ CONCEPTS=(
     ("mancata discarica","failure to unload"),
 )
 CANDIDATES=24
-REF=re.compile(r"\b(articolo|art\.?|capitolo|cap\.?|paragrafo|paragraph|section)\s*(\d+(?:\.\d+)*)(?![\d.])|§\s*(\d+(?:\.\d+)*)(?![\d.])",re.I)
+REF=re.compile(r"\b(articolo|art\.?|capitolo|cap\.?|paragrafo|paragraph|section)\s*(\d+(?:\.\d+)*)(?!\d|\.\d)|§\s*(\d+(?:\.\d+)*)(?!\d|\.\d)",re.I)
 PAGE=re.compile(r"\b(?:pagina|pag\.?|pdf\s+p\.?|page)\s*(\d+)\b",re.I)
 
 
@@ -76,9 +76,9 @@ def hybrid(library,query,stop,*,document=None,limit=6):
     direct=" ".join(t for t in re.findall(r"[\w-]+",query) if len(t)>=2 and clean(t) not in stop)
     groups=hints(query)
     expanded=" ".join(dict.fromkeys(t for group in groups for t in group))
-    queries=(direct,direct+" "+expanded) if expanded else (direct,)
+    queries=(direct,expanded) if expanded else (direct,)
     candidates={}
-    for channel,variant in enumerate(queries):
+    for variant in queries:
         for rank,hit in enumerate(library.search(variant,limit=CANDIDATES,document=document,expand_aliases=False)):
             if not hit.is_pdf or hit.citation.document not in library.documents:continue
             cite=hit.citation
