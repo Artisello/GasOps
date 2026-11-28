@@ -18,12 +18,13 @@ POWER=("Terna · elettricità","Terna · outlook")
 ACER="ACER · GNL"
 NETWORK="ENTSOG · rete italiana"
 GME="GME"
+MASE="MASE · UNMIG"
 MARKET=(MONTHLY,DAILY)
 LABELS={MONTHLY:"Eurostat",DAILY:"ENTSOG",PRICE:"ARERA",WEATHER:"Open-Meteo",
         "AGSI+":"GIE AGSI+","ALSI":"GIE ALSI","IIP":"GIE IIP",
-        POWER[0]:"Terna · consuntivi",POWER[1]:"Terna · previsioni",ACER:"ACER · GNL",NETWORK:NETWORK,GME:"GME"}
+        POWER[0]:"Terna · consuntivi",POWER[1]:"Terna · previsioni",ACER:"ACER · GNL",NETWORK:NETWORK,GME:"GME",MASE:MASE}
 TOPICS=(
-    ((MONTHLY,),r"eurostat|importaz|esportaz|produzione nazionale"),
+    ((MONTHLY,),r"eurostat|\bmensil\w*|import(?:az|at|are|iamo)|esport(?:az|at|are|iamo)|produzione nazionale"),
     ((DAILY,),r"entsog|\bsrg\b|giornalier|settimanal"),
     (("AGSI+",),r"agsi|stoccagg|storage|giacenz|scorte"),
     (("IIP",),r"\biip\b|\bumm\b|indisponibil|outage"),
@@ -73,6 +74,10 @@ def query_day(question, *, today=None):
 def requested_sources(question):
     question=question.casefold()
     names=[key for keys,pattern in TOPICS if re.search(pattern,question) for key in keys]
+    if re.search(r"\b(?:mase|unmig)\b",question):
+        names.append(MASE)
+        if MONTHLY in names and not re.search(r"\beurostat\b|import|esport",question):
+            names.remove(MONTHLY)
     gme=bool(gme_indicators(question))
     if gme and DAILY in names and not re.search(r"entsog|preliev|consum|domanda",question):
         names.remove(DAILY)
@@ -188,10 +193,26 @@ def source_evidence(key,item):
         return parts
     parts=[]
     if key in MARKET:
-        parts=fields((("demand_gwh","Consumi nazionali" if key==MONTHLY else "Prelievi dei tre aggregati SRG","GWh"),))
-        delta=fmt(item.get("changes_pct",{}).get("demand_gwh"))
-        if delta is not None:
-            parts.append("Variazione "+delta+"% · "+str(item.get("comparison","periodo precedente")))
+        specs=(("demand_gwh","Consumi nazionali"),("production_gwh","Produzione nazionale"),
+               ("imports_gwh","Importazioni"),("exports_gwh","Esportazioni"),
+               ("net_imports_gwh","Importazioni nette"),("stock_change_gwh","Variazione scorte"),
+               ("supply_gwh","Disponibilità contabile")) if key==MONTHLY else (
+               ("demand_gwh","Prelievi dei tre aggregati SRG"),("distribution_gwh","Distribuzione"),
+               ("industry_gwh","Industria"),("power_gwh","Termoelettrico"))
+        unit="GWh/mese" if key==MONTHLY else "GWh/giorno gas"
+        for field,label in specs:
+            value=fmt(values.get(field))
+            if value is not None:
+                change=fmt(item.get("changes_pct",{}).get(field))
+                parts.append(label+" "+value+" "+unit+(" ("+change+"%)" if change is not None else ""))
+        if any(fmt(item.get("changes_pct",{}).get(field)) is not None for field,_ in specs):
+            parts.append("Variazioni: "+str(item.get("comparison","periodo precedente")))
+    elif key==MASE:
+        for label,row in values.items():
+            value=fmt(row.get("value"),3 if row.get("unit")=="bcm" else 0)
+            if value is not None:
+                parts.append(label+" "+value+" "+row["unit"])
+        parts.append("Archivio storico · "+str(item.get("period","periodo non indicato")))
     elif key==PRICE:
         val=fmt(item.get("value"),2)
         if val is not None:parts=["CMEM,m "+val+" €/MWh · riferimento mensile, non spot"]
@@ -231,7 +252,7 @@ def source_evidence(key,item):
         if peak:
             parts=point_fields([peak],(("hdd","Picco HDD",""),("temperature_c","Temperatura","°C")))
     elif key==POWER[0]:
-        for field,label in (("Thermal","Termoelettrico"),("Wind","Eolico"),("Photovoltaic","Fotovoltaico"),("load","Fabbisogno")):
+        for field,label in (("Thermal","Termoelettrico"),("Wind","Eolico"),("Photovoltaic","Fotovoltaico"),("Hydro","Idroelettrico"),("Geothermal","Geotermico"),("load","Fabbisogno")):
             row=values.get(field,{})
             val=fmt(row.get("value"))
             if val is not None:
