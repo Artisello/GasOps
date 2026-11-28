@@ -486,7 +486,8 @@ class PointIntelligenceIndex:
         for binding in confirmed:
             self.bindings.setdefault(binding.infrastructure_id,[]).append(binding)
         self.records = {}
-        for record in _validate_observations(identities,observations,now):
+        self.observations = _validate_observations(identities,observations,now)
+        for record in self.observations:
             self.records.setdefault(record.infrastructure_id,[]).append(record)
         self.snapshots = {}
         for snapshot in snapshots:
