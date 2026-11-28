@@ -79,7 +79,8 @@ def test_empty_shipper_context_never_uses_demo_or_public_inputs(offline,monkeypa
     app.button(key="cockpit_import").click().run()
     assert not app.exception
     assert app.radio(key="balancing_view").value=="Controllo giornaliero"
-    assert app.radio(key="daily_desk_data_mode").value=="Dati importati"
+    assert app.session_state["daily_desk_data_mode"]=="Dati importati"
+    assert not any(r.key=="daily_desk_data_mode" for r in app.radio)
 
 
 def test_authorized_portfolio_and_drilldown_reuse_existing_settlement(offline):
@@ -98,7 +99,8 @@ def test_authorized_portfolio_and_drilldown_reuse_existing_settlement(offline):
     app.button(key="cockpit_settlement").click().run()
     assert not app.exception
     assert app.radio(key="balancing_view").value=="Controllo giornaliero"
-    assert app.radio(key="daily_desk_data_mode").value=="Dati importati"
+    assert app.session_state["daily_desk_data_mode"]=="Dati importati"
+    assert not any(r.key=="daily_desk_data_mode" for r in app.radio)
     assert app.radio(key="daily_desk_section").value=="Giornata"
     assert app.session_state["daily_desk_day"]=="2026-09-05"
     assert app.session_state["settlement_desk_csv_v1"]["sha"]==imported()["sha"]
