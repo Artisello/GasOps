@@ -615,7 +615,7 @@ def launch(selection: Selection | None, question: str = DAILY_BRIEFING, *, full:
         from .assistant_query import query_intent, query_report
         if query_intent(question):
             with st.spinner("Interrogazione delle serie storiche…"):
-                report=query_report(question,database(),utc_now(),gie_key=_briefing_gie_key() if "AGSI+" in requested else "")
+                report=query_report(question,database(),utc_now(),gie_key=_briefing_gie_key() if "AGSI+" in requested or "riempimento" in question.casefold() else "")
             st.session_state["last_run"]=report
             return report
     if automatic and requested==(ELECTRIC_PRICE,):
