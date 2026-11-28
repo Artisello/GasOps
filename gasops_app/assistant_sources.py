@@ -352,7 +352,7 @@ def complete_requirements(public,requested):
         if key not in public:
             reasons={
                 GME:"Indicatori GME consultabili nella vista locale.",
-                ELECTRIC_PRICE:"Prezzi elettrici all’ingrosso (PUN Index GME / mercato elettrico) non integrati. Terna misura energia, non prezzi; CMEM,m, PSV e ACER GNL riguardano il gas.",
+                ELECTRIC_PRICE:"Prezzi elettrici all’ingrosso non integrati nelle evidenze inviate al modello. PUN Index GME consultabile localmente. Terna misura energia, non prezzi; CMEM,m, PSV e ACER GNL riguardano il gas.",
                 TTF_QUOTE:"Quotazione TTF diretta non integrata. Il differenziale GNL–TTF ACER non è il prezzo TTF.",
                 PSV_QUOTE:"Quotazione PSV spot o derivata non integrata. CMEM,m ARERA è un riferimento mensile, non il prezzo spot.",
             }
