@@ -94,16 +94,26 @@ def _values(data, inherited=None):
 
 def model_context(context):
     """Expose usable tuples and keep source gaps as metadata only."""
+    def usable(value):
+        if isinstance(value,dict):
+            # A multi-series snapshot can be available overall while one
+            # constituent quote is stale. Filter at the model boundary only.
+            if value.get("status") in ("unavailable","stale","failed"):
+                keep={"source","scope","status","period","gas_day","grain","unit",
+                      "acquired","reason","kind","limitation","definition"}
+                return {k:usable(v) for k,v in value.items() if k in keep}
+            return {k:usable(v) for k,v in value.items()}
+        if isinstance(value,list):
+            return [usable(v) for v in value]
+        return value
+
     safe={}
     for key,item in compact_context(context).items():
         # GME observations stay in the local view even if another analysis
         # attaches market prices to a Run in the future.
         if re.search(r"\bGME\b|Gestore dei Mercati Energetici",key+" "+str(item.get("source","")),re.I):
             continue
-        if item.get("status") in ("unavailable","stale"):
-            item={field:value for field,value in item.items() if field in
-                  ("source","scope","status","period","gas_day","grain","acquired","reason","kind","limitation")}
-        safe[key]=item
+        safe[key]=usable(item)
     return safe
 
 
@@ -118,6 +128,29 @@ def verify_measurements(sections, tools, public):
                         for amount,_ in forms} | set(_values(item.get("projection",{})))
     for section in sections:
         allowed=set().union(*(numbers.get(ref,set()) for ref in section["references"]))
+        # Canonical energy quantities still support ordinary GWh citations.
+        # Explicit monthly/daily denominators must also match known source grain.
+        for match in _CLAIM.finditer(section["text"]):
+            raw_unit=re.sub(r"\s+","",match["unit"].casefold())
+            if not raw_unit.startswith("gwh/"):
+                continue
+            grain="mese" if raw_unit=="gwh/mese" else "giorno gas"
+            compatible=set()
+            for ref in section["references"]:
+                item=public.get(ref[4:],{}) if ref.startswith("src:") else {}
+                known=item.get("grain")
+                unit=str(item.get("unit","")).casefold()
+                if not known and unit.startswith("gwh/"):
+                    known="mese" if "mese" in unit else "giorno gas"
+                if known in (None,grain):
+                    compatible.update(numbers.get(ref,set()))
+            try:
+                forms=_decimal_forms(match["number"])
+            except InvalidOperation:
+                continue
+            if not any(unit=="gwh" and abs(amount-known)<=Decimal("0.5").scaleb(-places)
+                       for unit,known in compatible for amount,places in forms):
+                raise InvalidSynthesis("La sintesi confonde una quantità giornaliera e mensile.")
         for unit,forms in _claims(section["text"]):
             if not any(unit==known_unit and abs(amount-known)<=Decimal("0.5").scaleb(-places)
                        for known_unit,known in allowed for amount,places in forms):

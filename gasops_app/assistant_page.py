@@ -137,7 +137,47 @@ def _document_report(report,*,fresh=False):
     st.caption(str(report.assumptions.get("document_count",0))+" PDF consultabili · edizione e applicabilità da verificare")
 
 
+def _period_report(report):
+    from .assistant_sources import source_evidence, safe_source_url
+    periods=report.assumptions["assistant_periods"]
+    monthly=report.assumptions["assistant_period_grain"]=="mese"
+    def label(period):
+        return period[:7] if monthly else period
+    st.caption("Confronto "+("mensile" if monthly else "giornaliero")+" · "+label(periods[0])+" → "+label(periods[1]))
+    rows=report.assumptions["assistant_comparison"]
+    if rows:
+        st.dataframe([{"Indicatore":row["metric"],
+                       label(periods[0]):numero(row["before"],2)+" "+row["unit"],
+                       label(periods[1]):numero(row["after"],2)+" "+row["unit"],
+                       "Differenza":("+" if row["delta"]>0 else "")+numero(row["delta"],2)+" "+row["delta_unit"],
+                       "Variazione %":numero(row["delta_pct"],2)+"%" if row["delta_pct"] is not None else "—",
+                       "Fonte":row["source"]} for row in rows],hide_index=True,width="stretch")
+        st.caption("Calcolo locale · variazione sul primo periodo; p.p. = punti percentuali.")
+    else:
+        st.info("Nessuna coppia di osservazioni confrontabili per i periodi richiesti.")
+    snapshots=report.assumptions["assistant_period_evidence"]
+    with st.expander("Fonti e copertura",expanded=not rows):
+        for period,snapshot in zip(periods,snapshots):
+            st.markdown("**"+label(period)+"**")
+            for key,item in snapshot.items():
+                detail=[str(item.get("source",key)),str(item.get("scope","")),
+                        str(item.get("gas_day") or item.get("period") or ""),
+                        str(item.get("status","non disponibile"))]
+                url=safe_source_url(item.get("source_url") or item.get("url"))
+                st.caption(" · ".join(part for part in detail if part)+(" · [Fonte ufficiale]("+url+")" if url else ""))
+                st.text(source_evidence(key,item))
+                if item.get("quality_review"):
+                    st.caption("Controllo qualità richiesto; escluso dal confronto.")
+                if item.get("kind")=="estimated":
+                    st.caption("Stima; esclusa dal confronto.")
+                if item.get("limitation"):
+                    st.caption(item["limitation"])
+
+
 def _report(report:Run,selection,*,fresh=False):
+    if report.assumptions.get("assistant_period_comparison"):
+        _period_report(report)
+        return
     if report.assumptions.get("assistant_document_lookup"):
         _document_report(report,fresh=fresh)
         return
@@ -338,7 +378,7 @@ def assistant_page():
                             help="Genera bollettino locale" if local else "Genera bollettino AI")
     if not local:
         with st.popover("Info · comandi",icon=":material/info:"):
-            st.caption("Scrivi una domanda libera: I.G.O.R. sceglie le fonti pertinenti, consulta i PDF disponibili e usa il modello previsionale automatico.")
+            st.caption("Scrivi una domanda libera: I.G.O.R. sceglie le fonti pertinenti. Puoi anche confrontare due giorni o due mesi espliciti.")
             st.caption("Non inserire dati riservati con un provider remoto. Gli estratti dei PDF rimangono locali senza consenso esplicito.")
             for command,example in COMMANDS.items():
                 st.markdown("**"+command+"** · "+example)
