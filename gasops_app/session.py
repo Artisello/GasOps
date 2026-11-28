@@ -5,6 +5,7 @@ from .source_session_cache import recent_source, remember_source, forget_source
 from html import escape
 import logging
 import os
+import re
 from pathlib import Path
 import sqlite3
 
@@ -507,8 +508,12 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
         st.session_state["last_run"]=report
         return report
     targets={call.agent for call in plan(question,False)} if requested else set()
+    # Explicitly named monthly balance components should use the national
+    # source even when the selected base series is a daily SRG proxy.
+    specific_market=bool(set(requested)&set(MARKET)) and bool(re.search(
+        r"\beurostat\b|\bentsog\b|\bmensil\w*|import|esport|produzione nazionale",question,re.I))
     standalone=bool(requested) and not targets.intersection((Agent.REGULATORY,Agent.SETTLEMENT,Agent.SCENARIO)) and (
-        not set(requested).intersection(MARKET) or (day is not None or selection.bundle is None) and Agent.FORECAST not in targets)
+        not set(requested).intersection(MARKET) or (day is not None or selection.bundle is None or specific_market) and Agent.FORECAST not in targets)
     scoped_lookup=country=="EU" or country=="DE" and requested==("AGSI+",)
     if scoped_lookup or (country is None and standalone):
         with st.spinner("Lettura delle fonti pertinenti…"):
