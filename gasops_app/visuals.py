@@ -89,9 +89,9 @@ def kpi_grid(items):
     st.html('<div class="gas-kpi-grid">'+''.join(_kpi_markup(*item) for item in items)+'</div>')
 
 
-def forecast_readout(point: ForecastPoint, grain: str, *, historical: bool = False) -> None:
+def forecast_readout(point: ForecastPoint, grain: str, *, historical: bool = False, srg: bool = False) -> None:
     period = data_it(date.fromisoformat(point.period), day=grain == "daily")
-    label = "Stima su dati storici" if historical else "Consumo previsto"
+    label = ("Stima prelievi SRG su dati storici" if historical else "Prelievi SRG previsti") if srg else ("Stima su dati storici" if historical else "Consumo previsto")
     interval = (f"{numero(point.lower_80, 0)}–{numero(point.upper_80, 0)} GWh"
                 if numero(point.lower_80, 0) != "—" and numero(point.upper_80, 0) != "—"
                 else "Non disponibile")
@@ -187,7 +187,7 @@ def _line(name: str, x, y, color: str, unit: str, grain: str, dash: str = "solid
                       xhoverformat="%d/%m/%Y" if grain == "daily" else "%m/%Y")
 
 
-def demand_chart(data: pd.DataFrame, projection: Forecast | None, grain: str, *, height: int = 330, compact: bool = False) -> go.Figure:
+def demand_chart(data: pd.DataFrame, projection: Forecast | None, grain: str, *, height: int = 330, compact: bool = False, srg: bool = False) -> go.Figure:
     fig = go.Figure()
     future = projection.points if projection is not None else ()
     if future:
@@ -206,7 +206,7 @@ def demand_chart(data: pd.DataFrame, projection: Forecast | None, grain: str, *,
             boundary=data.index[-1]
         fig.add_vrect(x0=boundary, x1=dates[-1], fillcolor="rgba(131,172,255,0.04)", line_width=0)
         fig.add_vline(x=boundary, line_color="#446492", line_dash="dot", line_width=1)
-    demand = _line("Consumi osservati", data.index, data["demand_gwh"], TEAL, "GWh", grain)
+    demand = _line("Prelievi SRG osservati" if srg else "Consumi osservati", data.index, data["demand_gwh"], TEAL, "GWh", grain)
     demand.legendrank = 1
     fig.add_trace(demand)
     coincident=(compact and grain=="monthly" and data["demand_gwh"].notna().any()
@@ -219,7 +219,7 @@ def demand_chart(data: pd.DataFrame, projection: Forecast | None, grain: str, *,
                       legendrank=2)
         fig.add_trace(supply)
     if future:
-        dotted = _line("Consumi previsti", dates, [p.estimate for p in future], BLUE, "GWh", grain, "dash")
+        dotted = _line("Prelievi SRG previsti" if srg else "Consumi previsti", dates, [p.estimate for p in future], BLUE, "GWh", grain, "dash")
         dotted.update(mode="lines+markers", marker=dict(size=4, color=BLUE), legendrank=3)
         fig.add_trace(dotted)
     _frame(fig, grain, "GWh", height)

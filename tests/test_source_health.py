@@ -104,3 +104,11 @@ def test_error_code_is_bounded():
     assert acquisition_error_code(SourceUnavailable("Terna: HTTP 403."))=="access_denied"
     assert acquisition_error_code(SourceUnavailable("GIE: HTTP 429."))=="rate_limit"
     assert acquisition_error_code(ValueError("secret string"))=="validation_or_unavailable"
+
+
+def test_price_source_health_uses_canonical_arera_label():
+    from gasops_app.source_health import session_health
+    from datetime import datetime,timezone
+    rows=session_health({},datetime(2026,11,28,12,tzinfo=timezone.utc))
+    assert any(r["source"]=="ARERA · CMEM,m" for r in rows)
+    assert all(r["source"]!="ARERA · PSV" for r in rows)

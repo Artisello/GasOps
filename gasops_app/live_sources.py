@@ -250,7 +250,7 @@ def market_scores(state,now,*,inspections=None):
             if daily:
                 specs += [("power_gwh","srg_power","Prelievi termoelettrici SRG","GWh/giorno gas"),
                           ("industry_gwh","srg_industry","Prelievi industria SRG","GWh/giorno gas")]
-            else:specs += [("price_eur_mwh","psv","PSV · riferimento ARERA","€/MWh")]
+            else:specs += [("price_eur_mwh","psv","CMEM,m · ARERA","€/MWh")]
             for field,code,label,unit in specs:
                 if field not in b.origin.fields:continue
                 v=f.usable[field].dropna()

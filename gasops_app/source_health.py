@@ -339,7 +339,7 @@ def session_health(state,now,*,inspections=None,network=None,snapshots=(),gas_ro
     # The availability of a source is not its configured/connected status.
     adapters=[
         ("Eurostat · consumo","Italia",lambda:_bundle(state,"monthly",now,"demand_gwh","Eurostat · consumo","Italia",inspections)),
-        ("ARERA · PSV","Italia",lambda:_bundle(state,"monthly",now,"price_eur_mwh","ARERA · PSV","Italia",inspections)),
+        ("ARERA · CMEM,m","Italia",lambda:_bundle(state,"monthly",now,"price_eur_mwh","ARERA · CMEM,m","Italia",inspections)),
         ("ENTSOG · prelievi","SRG",lambda:_bundle(state,"daily",now,"demand_gwh","ENTSOG · prelievi","SRG · tre aggregati",inspections)),
         ("GIE · AGSI+","Italia",lambda:_inventory(state,now,"AGSI+","stock_twh","GIE · AGSI+")),
         ("GIE · ALSI","Italia",lambda:_inventory(state,now,"ALSI","sendout_gwh_d","GIE · ALSI")),

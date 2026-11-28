@@ -214,10 +214,10 @@ def requested_sources(question):
     ttf_quote=ttf and not (lng and re.search(r"differenziale|spread|benchmark",question))
     if ttf_quote and not lng and not re.search(r"benchmark\s+acer",question):
         acer=False
-    psv_quote=psv and (direct or price and mentions_day(question) and not arera and not re.search(r"mensil",question))
+    psv_quote=psv and (not arera or direct and not re.search(r"\b(?:media|medio|mensil\w*)\b",question))
     if (price or ttf_quote or psv_quote) and DAILY in names and not re.search(r"entsog|preliev|consum|domanda",question):
         names.remove(DAILY)
-    if arera or (psv and not psv_quote) or (price and not (acer or gme or ttf_quote or psv_quote)):
+    if arera or (price and not (acer or gme or ttf_quote or psv_quote)):
         names.append(PRICE)
     if acer:
         names.append(ACER)

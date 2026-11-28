@@ -60,12 +60,12 @@ def _metrics(context: MarketContext) -> None:
             ("Disponibilità contabile", "supply_gwh", "GWh/mese", "Bilancio statistico, non capacità", 1, ""),
             ("Importazioni nette", "net_imports_gwh", "GWh/mese", "Importazioni − esportazioni", 1, ""),
             ("Variazione delle scorte", "stock_change_gwh", "GWh/mese", "Positiva in accumulo", 1, "blue"),
-            ("Prezzo del gas · PSV", "price_eur_mwh", "€/MWh", "Media mensile CMEM,m", 2, ""),
+            ("CMEM,m · ARERA", "price_eur_mwh", "€/MWh", "Riferimento mensile gas, non spot", 2, ""),
         ]
     elif origin.grain == "daily" and "distribution_gwh" in origin.fields:
         specs = [(title, field, "GWh/giorno", _change(facts, field), 1, tone) for title, field, tone in (
             ("Consumo nazionale" if origin.archive else "Prelievi sulla rete SRG", "demand_gwh", "teal"), ("Industria", "industry_gwh", ""),
-            ("Centrali elettriche", "power_gwh", "blue"), ("Residenziale e terziario" if origin.archive else "Distribuzione", "distribution_gwh", ""),
+            ("Gas per termoelettrico", "power_gwh", "blue"), ("Residenziale e terziario" if origin.archive else "Distribuzione", "distribution_gwh", ""),
         )]
     else:
         specs = [
@@ -163,8 +163,10 @@ def _charts(context: MarketContext, horizon: int, page: str, height: int = 330, 
         st.info("Nessun consumo utilizzabile nel periodo selezionato.")
     else:
         if points and readout:
-            forecast_readout(projection.points[0], origin.grain, historical=origin.archive or any(f.id=="stale" for f in context.inspection.findings))
-        chart=demand_chart(data, projection, origin.grain, height=height,compact=compact)
+            forecast_readout(projection.points[0], origin.grain, historical=origin.archive or any(f.id=="stale" for f in context.inspection.findings),
+                             srg=origin.grain=="daily" and not origin.archive and origin.kind!=Kind.SYNTHETIC and "distribution_gwh" in origin.fields)
+        chart=demand_chart(data, projection, origin.grain, height=height,compact=compact,
+                           srg=origin.grain=="daily" and not origin.archive and origin.kind!=Kind.SYNTHETIC and "distribution_gwh" in origin.fields)
         plot(chart,key=f"{page}_demand")
         if compact and chart.layout.meta=="coincident_accounting":
             st.caption("Disponibilità contabile coincidente con i consumi nel periodo mostrato; dettaglio nel bilancio.")
@@ -194,9 +196,9 @@ def _supporting_charts(context: MarketContext, data: pd.DataFrame, page: str) ->
                 ("stock_change_gwh", "Variazione scorte", AMBER),
             ], origin.grain), f"{page}_balance")
         elif origin.grain == "daily" and "distribution_gwh" in origin.fields:
-            heading("Industria e generazione", "<small>GWh/giorno</small>")
+            heading("Gas per industria e termoelettrico", "<small>GWh/giorno</small>")
             plot(breakdown_chart(data, [
-                ("industry_gwh", "Industria", BLUE), ("power_gwh", "Generazione elettrica", AMBER),
+                ("industry_gwh", "Industria", BLUE), ("power_gwh", "Gas per termoelettrico", AMBER),
             ], origin.grain), f"{page}_sector")
         else:
             heading("Saldo semplificato", "<small>GWh/giorno</small>")
@@ -209,13 +211,13 @@ def _supporting_charts(context: MarketContext, data: pd.DataFrame, page: str) ->
             plot(mini_chart(data["distribution_gwh"], label, origin.grain,
                             "GWh", TEAL), f"{page}_distribution")
         else:
-            title = "Prezzo PSV · ARERA" if origin.grain == "monthly" else "Prezzo di esempio"
+            title = "CMEM,m · ARERA" if origin.grain == "monthly" else "Prezzo di esempio"
             heading(title, "<small>€/MWh</small>")
             price = data["price_eur_mwh"]
             if price.notna().any():
                 plot(mini_chart(price, title, origin.grain, "€/MWh", AMBER), f"{page}_price")
                 if origin.grain == "monthly":
-                    st.caption("Media mensile del PSV day-ahead pubblicata come CMEM,m.")
+                    st.caption("Riferimento mensile gas; non quotazione PSV spot.")
             else:
                 st.caption("Prezzo ufficiale assente per il periodo selezionato.")
 
@@ -649,6 +651,9 @@ def _market_data(context, visible, *, include_forecast=True):
         raw=context.bundle.rows
         start=visible.index.min().date().isoformat() if len(visible) else ""
         headings={**FIELDS,"period":"Periodo","source_flag":"Flag della fonte","timestamp_utc":"Inizio UTC"}
+        if origin.grain=="daily" and not origin.archive and origin.kind!=Kind.SYNTHETIC and "distribution_gwh" in origin.fields:
+            headings.update(demand_gwh="Prelievi SRG",industry_gwh="Prelievi industria SRG",
+                            distribution_gwh="Prelievi distribuzione SRG",power_gwh="Prelievi termoelettrici SRG")
         if origin.grain=="monthly":
             headings["supply_gwh"]="Disponibilità contabile"
             headings["price_eur_mwh"]="Prezzo CMEM,m (€/MWh)"
