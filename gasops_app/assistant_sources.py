@@ -6,6 +6,7 @@ actual evidence snapshot, not against model-generated source names.
 import re
 from datetime import date, timedelta
 from math import isfinite
+from typing import NamedTuple
 from urllib.parse import urlsplit
 from .italiano import MESI, numero
 
@@ -26,6 +27,86 @@ MARKET=(MONTHLY,DAILY)
 LABELS={MONTHLY:"Eurostat",DAILY:"ENTSOG",PRICE:"ARERA",WEATHER:"Open-Meteo",
         "AGSI+":"GIE AGSI+","ALSI":"GIE ALSI","IIP":"GIE IIP",
         POWER[0]:"Terna · consuntivi",POWER[1]:"Terna · previsioni",ACER:"ACER · GNL",NETWORK:NETWORK,GME:"GME",MASE:MASE}
+# Stable ordering: the fallback router uses the catalog's numeric IDs.
+SOURCE_CATALOG={
+    MONTHLY:"Bilancio nazionale mensile: consumi, produzione, importazioni, esportazioni",
+    DAILY:"Prelievi giornalieri SRG: industria, distribuzione, termoelettrico; non domanda nazionale",
+    PRICE:"CMEM,m ARERA: riferimento mensile gas, non spot",
+    "AGSI+":"Scorte, riempimento, prelievi e iniezioni stoccaggi",
+    "ALSI":"Inventario e send-out dei terminali GNL",
+    "IIP":"Record UMM e indisponibilità pubblicati dagli operatori",
+    NETWORK:"Misure e capacità dei punti ENTSOG nominati nella domanda",
+    ACER:"Prezzi GNL UE e differenziale GNL–TTF, non TTF diretto",
+    MASE:"Archivio storico produzione nazionale e regionale",
+    WEATHER:"Meteo e HDD",
+    POWER[0]:"Consuntivi elettrici italiani, non prezzi",
+    POWER[1]:"Previsioni elettriche Terna, non prezzi",
+}
+
+
+class Metric(NamedTuple):
+    field: str
+    label: str
+    unit: str
+    quantity: str
+    comparison_label: str | None = None
+    aliases: tuple[str,...] = ()
+
+
+# One definition for deterministic readouts, comparable fields and explicitly
+# labelled claims. Stock, period totals, flows, ratios and prices are distinct.
+METRIC_CATALOG={
+    MONTHLY:(
+        Metric("demand_gwh","Consumi nazionali","GWh/mese","period_total","Consumi nazionali",("consumi nazionali","consumo nazionale")),
+        Metric("production_gwh","Produzione nazionale","GWh/mese","period_total","Produzione nazionale",("produzione nazionale",)),
+        Metric("imports_gwh","Importazioni","GWh/mese","period_total","Importazioni",("importazioni",)),
+        Metric("exports_gwh","Esportazioni","GWh/mese","period_total","Esportazioni",("esportazioni",)),
+        Metric("net_imports_gwh","Importazioni nette","GWh/mese","period_total","Importazioni nette",("importazioni nette",)),
+        Metric("stock_change_gwh","Variazione scorte","GWh/mese","period_total","Variazione scorte"),
+        Metric("supply_gwh","Disponibilità contabile","GWh/mese","period_total"),
+    ),
+    DAILY:(
+        Metric("demand_gwh","Prelievi dei tre aggregati SRG","GWh/giorno gas","flow","Prelievi SRG",("prelievi SRG","prelievi dei tre aggregati SRG")),
+        Metric("distribution_gwh","Distribuzione","GWh/giorno gas","flow","Distribuzione"),
+        Metric("industry_gwh","Industria","GWh/giorno gas","flow","Industria"),
+        Metric("power_gwh","Termoelettrico","GWh/giorno gas","flow","Termoelettrico"),
+    ),
+    PRICE:(Metric("value","CMEM,m","€/MWh","price","CMEM,m",("CMEM,m","CMEM,m del gas")),),
+    "AGSI+":(
+        Metric("fill_pct","Riempimento","%","ratio","Riempimento",("riempimento","riempimento degli stoccaggi","riempimento degli stoccaggi italiani")),
+        Metric("stock_twh","Giacenza","TWh","stock","Giacenza",("giacenza","giacenza degli stoccaggi")),
+        Metric("withdrawal_gwh_d","Prelievo","GWh/g","flow","Prelievo",("prelievo dagli stoccaggi",)),
+        Metric("injection_gwh_d","Iniezione","GWh/g","flow","Iniezione",("iniezione negli stoccaggi",)),
+    ),
+    "ALSI":(
+        Metric("inventory_gwh","Inventario GNL","GWh","stock","Inventario GNL",("inventario GNL",)),
+        Metric("sendout_gwh_d","Send-out","GWh/g","flow","GNL immesso in rete",("send-out","GNL immesso in rete")),
+    ),
+    ACER:(
+        Metric("eu","Prezzo GNL UE","€/MWh","price",aliases=("prezzo GNL UE","prezzo del GNL UE","prezzo GNL europeo")),
+        Metric("nwe","Prezzo GNL Nord-Ovest","€/MWh","price",aliases=("prezzo GNL Nord-Ovest",)),
+        Metric("south","Prezzo GNL Sud","€/MWh","price",aliases=("prezzo GNL Sud",)),
+        Metric("benchmark","Differenziale GNL–TTF","€/MWh","spread",aliases=("differenziale GNL–TTF","differenziale GNL-TTF","spread GNL–TTF","spread GNL-TTF")),
+    ),
+}
+
+
+def metric_value(source,item,metric):
+    """Get only the specific usable observation, not a sibling or change."""
+    if item.get("status") not in (None,"available","partial"):
+        return None
+    if source==PRICE:
+        value=item.get(metric.field)
+    elif source==ACER:
+        row=item.get("values",{}).get(metric.field,{})
+        if row.get("status")!="available":
+            return None
+        value=row.get("value")
+    else:
+        value=item.get("values",{}).get(metric.field)
+    return value if type(value) in (int,float) and isfinite(value) else None
+
+
 TOPICS=(
     ((MONTHLY,),r"eurostat|import(?:az|at|are|iamo)|esport(?:az|at|are|iamo)|produzione nazionale"),
     ((DAILY,),r"entsog|\bsrg\b|giornalier|settimanal"),
@@ -317,13 +398,8 @@ def source_evidence(key,item):
         return parts
     parts=[]
     if key in MARKET:
-        specs=(("demand_gwh","Consumi nazionali"),("production_gwh","Produzione nazionale"),
-               ("imports_gwh","Importazioni"),("exports_gwh","Esportazioni"),
-               ("net_imports_gwh","Importazioni nette"),("stock_change_gwh","Variazione scorte"),
-               ("supply_gwh","Disponibilità contabile")) if key==MONTHLY else (
-               ("demand_gwh","Prelievi dei tre aggregati SRG"),("distribution_gwh","Distribuzione"),
-               ("industry_gwh","Industria"),("power_gwh","Termoelettrico"))
-        unit="GWh/mese" if key==MONTHLY else "GWh/giorno gas"
+        specs=tuple((metric.field,metric.label) for metric in METRIC_CATALOG[key])
+        unit=METRIC_CATALOG[key][0].unit
         for field,label in specs:
             value=fmt(values.get(field))
             if value is not None:
@@ -343,9 +419,9 @@ def source_evidence(key,item):
         delta=fmt(item.get("change_pct"))
         if delta is not None:parts.append("Variazione "+delta+"% sul mese precedente")
     elif key.startswith("AGSI+"):
-        parts=fields((("fill_pct","Riempimento","%"),("stock_twh","Giacenza","TWh"),("withdrawal_gwh_d","Prelievo","GWh/g"),("injection_gwh_d","Iniezione","GWh/g")))
+        parts=fields(tuple((m.field,m.label,m.unit) for m in METRIC_CATALOG["AGSI+"]))
     elif key=="ALSI":
-        parts=fields((("inventory_gwh","Inventario GNL","GWh"),("sendout_gwh_d","Send-out","GWh/g")))
+        parts=fields(tuple((m.field,m.label,m.unit) for m in METRIC_CATALOG["ALSI"]))
     elif key=="IIP":
         val=item.get("received_records")
         if type(val) is int and val>=0:
@@ -363,8 +439,7 @@ def source_evidence(key,item):
         if item.get("coverage"):
             parts.append(item["coverage"])
     elif key==ACER:
-        for field,label in (("eu","Prezzo GNL UE"),("nwe","Prezzo GNL Nord-Ovest"),
-                            ("south","Prezzo GNL Sud"),("benchmark","Differenziale GNL–TTF")):
+        for field,label in ((m.field,m.label) for m in METRIC_CATALOG[ACER]):
             row=values.get(field,{})
             val=fmt(row.get("value"),2)
             if row.get("status")=="available" and val is not None:
@@ -507,22 +582,14 @@ def wants_day_comparison(question):
 
 # Only documented, like-for-like observed daily indicators. No comparison of
 # forecast estimates, licensed GME data, partial aggregates or missing values.
-_COMPARABLE_DAILY = {
-    "AGSI+": (("fill_pct","Riempimento","%",True),("stock_twh","Giacenza","TWh",False),
-              ("withdrawal_gwh_d","Prelievo","GWh/g",False),("injection_gwh_d","Iniezione","GWh/g",False)),
-    "ALSI": (("inventory_gwh","Inventario GNL","GWh",False),("sendout_gwh_d","GNL immesso in rete","GWh/g",False)),
-    DAILY: (("demand_gwh","Prelievi SRG","GWh/g",False),("distribution_gwh","Distribuzione","GWh/g",False),
-            ("industry_gwh","Industria","GWh/g",False),("power_gwh","Termoelettrico","GWh/g",False)),
-}
+def _comparison_specs(keys):
+    return {key:tuple((m.field,m.comparison_label,"GWh/g" if key==DAILY else m.unit,m.quantity=="ratio")
+                      for m in METRIC_CATALOG[key] if m.comparison_label)
+            for key in keys}
 
 
-_COMPARABLE_MONTHLY = {
-    MONTHLY: tuple((field,label,"GWh/mese",False) for field,label in (
-        ("demand_gwh","Consumi nazionali"),("production_gwh","Produzione nazionale"),
-        ("imports_gwh","Importazioni"),("exports_gwh","Esportazioni"),
-        ("net_imports_gwh","Importazioni nette"),("stock_change_gwh","Variazione scorte"))),
-    PRICE: (("value","CMEM,m","€/MWh",False),),
-}
+_COMPARABLE_DAILY=_comparison_specs(("AGSI+","ALSI",DAILY))
+_COMPARABLE_MONTHLY=_comparison_specs((MONTHLY,PRICE))
 
 
 def period_comparison(before,after,*,first=None,last=None,monthly=False):
