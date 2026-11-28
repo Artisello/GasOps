@@ -45,6 +45,7 @@ def test_ready_assistant_respects_local_mode_and_does_not_regenerate_after_clear
     app.run()
     assert not app.exception
     assert app.session_state["execution_mode"]=="Deterministic"
+    assert app.session_state["assistant_view"]=="Assistente operativo"
     assert app.session_state["assistant_history_v1"]==[]
     app.session_state["assistant_history_v1"]=[]
     app.run()
@@ -88,7 +89,8 @@ def test_every_feature_route_is_reachable_offline_and_preserves_imports(monkeypa
             assert app.radio(key="daily_desk_data_mode").value=="Dati importati"
         if path=="operations":
             assert app.session_state["assistant_history_v1"]==[]
-            assert app.radio(key="assistant_view").value=="Report locali"
+            assert app.radio(key="assistant_view").value=="Assistente operativo"
+            assert app.chat_input(key="assistant_question").disabled
         if path=="risk":
             assert "risk_workspace_v2" in app.session_state
         if path=="security-of-supply":
