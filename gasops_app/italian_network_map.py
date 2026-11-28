@@ -3,6 +3,7 @@ from html import escape
 from importlib.metadata import version
 import json
 import math
+from functools import lru_cache
 from urllib.parse import quote
 import pydeck as pdk
 
@@ -140,8 +141,15 @@ NEARBY_METRES = 250
 def nearby_points(network, visible):
     """Return distinct visible point IDs within a small geographic tolerance."""
     ids = {i.id for i in visible}
-    points = [(g.infrastructure_id, g.geometry["coordinates"]) for g in network.geography
-              if g.infrastructure_id in ids and g.geometry["type"] == "Point"]
+    points = tuple((g.infrastructure_id, tuple(g.geometry["coordinates"])) for g in network.geography
+                   if g.infrastructure_id in ids and g.geometry["type"] == "Point")
+    # Cache only immutable public geometry, never selected IDs, measurements,
+    # user evidence, or derived operational state. A geometry edit changes the key.
+    return dict(_nearby_geometry(points))
+
+
+@lru_cache(maxsize=16)
+def _nearby_geometry(points):
     groups = {identifier: [] for identifier, _ in points}
     for index, (identifier, (lon,lat)) in enumerate(points):
         for other, (other_lon,other_lat) in points[index+1:]:
@@ -152,7 +160,7 @@ def nearby_points(network, visible):
             if math.hypot(dx,dy) <= NEARBY_METRES:
                 groups[identifier].append(other)
                 groups[other].append(identifier)
-    return {identifier:tuple(sorted(others)) for identifier,others in groups.items() if others}
+    return tuple((identifier,tuple(sorted(others))) for identifier,others in groups.items() if others)
 
 
 def fit_italy(boundary, width, height, padding=10):
