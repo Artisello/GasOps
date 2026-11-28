@@ -268,7 +268,8 @@ def verify_event_semantics(sections, public):
                 if not re.search(r"\bnon\s+ci\s+sono\b",sentence,re.I):
                     continue
             if re.search(r"\b(?:zero|0|nessun[oa]?|assenza\s+di|non\s+ci\s+sono)\s+(?:eventi?\s+attiv[io]|indisponibilit[aà]|interruzion[ei]|manutenzion[ei])\b",sentence,re.I):
-                raise InvalidSynthesis("La copertura degli avvisi non dimostra l’assenza di eventi o indisponibilità.")
+                if not re.search(r"\b(?:eventi?\s+attiv[io]|indisponibilit[aà]|interruzion[ei]|manutenzion[ei])\s+(?:documentat\w*|rilevat\w*|restituit\w*|segnalat\w*|registrat\w*)\s+(?:nella|nelle|dal|dalla|dalle|nei|nel)\b",sentence,re.I):
+                    raise InvalidSynthesis("La copertura degli avvisi non dimostra l’assenza di eventi o indisponibilità.")
 
 
 def verify_measurements(sections, tools, public):
