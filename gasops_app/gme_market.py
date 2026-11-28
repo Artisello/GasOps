@@ -1,4 +1,4 @@
-"""Catalog and validation for GME's PublicMarketResults gas datasets."""
+"""Catalog and validation for GME's PublicMarketResults datasets."""
 import base64
 import binascii
 import io
@@ -6,7 +6,8 @@ import json
 import zipfile
 import zlib
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from decimal import Decimal as D, InvalidOperation
 from hashlib import sha256
 from xml.etree import ElementTree
@@ -21,6 +22,7 @@ MAX_BYTES = 4 * 1024 * 1024
 MAX_ROWS = 10000
 MAX_DAYS = 31
 FIRST_DAY = date(2000, 1, 1)
+PUN_FIRST_DAY = date(2025, 10, 1)
 EUR_MWH = "€/MWh"
 SPOT = ("MGP-GAS", "MI-GAS")
 
@@ -50,6 +52,9 @@ class Dataset:
 
 
 DATASETS = {
+    "pun": Dataset("ME_ZonalPrices", "PUN Index GME · elettricità", ("MGP",),
+        ("FlowDate",), ("Market", "Zone", "Hour"), {"Price": EUR_MWH},
+        "https://gme.mercatoelettrico.org/it-it/Home/Esiti/Elettricita/MGP/Esiti/PUN/Statistiche"),
     "prices": Dataset("GAS_ImbalancePrice", "Parametri di sbilanciamento", ("GAS",),
         ("FlowDate",), (),
         {"MaxPurchaseSRGPrice": EUR_MWH, "MinSaleSRGPrice": EUR_MWH, "WeightedAveragePrice": EUR_MWH,
@@ -218,7 +223,7 @@ def validate_window(kind, segment, first, last, cutoff):
     if kind not in DATASETS or segment not in DATASETS[kind].segments:
         raise ValueError("Dataset o segmento GME non supportato.")
     if (type(first) is not date or type(last) is not date or
-            not FIRST_DAY <= first <= last <= cutoff or (last - first).days >= MAX_DAYS):
+            not (PUN_FIRST_DAY if kind == "pun" else FIRST_DAY) <= first <= last <= cutoff or (last - first).days >= MAX_DAYS):
         raise ValueError(f"Scegli fino a {MAX_DAYS} giorni conclusi.")
 
 
@@ -238,7 +243,7 @@ def parse(raw, kind, cutoff, *, segment=None, first=None):
             payload, request_id = unpack_response(data)
             data = (_xml_rows(payload) if payload.lstrip(b"\xef\xbb\xbf \r\n\t").startswith(b"<")
                     else json_object(payload))
-    if not isinstance(data, list) or len(data) > MAX_ROWS:
+    if not isinstance(data, list) or len(data) > (30000 if kind == "pun" else MAX_ROWS):
         raise ValueError("Atteso un elenco di osservazioni GME.")
     result = {}
     missing = 0
@@ -252,19 +257,29 @@ def parse(raw, kind, cutoff, *, segment=None, first=None):
         row = {}
         for field in spec.dates:
             day = _date(item[field.casefold()])
-            if day < FIRST_DAY or field == spec.date_field and not (first or FIRST_DAY) <= day <= cutoff:
+            if day < (PUN_FIRST_DAY if kind == "pun" else FIRST_DAY) or field == spec.date_field and not (first or FIRST_DAY) <= day <= cutoff:
                 raise ValueError("Data GME fuori intervallo.")
             row[field] = day.isoformat()
         for field in spec.dimensions:
             value = item.get(field.casefold())
             if field in spec.optional_dimensions and (value is None or isinstance(value, str) and not value.strip()):
                 row[field] = None
+            elif kind == "pun" and field == "Hour":
+                hour = _number(value)
+                if hour is None or hour != hour.to_integral_value() or not 1 <= hour <= 25:
+                    raise ValueError("Ora MGP non valida.")
+                row[field] = str(int(hour))
             else:
                 row[field] = _text(value)
         if "Market" in row:
             expected = segment.removesuffix("-GAS") if segment in (*SPOT, "MT-GAS") else segment
             if row["Market"].casefold() != expected.casefold():
                 raise ValueError("Mercato GME diverso dal segmento richiesto.")
+        if kind == "pun" and row["Zone"].upper() != "PUN":
+            continue
+        if kind == "pun":
+            row["Zone"] = "PUN"
+            row["Market"] = "MGP"
         for field, unit in spec.units.items():
             number = _number(item.get(field.casefold()))
             if number is None:
@@ -289,6 +304,42 @@ def parse(raw, kind, cutoff, *, segment=None, first=None):
     return {"kind": kind, "segment": segment, "rows": tuple(result[k] for k in ordered),
             "sha": sha256(payload).hexdigest(), "request_id": request_id, "missing": missing,
             "synthetic": False, "origin": "import"}
+
+
+def pun_closed_day(now):
+    return now.astimezone(ZoneInfo("Europe/Rome")).date() - timedelta(days=1)
+
+
+def pun_hours(day):
+    rome = ZoneInfo("Europe/Rome")
+    start = datetime.combine(day, datetime.min.time(), rome).astimezone(timezone.utc)
+    end = datetime.combine(day + timedelta(days=1), datetime.min.time(), rome).astimezone(timezone.utc)
+    return int((end-start).total_seconds() // 3600)
+
+
+def pun_mean(item, first, last):
+    """Time-weighted mean of complete official hourly national PUN observations."""
+    if not item or item.get("kind") != "pun" or item.get("segment") != "MGP":
+        return None
+    if not PUN_FIRST_DAY <= first <= last or (last-first).days >= MAX_DAYS:
+        return None
+    days = {}
+    for row in item["rows"]:
+        day = date.fromisoformat(row["FlowDate"])
+        if first <= day <= last and row["Market"] == "MGP" and row["Zone"] == "PUN":
+            hours = days.setdefault(day, {})
+            hour = int(row["Hour"])
+            if hour in hours or row["Price"] is None:
+                return None
+            hours[hour] = row["Price"]
+    prices = []
+    for offset in range((last-first).days+1):
+        day = first+timedelta(days=offset)
+        hours = days.get(day, {})
+        if set(hours) != set(range(1, pun_hours(day)+1)):
+            return None
+        prices.extend(hours.values())
+    return sum(prices, D(0))/D(len(prices))
 
 
 def study_prices(row, title_volume, rate, history=None, *, ordinary=True):
