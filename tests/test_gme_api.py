@@ -245,3 +245,14 @@ def test_full_quota_counters_expire_only_after_their_official_windows():
     assert check(9,55,19)["ConnectionsPerHour"] == (100,100)
     assert check(10,15,48)["ConnectionsPerHour"] == (0,100)
     assert check(10,15,48)["ActiveConnections"] == (0,100)
+
+
+def test_pun_request_uses_electricity_segment_and_hourly_grain():
+    rows = [{"FlowDate":20261117,"Market":"MGP","Zone":"PUN","Hour":i,"Price":42}
+            for i in range(1,25)]
+    transport = _Transport(_auth(),_Response(_quota()),_Response(_response(rows)))
+    item = _client(transport).fetch("pun","MGP",DAY,DAY,DAY)
+    assert transport.calls[-1][2]["json"] == {
+        "platform":"PublicMarketResults","segment":"MGP","dataName":"ME_ZonalPrices",
+        "intervalStart":"20261117","intervalEnd":"20261117","attributes":{"GranularityType":"PT60"}}
+    assert item["origin"] == "api" and g.pun_mean(item,DAY,DAY) == 42
