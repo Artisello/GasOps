@@ -13,6 +13,7 @@ import os
 import re
 import math
 import requests
+from uuid import uuid4
 
 from .data import ROME
 from .models import utc_now
@@ -30,6 +31,34 @@ GEN="https://api.terna.it/generation/v2.0/actual-generation"
 LOAD="https://api.terna.it/load/v2.0/total-load"
 SOURCES=("Thermal","Wind","Photovoltaic","Hydro","Geothermal")
 _TOKEN_BATCH=ContextVar("terna_token_batch",default=None)
+_SERVICES={
+    TOKEN:"autenticazione OAuth",
+    GEN:"Actual Generation",
+    LOAD:"Total Load",
+    "https://api.terna.it/market/v1.0/input/forecast-load":"Load Forecast",
+    "https://api.terna.it/generation/v2.0/wind-production-forecast":"Wind Production Forecast",
+    "https://api.terna.it/adequacy/v1.0/expected-available-capacity":"Expected Available Capacity",
+    "https://api.terna.it/load/v2.0/monthly-index-industrial-electrical-consumption":"IMCEI",
+}
+
+
+class TernaHTTPError(SourceUnavailable):
+    """Only controlled metadata; never include provider bodies or credentials."""
+    def __init__(self,status,service,business_id=None):
+        self.status=status
+        self.service=service
+        self.business_id=business_id
+        auth=service==_SERVICES[TOKEN]
+        hints={
+            400:"Verifica credenziali e richiesta OAuth." if auth else "Verifica i parametri della richiesta.",
+            401:"Verifica chiave e secret." if auth else "Token rifiutato o scaduto.",
+            403:"Accesso OAuth negato; verifica chiave e applicazione Public." if auth else
+                "Accesso al servizio negato; verifica abilitazione nel Developer Portal.",
+            404:"Endpoint non trovato; verifica il catalogo ufficiale.",
+            429:"Limite richieste raggiunto; riprova dopo il ripristino della quota.",
+        }
+        super().__init__(f"Terna · {service}: HTTP {status}. "+hints.get(status,"Servizio non disponibile."))
+
 
 
 @contextmanager
@@ -106,21 +135,30 @@ def dates(first,last,now):
 
 def _json_request(method,url,*,data=None,params=None,headers=None):
     # No redirects, logs, URL/body details or token echo. Only fixed endpoints.
+    if url not in _SERVICES or method!=("POST" if url==TOKEN else "GET"):
+        raise SourceUnavailable("Endpoint Terna non autorizzato dal catalogo locale.")
+    headers=dict(headers or {})
+    business_id=None
+    if method=="GET":
+        business_id=str(uuid4())
+        headers["businessID"]=business_id
+    else:
+        headers["Content-Type"]="application/x-www-form-urlencoded"
     try:
         with requests.request(method,url,data=data,params=params,headers=headers,
                               timeout=(5,25),allow_redirects=False,stream=True) as response:
             if response.status_code!=200:
                 if response.status_code==401 and _TOKEN_BATCH.get() is not None:
                     _TOKEN_BATCH.get().clear()
-                raise SourceUnavailable(f"Terna: HTTP {response.status_code}.")
+                raise TernaHTTPError(response.status_code,_SERVICES[url],business_id)
             body=bytearray()
             for c in response.iter_content(16384):
                 body.extend(c)
                 if len(body)>MAX_BYTES:
                     raise SourceUnavailable("Terna: risposta superiore a 2 MB.")
             payload=json.loads(body.decode("utf-8-sig"))
-    except (requests.RequestException,ValueError) as exc:
-        raise SourceUnavailable("Terna: risposta non disponibile o non valida.") from exc
+    except (requests.RequestException,ValueError):
+        raise SourceUnavailable(f"Terna · {_SERVICES[url]}: connessione o risposta non valida.") from None
     if not isinstance(payload,dict):
         raise SourceUnavailable("Terna: risposta non riconosciuta.")
     return payload
@@ -131,11 +169,21 @@ def get_token(client,secret):
         raise SourceUnavailable("Credenziali Terna non configurate.")
     cache=_TOKEN_BATCH.get()
     key=(client,secret)
-    if cache is not None and key in cache and cache[key][1]>monotonic():
-        return cache[key][0]
+    if cache is not None and key in cache:
+        cached,expiry=cache[key]
+        if isinstance(cached,TernaHTTPError):
+            raise TernaHTTPError(cached.status,cached.service)
+        if expiry>monotonic():
+            return cached
     started=monotonic()
-    payload=_json_request("POST",TOKEN,data={"client_id":client,"client_secret":secret,
-                          "grant_type":"client_credentials"},headers={"Accept":"application/json"})
+    try:
+        payload=_json_request("POST",TOKEN,data={"client_id":client,"client_secret":secret,
+                              "grant_type":"client_credentials"},headers={"Accept":"application/json"})
+    except TernaHTTPError as error:
+        # Do not repeat rejected authentication for each service in one batch.
+        if cache is not None and error.status in (400,401,403,429):
+            cache[key]=(TernaHTTPError(error.status,error.service),0)
+        raise
     token=payload.get("access_token")
     if not isinstance(token,str) or not token or len(token)>4096 or any(c.isspace() for c in token):
         raise SourceUnavailable("Terna: token non valido.")
@@ -215,17 +263,21 @@ def load_power(client,secret,first,last,*,now=None):
     params=dates(first,last,now)
     token=get_token(client,secret)
     headers={"Authorization":"Bearer "+token,"Accept":"application/json"}
-    gen=_json_request("GET",GEN,params={**params,"type":list(SOURCES)},headers=headers)
-    generation=parse_power(gen,"generation",first,last)
-    # Separate endpoint; a load outage does not invalidate generation.
-    warning=None
-    try:
-        load=_json_request("GET",LOAD,params={**params,"biddingZone":"Italy"},headers=headers)
-        demand=parse_power(load,"load",first,last)
-    except (SourceUnavailable,ValueError):
-        demand=[]
-        warning="Fabbisogno Terna non disponibile o non validato; generazione conservata."
-    return {"rows":generation+demand,"acquired":now.isoformat(),"first":first,"last":last,"warning":warning}
+    # Independent services: neither denial can erase the other's validated data.
+    rows=[];notes=[]
+    for kind,url,filters in (("generation",GEN,{"type":list(SOURCES)}),
+                             ("load",LOAD,{"biddingZone":"Italy"})):
+        try:
+            payload=_json_request("GET",url,params={**params,**filters},headers=headers)
+            rows.extend(parse_power(payload,kind,first,last))
+        except SourceUnavailable as error:
+            notes.append(str(error))
+        except (ValueError,TypeError,KeyError):
+            notes.append(f"Terna · {_SERVICES[url]}: copertura o schema non validabile.")
+    if not rows:
+        raise SourceUnavailable(" · ".join(notes))
+    return {"rows":rows,"acquired":now.isoformat(),"first":first,"last":last,
+            "warning":" · ".join(notes) or None}
 
 
 def load_gas(store,first,last,*,now=None):
