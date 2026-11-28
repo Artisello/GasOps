@@ -244,6 +244,12 @@ def _inventory_panel(platform,loader,key):
         with action:
             result=_load_once(platform+"_"+scope,"Aggiorna dati",loader,key,scope)
     if result is None:
+        if scope=="IT":
+            diagnostic=connections.get(source,{})
+            if diagnostic.get("outcome")=="no_observation":
+                st.caption("Nessuna osservazione utilizzabile restituita per il periodo.")
+            elif diagnostic.get("failed"):
+                st.caption("Aggiornamento fallito · nessuna copia valida disponibile.")
         return
     if result["scope"]!=scope:
         st.error("La fonte ha restituito un’area diversa da quella selezionata.")
