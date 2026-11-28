@@ -278,7 +278,6 @@ def assistant_page():
         info("Come funziona","Ogni domanda avvia un'analisi indipendente. Il programma seleziona le fonti pertinenti; il modello interpreta le evidenze e deve citarle. Se non riesce, vengono mostrati solo calcoli di riserva, non una risposta AI.",
              "Le scorciatoie utilizzano un tentativo AI di sintesi; le domande libere fino a tre chiamate. Lo storico rimane nella sessione.")
     disabled=selection.bundle is None
-    # Document search is already available in the main navigation.
     controls=st.columns([1,1,1,1.4])
     shortcut=None
     for col,(label,question) in zip(controls[:3],STARTERS):
@@ -323,8 +322,5 @@ def assistant_page():
                 st.caption("Ultimo risultato conservato · la nuova analisi non è riuscita." if attempted else
                            "Risultato precedente · modalità effettiva indicata nel report")
             render(report)
-        elif not attempted:
-            if not disabled:
-                pass
-            else:
-                st.info("Seleziona una fonte disponibile per iniziare.")
+        elif not attempted and disabled:
+            st.info("Seleziona una fonte disponibile per iniziare.")
