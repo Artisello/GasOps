@@ -24,7 +24,7 @@ LABELS={MONTHLY:"Eurostat",DAILY:"ENTSOG",PRICE:"ARERA",WEATHER:"Open-Meteo",
         "AGSI+":"GIE AGSI+","ALSI":"GIE ALSI","IIP":"GIE IIP",
         POWER[0]:"Terna · consuntivi",POWER[1]:"Terna · previsioni",ACER:"ACER · GNL",NETWORK:NETWORK,GME:"GME",MASE:MASE}
 TOPICS=(
-    ((MONTHLY,),r"eurostat|\bmensil\w*|import(?:az|at|are|iamo)|esport(?:az|at|are|iamo)|produzione nazionale"),
+    ((MONTHLY,),r"eurostat|import(?:az|at|are|iamo)|esport(?:az|at|are|iamo)|produzione nazionale"),
     ((DAILY,),r"entsog|\bsrg\b|giornalier|settimanal"),
     (("AGSI+",),r"agsi|stoccagg|storage|giacenz|scorte"),
     (("IIP",),r"\biip\b|\bumm\b|indisponibil|outage"),
@@ -94,10 +94,10 @@ def requested_sources(question):
         names.append(GME)
     demand=bool(re.search(r"\b(?:domanda|consum[oi]|preliev[oi]|demand|consumption)\b",question))
     other=bool(re.search(r"consum[oi] elettric|domanda elettric|electricity demand|preliev[oi] (?:da|dagli|di) stocc",question))
-    if demand and not other:
+    if demand and not other and MASE not in names:
         explicit=set(names)&set(MARKET)
         if not explicit:
-            names.extend((DAILY,) if mentions_day(question) else MARKET)
+            names.extend((MONTHLY,) if re.search(r"\bmensil\w*",question) else (DAILY,) if mentions_day(question) else MARKET)
     power=bool(re.search(r"terna|elettric|termoelettric|rinnovabil|fotovoltaic|eolic|power",question))
     outlook=bool(re.search(r"msd1|outlook|previ[ds].*(?:terna|elettric|eolic)|(?:terna|elettric|eolic).*previ[ds]",question))
     if power and (not outlook or re.search(r"consuntiv|osservat|misurat",question)):
@@ -115,6 +115,38 @@ def requested_sources(question):
             if DAILY in names and not re.search(r"preliev|consum|domanda",question):
                 names.remove(DAILY)
     return tuple(dict.fromkeys(names))
+
+
+# A small, discoverable command vocabulary. The natural-language expansion
+# enters the same source-aware read-only pipeline as a typed question.
+COMMANDS={
+    "/consumi":"Quali sono gli ultimi consumi nazionali e prelievi SRG disponibili?",
+    "/scorte":"Quali sono le scorte di gas in Italia (AGSI+)?",
+    "/gnl":"Quali sono le scorte e i flussi dei terminali GNL italiani (ALSI)?",
+    "/prezzi":"Qual è il riferimento mensile ARERA CMEM,m?",
+    "/produzione":"Qual è la produzione nazionale mensile di gas Eurostat?",
+    "/mase":"Qual è la produzione di gas nell’archivio MASE UNMIG?",
+    "/previsioni":"Qual è la prossima previsione della domanda di gas?",
+    "/bollettino":"Bollettino sul mercato del gas",
+}
+
+
+def expand_command(question):
+    """Return a question and optional issue; unknown commands never run tools."""
+    question=question.strip()
+    if not question.startswith("/"):
+        return question,None
+    command,_,argument=question.partition(" ")
+    base=COMMANDS.get(command.casefold())
+    if base is None:
+        return None,"Comando non riconosciuto. Apri Info per consultare i comandi."
+    if argument.strip():
+        if command.casefold()=="/bollettino":
+            return None,"Il bollettino usa gli ultimi dati disponibili; scrivi una domanda per una data precisa."
+        base+=" "+argument.strip()
+    if len(base)>600:
+        return None,"Domanda troppo lunga."
+    return base,None
 
 
 def useful_source(item):
