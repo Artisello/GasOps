@@ -269,6 +269,7 @@ def calculate(plan,items,issues):
              "provenance":item.origin if item is not None else None,"value":None}
         if count!=len(expected):
             row["reason"]="Periodo incompleto: nessuna statistica sostitutiva."
+            row["missing_periods"]=sorted(expected.difference(item.values.index if item is not None else ()))
         else:
             valid.append(key)
             s=stats(item,first,last)
