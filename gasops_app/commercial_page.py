@@ -29,7 +29,7 @@ def _csv(rows):
 
 
 def _invoice_panel(records):
-    st.subheader("Riconciliazione delle fatture")
+    st.subheader("Esempio fatture")
     st.caption("Settembre 2026 · imponibili di esempio, IVA esclusa.")
     originals=demo_invoices()
     invoices=[]
@@ -65,7 +65,7 @@ def _invoice_panel(records):
 
 def _price_panel():
     st.subheader("Prezzi di sbilanciamento")
-    st.caption("Simulazione · regime ordinario · non prezzi GME effettivi")
+    st.caption("Calcolo ipotetico · non prezzi GME effettivi")
     a,b=st.columns(2)
     with a:
         day=st.date_input("Giorno gas",date(2026,9,5),key="price_day")
@@ -110,7 +110,7 @@ def _guarantee_panel():
 
 def _calendar_panel(invoice_rows):
     st.subheader("Scadenze commerciali")
-    st.caption("Calendario demo · stato pagamenti non verificato")
+    st.caption("Scadenze calcolate da ipotesi · nessun pagamento verificato")
     as_of=st.date_input("Data di riferimento",date(2026,11,18),key="commercial_as_of")
     with st.expander("Parametri calendario GNL"):
         a,b=st.columns(2)
@@ -134,7 +134,7 @@ def _calendar_panel(invoice_rows):
         return []
     urgent=[r for r in result if r["days_left"] is not None and 0<=r["days_left"]<=7]
     past=[r for r in result if r["days_left"] is not None and r["days_left"]<0]
-    kpi_grid([("Entro 7 giorni",len(urgent),"","Da valutare nella demo",0,""),
+    kpi_grid([("Entro 7 giorni",len(urgent),"","Date indicative",0,""),
               ("Date trascorse",len(past),"","Non implica mancato pagamento",0,"")])
     st.dataframe([{"Adempimento":r["task"],"Data":r["due"],"Giorni residui":r["days_left"],"Stato data":r["status"]}
                   for r in result],hide_index=True,width="stretch")
@@ -144,26 +144,29 @@ def _calendar_panel(invoice_rows):
 
 
 def commercial_workbench(ledger_view):
+    from .workspace import picker
+    from .reconciliation_page import documents_panel, BALANCE_STATE
     header("Fatture e garanzie", "")
-    st.caption("Demo DEMO-001 e controlli su estratti autorizzati · nessuna operazione reale")
-    summary_slot=st.container()
-    tabs=st.tabs(["Fatture","Garanzie","Scadenze","Prezzi","Bilanci e GNL"])
-    with tabs[0]:
-        invoice_rows,summary=_invoice_panel(sample_rows())
-        st.divider()
-        from .reconciliation_page import documents_panel
+    # Preserve draft inputs when their widgets are not rendered on another view.
+    for key in ("invoice_present_short","invoice_present_long","invoice_amount_short","invoice_amount_long",
+                "invoice_date_short","invoice_date_long","commercial_as_of","price_day"):
+        if key in st.session_state:
+            st.session_state[key]=st.session_state[key]
+    view=picker("Strumento",("Fatture","Garanzie","Scadenze","Prezzi","Bilanci e GNL"),
+                key="commercial_view",labels={"Bilanci e GNL":"Calcolo GNL"})
+    if view=="Fatture":
         documents_panel()
-    with tabs[1]:
-        risk=_guarantee_panel()
-    with tabs[2]:
-        calendar=_calendar_panel(invoice_rows)
-    with tabs[3]:
+        if not st.session_state.get(BALANCE_STATE):
+            if st.toggle("Prova con dati di esempio",key="commercial_example"):
+                rows,_=_invoice_panel(sample_rows())
+                st.session_state["commercial_example_rows"]=rows
+    elif view=="Garanzie":
+        _guarantee_panel()
+    elif view=="Scadenze":
+        # Example invoices are included only after an explicit demonstration.
+        rows=[] if st.session_state.get(BALANCE_STATE) else st.session_state.get("commercial_example_rows",[])
+        _calendar_panel(rows)
+    elif view=="Prezzi":
         _price_panel()
-    with tabs[4]:
+    else:
         ledger_view()
-    with summary_slot:
-        kpi_grid([("Partite da verificare",summary["issues"],"",str(summary["unknown"])+" con importo non confrontabile",0,""),
-                  ("Differenze note",summary["known_difference"],"€","Somma assoluta delle differenze note",2,""),
-                  ("Utilizzo garanzie",risk["ratio"] if risk else None,"%",risk["status"] if risk else "Non calcolabile",1,""),
-                  ("Date entro 7 giorni",sum(r["days_left"] is not None and 0<=r["days_left"]<=7 for r in calendar),"","Calendario dimostrativo",0,"")])
-
