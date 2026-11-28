@@ -178,14 +178,12 @@ def page():
     from .workspace import apply_intent, guide, picker
     apply_intent("kpi")
     header("Operazioni gas", "")
-    view=picker("Vista operazioni gas",["Registro operativo","Panoramica","Monitoraggio fonti","Executive demo","Centro operativo"],
-                key="bso_view",index=1,labels={"Panoramica":"Indicatori","Registro operativo":"Agenda e scadenze","Executive demo":"Esempio completo","Monitoraggio fonti":"Stato fonti","Centro operativo":"Strumenti avanzati"})
+    if st.session_state.get("bso_view")=="Executive demo":
+        st.session_state["bso_view"]="Panoramica"
+    view=picker("Vista operazioni gas",["Registro operativo","Panoramica","Monitoraggio fonti","Centro operativo"],
+                key="bso_view",index=1,labels={"Panoramica":"Indicatori","Registro operativo":"Agenda e scadenze","Monitoraggio fonti":"Stato fonti","Centro operativo":"Strumenti avanzati"})
     if view=="Centro operativo":
         from .agentic_operations_page import panel
-        panel()
-        return
-    if view=="Executive demo":
-        from .executive_demo import panel
         panel()
         return
     if view=="Monitoraggio fonti":
