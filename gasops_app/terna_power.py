@@ -272,6 +272,8 @@ def load_power(client,secret,first,last,*,now=None):
             rows.extend(parse_power(payload,kind,first,last))
         except SourceUnavailable as error:
             notes.append(str(error))
+            if isinstance(error,TernaHTTPError) and error.status in (401,429):
+                break
         except (ValueError,TypeError,KeyError):
             notes.append(f"Terna · {_SERVICES[url]}: copertura o schema non validabile.")
     if not rows:
