@@ -499,3 +499,90 @@ def test_precise_srg_uses_bounded_historical_range(monkeypatch):
                                    clock=lambda:NOW)
     assert result[sources.DAILY]["period"]==historical.isoformat()
     assert calls==[(historical-timedelta(days=13),historical)]
+
+
+@pytest.mark.parametrize("question",[
+    "Il prezzo medio dell'energia elettrica all'ingrosso in Italia per ottobre 2026",
+    "Qual è il PUN Index GME?",
+    "Prezzo elettrico di oggi",
+    "Costo giornaliero dell’elettricità",
+    "Prezzo dell'elettricità secondo ARERA",
+])
+def test_electricity_price_is_not_gas_or_terna(question):
+    assert sources.requested_sources(question)==(sources.ELECTRIC_PRICE,)
+    assert not sources.gme_indicators(question)
+
+
+def test_mixed_electricity_and_lng_price_keeps_explicit_gap():
+    keys=sources.requested_sources("Prezzo dell'elettricità e del GNL")
+    assert set(keys)=={sources.ELECTRIC_PRICE,sources.ACER}
+    assert "non integrati" in sources.complete_requirements({},keys)[sources.ELECTRIC_PRICE]["reason"]
+
+
+def test_reject_real_regression_gas_value_relabelled_as_electricity():
+    public={
+        sources.PRICE:{"status":"available","unit":"€/MWh","value":88.3585},
+        sources.ACER:{"status":"available","unit":"€/MWh","values":{"eu":{"status":"available","value":86.598}}},
+    }
+    refs=["src:"+key for key in public]
+    def check(answer):
+        verify_measurements([{"text":answer,"references":refs}],{},model_context(public))
+    with pytest.raises(InvalidSynthesis,match="Prezzo elettrico"):
+        check("Il prezzo medio dell'energia elettrica all'ingrosso in Italia per il mese di ottobre 2026 è 88,36 €/MWh; il prezzo del GNL a livello UE è 86,60 €/MWh.")
+    with pytest.raises(InvalidSynthesis,match="Prezzo elettrico"):
+        check("88,36 €/MWh è il prezzo elettrico.")
+    with pytest.raises(InvalidSynthesis,match="PSV"):
+        check("Per approfondire il costo giornaliero dell'elettricità occorre accedere a dataset con granularità oraria (es. prezzi spot PSV).")
+    check("Prezzo elettrico non disponibile. CMEM,m del gas: 88,36 €/MWh. Prezzo GNL UE: 86,60 €/MWh.")
+
+
+def test_electricity_only_gap_returns_without_acquisition_or_model_call(monkeypatch):
+    from gasops_app import session
+    monkeypatch.setattr(session,"assistant_reasoner",lambda:SimpleNamespace())
+    monkeypatch.setattr(session,"_collect_assistant_sources",lambda *a,**k:pytest.fail("No unrelated sources"))
+    monkeypatch.setattr(session,"automatic_selection",lambda *a,**k:pytest.fail("No unrelated base series"))
+    app=AppTest.from_string("""
+from gasops_app.session import launch
+launch(None,"Prezzo medio dell'energia elettrica ottobre 2026",ai_policy="automatic")
+""").run()
+    assert not app.exception
+    report=app.session_state["last_run"]
+    assert report.mode=="Deterministic" and not report.ai_usage
+    assert set(report.assumptions["public_operational_context"])=={sources.ELECTRIC_PRICE}
+
+
+@pytest.mark.parametrize("command",["/scorte","/consumi","/gnl","/prezzi","/produzione","/mase","/avvisi","/igi"])
+def test_fast_commands_are_readouts_only(command):
+    assert sources.fast_lookup_command(command)
+    assert not sources.expand_command(command)[1]
+    assert not sources.fast_lookup_command(command+" 20/11/2026")
+    assert not sources.fast_lookup_command("/bollettino")
+    assert not sources.fast_lookup_command("/previsioni")
+
+
+def test_fast_storage_readout_does_not_call_model(monkeypatch):
+    from gasops_app import session
+    monkeypatch.setattr(session,"assistant_reasoner",lambda:SimpleNamespace())
+    calls=[]
+    def collect(*args,**kwargs):
+        calls.append(args[2])
+        return {"AGSI+":{"status":"available","source":"AGSI+","scope":"IT","gas_day":"2026-11-21",
+                         "values":{"stock_twh":70}}}
+    monkeypatch.setattr(session,"_collect_assistant_sources",collect)
+    app=AppTest.from_string("""
+from gasops_app.session import launch
+launch(None,"/scorte",ai_policy="automatic")
+""").run()
+    assert not app.exception and calls==[("AGSI+",)]
+    report=app.session_state["last_run"]
+    assert report.assumptions["assistant_fast_lookup"]
+    assert report.mode=="Deterministic" and not report.ai_usage
+
+
+def test_pdf_candidates_are_ranked_across_archives_before_truncation(monkeypatch):
+    weaker=Citation(document="a.pdf",page=1,evidence="La garanzia è prevista.")
+    stronger=Citation(document="b.pdf",page=3,evidence="La garanzia economica richiede un deposito cauzionale.")
+    monkeypatch.setattr("gasops_app.document_desk.search",lambda docs,*a,**k:docs)
+    hits=assistant_lookup.ranked_document_hits([[weaker],[stronger,stronger]],
+                "garanzia economica deposito cauzionale",1)
+    assert hits==[stronger]
