@@ -33,6 +33,7 @@ def _remember(report):
     st.session_state[HISTORY]=history
     allowed={r.id for r in history}
     st.session_state[REVIEWS]={k:v for k,v in st.session_state.get(REVIEWS,{}).items() if k in allowed}
+    st.session_state["assistant_gme_readouts_v1"]={k:v for k,v in st.session_state.get("assistant_gme_readouts_v1",{}).items() if k in allowed}
     st.session_state[SELECTED]=report.id
 
 
@@ -41,6 +42,7 @@ def _clear():
     st.session_state.pop(HISTORY,None)
     st.session_state.pop(REVIEWS,None)
     st.session_state.pop(SELECTED,None)
+    st.session_state.pop("assistant_gme_readouts_v1",None)
 
 
 def _review(report):
@@ -135,7 +137,7 @@ def _report(report:Run,selection,*,fresh=False):
     _source_evidence_panel(report)
     if gme:=report.assumptions.get("gme_request"):
         from .gme_market_page import assistant_prices
-        assistant_prices(gme,report.started_at,refresh=fresh)
+        assistant_prices(gme,report.started_at,report_id=report.id,refresh=fresh)
     if Agent.REGULATORY in report.results:
         st.caption("Normativa: materiali di studio, non PDF caricati.")
         info("Fonti normative","I riscontri normativi del supervisore usano materiali predisposti. Interroga i PDF del tuo archivio in Norme e documenti.")
