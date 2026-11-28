@@ -403,34 +403,37 @@ def test_balancing_missing_storage_shock_does_not_crash(monkeypatch,tmp_path):
 
 
 
-def test_commercial_workspace_updates_summary_and_calendar(monkeypatch,tmp_path):
+def test_commercial_workspace_only_renders_selected_task(monkeypatch,tmp_path):
     from datetime import date
     monkeypatch.setenv("GASOPS_STATE_DIR",str(tmp_path))
     app=AppTest.from_string("from gasops_app.operations_page import operations_ledger\noperations_ledger()",default_timeout=30).run()
     assert not app.exception
-    assert [t.label for t in app.tabs]==["Fatture","Garanzie","Scadenze","Prezzi","Bilanci e GNL"]
-    def summary():
-        return next(e.proto.body for e in app.get("html") if "Partite da verificare" in e.proto.body)
-    assert "4.200,00" in summary() and "92,0" in summary()
+    assert app.radio(key="commercial_view").options==["Fatture","Garanzie","Scadenze","Prezzi","Calcolo GNL"]
+    assert not app.number_input
+    assert not app.dataframe
+    assert any("importa prima i bilanci" in e.value for e in app.info)
+    app.toggle(key="commercial_example").set_value(True).run()
+    assert not app.exception
+    assert not any(n.key=="credit_g" for n in app.number_input)
     app.number_input(key="invoice_amount_short").set_value(172200.).run()
-    assert not app.exception and "4.200,00" not in summary()
     app.checkbox(key="invoice_present_long").set_value(False).run()
-    assert not app.exception and "1 con importo non confrontabile" in summary()
-    # MEPSu = G - C: 1,020,000 - 100,000 = 920,000, strict equality.
-    app.number_input(key="credit_g").set_value(1020000.).run()
-    assert not app.exception and "100,0" in summary()
-    app.number_input(key="credit_c").set_value(1020000.).run()
-    assert not app.exception and "LIMITE" in summary()
     app.date_input(key="invoice_date_short").set_value(date(2026,11,8)).run()
+    assert not app.exception
+    app.radio(key="commercial_view").set_value("Scadenze").run()
     assert not app.exception
     calendar=next(d.value for d in app.dataframe if "Adempimento" in d.value.columns)
     assert "Pagamento DEMO-FT-01" in calendar["Adempimento"].tolist()
     assert "Pagamento DEMO-FT-02" not in calendar["Adempimento"].tolist()
     assert str(calendar.loc[calendar["Adempimento"]=="Pagamento DEMO-FT-01","Data"].iloc[0])[:10]=="2026-11-23"
-    app.toggle(key="ledger_revisions_only").set_value(True).run()
+    app.radio(key="commercial_view").set_value("Garanzie").run()
     assert not app.exception
-    ledger=next(d.value for d in app.dataframe if "Delta DS" in d.value.columns)
-    assert len(ledger)==1
+    assert not any(n.key=="invoice_amount_short" for n in app.number_input)
+    app.number_input(key="credit_g").set_value(1020000.).run()
+    assert not app.exception and any("EPSu ≥ MEPSu" in e.value for e in app.error)
+    app.radio(key="commercial_view").set_value("Bilanci e GNL").run()
+    assert not app.exception
+    assert not any("Delta DS" in d.value.columns for d in app.dataframe)
+    assert any("Allocazione illustrativa MWh" in d.value.columns for d in app.dataframe)
 
 
 
