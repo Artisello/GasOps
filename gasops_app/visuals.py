@@ -265,17 +265,21 @@ def plot(figure: go.Figure, key: str, *, interactive: bool = True) -> None:
                             "scrollZoom": False, "modeBarButtonsToRemove": ["lasso2d", "select2d"]})
 
 
-def ai_readout(run: Run, *, section_ids=None, usage=True):
+def ai_readout(run: Run, *, section_ids=None, usage=True, compact=False):
     """Fixed headings and plain-text output; provider markup is not executed."""
     from .ai_response import SECTION_TITLES, reference_labels
     sections=getattr(run,"ai_sections",[])
     if sections:
+        last_labels=None
         for section in sections:
             if section_ids is not None and section["id"] not in section_ids:continue
-            st.markdown("**"+SECTION_TITLES.get(section["id"],"Analisi")+"**")
+            if not compact or section["id"]=="limits" or section["id"]=="next":
+                st.markdown("**"+SECTION_TITLES.get(section["id"],"Analisi")+"**")
             st.text(section["text"])
             labels=reference_labels(run,section["references"])
-            if labels:st.caption("Fonti · "+"; ".join(labels))
+            if labels and (not compact or labels!=last_labels):
+                st.caption("Fonti · "+"; ".join(labels))
+            last_labels=labels
     elif run.interpretation and section_ids is None:
         for paragraph in run.interpretation.splitlines():
             if paragraph.strip():st.text(paragraph.strip())
@@ -290,4 +294,6 @@ def ai_readout(run: Run, *, section_ids=None, usage=True):
             note+=f" · Token effettivi: {usage['total_tokens']} (input {usage['prompt_tokens']}, output {usage['completion_tokens']})"
         else:
             note+=" · Conteggio token completo non fornito dal provider"
+        if "provider_elapsed_ms" in usage:
+            note+=f" · Tempo provider: {usage['provider_elapsed_ms']/1000:.2f} s"
         info("Utilizzo AI",note)
