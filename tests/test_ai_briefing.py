@@ -425,7 +425,9 @@ def test_assistant_requires_relevant_sources_and_recovers_missing_citations(monk
     assert WEATHER in requested_sources("Come il meteo influenza la domanda?")
     assert set(POWER)<=set(requested_sources("Previsioni della domanda di gas"))
     assert set(GIE)<=set(requested_sources("Situazione del mercato del gas"))
-    assert PRICE in requested_sources("Qual è il prezzo PSV?")
+    from gasops_app.assistant_sources import PSV_QUOTE
+    assert requested_sources("Qual è il prezzo PSV?")== (PSV_QUOTE,)
+    assert PRICE in requested_sources("Qual è il CMEM,m ARERA?")
     result=Result(agent=Agent.MARKET,summary="Consumi mensili 100 GWh",evidence=[Citation(document="Eurostat",evidence="100 GWh")])
     public={MARKET[0]:{"source":"Eurostat","status":"available","period":"2026-10-01","values":{"demand_gwh":100}},
             MARKET[1]:{"source":"ENTSOG","status":"available","period":"2026-11-17","values":{"demand_gwh":10}}}
