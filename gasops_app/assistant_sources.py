@@ -320,11 +320,11 @@ _FOLLOWUP_PREVIOUS = re.compile(
     r"^(?:e\s+)?(?:rispetto\s+)?(?:(?:al|allo|a|il)\s+)?"
     r"(giorno precedente|giorno prima|sette giorni prima|7 giorni prima|lo stesso giorno della settimana precedente|stesso giorno della settimana precedente)\s*[?.!]*$", re.I)
 _FOLLOWUP_REFERENCE = re.compile(
-    r"^(?:e\s+(?:in|nel|nella|per|il|al|a|rispetto|quanto|come|quali|la|le|lo|i|gli)\b"
+    r"^(?:e\s+"
     r"|(?:e\s+)?rispetto\b|(?:e\s+)?(?:fammi|mostrami|crea|disegna|genera)\s+(?:un\s+)?grafico\b"
     r"|(?:e\s+)?(?:perché|perche|spiegami perché|spiegami perche)\b"
     r"|(?:e\s+)?(?:la|il)\s+(?:settimana|mese|anno)\s+(?:precedente|scors[oa])\b"
-    r"|e\s+(?:in\s+)?(?:germania|italia|europa|francia|spagna)\b)", re.I)
+    r")", re.I)
 _DAILY_FOLLOWUP_SOURCES = {DAILY,"AGSI+","ALSI",POWER[0],NETWORK,GME}
 _DATE_MARKER = re.compile(DATE_TEXT+"|"+_MONTH_DATE+r"|\b(?:ieri|oggi|domani)\b",re.I)
 
@@ -348,6 +348,11 @@ def resolve_followup(question, previous, *, today):
                 return None,"Vuoi confrontare lo stesso giorno oppure la media o il totale del periodo? Specifica indicatore e intervallo."
             if re.search(r"\bgrafico\b|perch[eé]|\brispetto\b|settimana precedente|mese precedente|anno precedente",text,re.I) or not (requested_sources(text) and mentions_day(text)):
                 return None,"Specifica il dato e il periodo da confrontare o rappresentare."
+            if previous is not None and previous.assumptions.get("requested_country") in ("DE","EU"):
+                from .country_analysis import COUNTRY_PATTERNS
+                explicit_scope=any(re.search(pattern,text,re.I) for pattern in COUNTRY_PATTERNS.values()) or bool(re.search(r"\b(?:ue|eu|europa|europe)\b",text,re.I))
+                if not explicit_scope:
+                    return None,"Specifica il paese o l’area per la nuova domanda."
         return text,None
 
     if previous is None:
