@@ -406,6 +406,9 @@ def test_explicit_period_parser_distinguishes_days_and_months():
 
 
 def test_hub_quotes_are_not_other_price_indicators():
+    assert sources.requested_sources("Prezzo PSV")== (sources.PSV_QUOTE,)
+    assert sources.requested_sources("Prezzo medio mensile PSV")== (sources.PSV_QUOTE,)
+    assert sources.requested_sources("CMEM,m ARERA")== (sources.PRICE,)
     assert sources.requested_sources("Prezzo TTF spot oggi")== (sources.TTF_QUOTE,)
     assert sources.requested_sources("Prezzo PSV day-ahead")== (sources.PSV_QUOTE,)
     assert sources.requested_sources("Prezzo PSV del 20/11/2026")== (sources.PSV_QUOTE,)
