@@ -8,8 +8,8 @@ GROUPS=(
 )
 LABELS={"security-of-supply":"Rete e forniture",
         "balancing":"Bilanciamento",
-        "connections":"Fonti e API","demo":"Esempi guidati"}
-HINTS={"":"Azioni quotidiane, situazione del sistema e avvisi.","balancing":"Confronta flussi e nomine, verifica bilanci e rettifiche.",
+        "connections":"Fonti e API","demo":"Esempi guidati","kpi":"Attività e indicatori"}
+HINTS={"":"Mappa della rete, flussi e avvisi.","balancing":"Confronta quantità programmate e misurate; verifica i saldi.",
        "ledger":"Esplora fatture, garanzie e scadenze con esempi dichiarati.",
        "kpi":"Segui attività, scadenze e indicatori operativi.","market":"Leggi i consumi e calcola una previsione quando serve.",
        "security-of-supply":"Esplora la rete, le scorte e i dati già disponibili.",
