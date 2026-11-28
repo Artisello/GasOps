@@ -213,9 +213,17 @@ def _mode_selector(layout):
     key = "net_reading_"+layout
     st.session_state[key] = current
     with st.container(key="net_mode_"+layout):
-        st.radio("Lettura della mappa",READING_MODES,key=key,horizontal=True,label_visibility="collapsed",
-                 format_func=MODE_LABELS.__getitem__,on_change=_reading_selection,args=(key,))
-        st.caption(MODE_HINTS[current])
+        controls,help_col = st.columns([5,1.35],gap="small",vertical_alignment="center")
+        with controls:
+            st.radio("Lettura della mappa",READING_MODES,key=key,horizontal=True,label_visibility="collapsed",
+                     format_func=MODE_LABELS.__getitem__,on_change=_reading_selection,args=(key,))
+        with help_col, st.popover("Guida",icon=":material/help:",width="stretch"):
+            st.markdown("**Come leggere la mappa**")
+            for mode in READING_MODES:
+                st.caption(MODE_LABELS[mode]+" · "+MODE_HINTS[mode])
+            st.caption("Seleziona un punto sulla mappa o cercalo per nome. La freccia indica se il gas entra o esce dalla rete italiana.")
+            st.caption("Giorno gas: dalle 06:00 alle 06:00 successive (ora italiana). GWh/d: energia al giorno. N/D: dato non disponibile, non zero.")
+            st.caption("D−1: giorno precedente. GNL: gas naturale liquefatto. I gasdotti mostrano collegamenti storici schematici, non flussi misurati.")
     return current
 
 
@@ -374,7 +382,6 @@ def _source_status(status, day, *, expanded=False):
 
 def _operational_summary(network, item, info, *, compact=False, paired=None):
     """Same sections and evidence in the overview and the full point card."""
-    if not compact:st.caption("STATO")
     if not info.get("binding"):
         st.caption(item.status)
         if item.category == "pipeline":
@@ -394,13 +401,12 @@ def _operational_summary(network, item, info, *, compact=False, paired=None):
     if paired is not None:
         st.caption("Flussi fisici · giorno gas selezionato")
         st.html(paired_flow_html(paired,active=binding.direction))
-    if flow is not None and not compact and paired is None:st.caption("DATI FISICI")
     if flow is not None:
         delta = info["change_gwh_d"]
         if paired is None:
             flow_col,util_col=st.columns([1.3,1]) if compact else (st,None)
-            flow_col.metric("Ultimo flusso pubblicato",numero(flow,1)+" GWh/d",
-                      delta=(f"{numero(delta,1)} GWh/d vs D-1" if delta is not None else None),delta_color="off")
+            flow_col.metric("Flusso fisico",numero(flow,1)+" GWh/d",
+                      delta=(f"{numero(delta,1)} GWh/d vs giorno precedente" if delta is not None else None),delta_color="off")
             if compact and info["utilization_pct"] is not None:
                 util_col.metric("Utilizzo capacità",numero(info["utilization_pct"],1)+"%",
                     help="Flusso / capacità tecnica firm, con unità e intervalli confrontabili sul giorno gas.")
@@ -418,7 +424,7 @@ def _operational_summary(network, item, info, *, compact=False, paired=None):
         st.caption("Nessun dato operativo confrontabile per il giorno.")
     if info["utilization_pct"] is not None and not compact and paired is None:
         st.caption(f"Utilizzo capacità: {numero(info['utilization_pct'],1)}% · intervalli confrontabili")
-    for heading,names in (("DATI COMMERCIALI",("Nomination","Renomination","Allocation","Firm Technical","Firm Booked","Firm Available")),):
+    for heading,names in (("Capacità e dati commerciali",("Nomination","Renomination","Allocation","Firm Technical","Firm Booked","Firm Available")),):
         measures = []
         for name in names:
             if name not in publications:
@@ -727,7 +733,6 @@ def _gie_detail(saved, identifier, network, first, last, *, mode="full"):
 
 
 def _point_provenance(network, item, observations, snapshots, binding, first, last):
-    st.caption("DATI E PROVENIENZA")
     geo = next(g for g in network.geography if g.infrastructure_id == item.id)
     if binding:
         rows = [o for o in observations if o.point_direction == binding.point_direction
@@ -773,7 +778,6 @@ def _point_provenance(network, item, observations, snapshots, binding, first, la
 
 
 def _point_events(item, info, events, attention):
-    st.caption("EVENTI")
     matching = [e for e in events if e["infrastructure_id"] == item.id]
     for event in matching:
         st.markdown("**Evento pubblicato · "+escape(event["kind"])+"**")
@@ -797,8 +801,6 @@ def _point_events(item, info, events, attention):
             "missing_expected_flow": "La copia consultata non contiene il flusso atteso. Non equivale a flusso nullo o indisponibilità fisica.",
             "stale_critical_source": "La copia disponibile non è recente o l’aggiornamento non è riuscito.",
         }
-        if finding.rule in explanations:
-            st.write(explanations[finding.rule])
         if finding.baseline is not None and finding.baseline_n:
             st.caption(f"Mediana storica: {numero(finding.baseline,1)} GWh/d · {finding.baseline_n} giorni validi")
         source = finding.source_id.split(":",1)[0]
@@ -808,6 +810,8 @@ def _point_events(item, info, events, attention):
         ids = tuple(dict.fromkeys(finding.evidence_ids))
         st.caption(f"Evidenze: {len(ids)} riferimenti" if ids else "Evidenze: dato atteso assente")
         with st.expander("Evidenze tecniche e metodologia"):
+            if finding.rule in explanations:
+                st.write(explanations[finding.rule])
             st.text("Regola: " + finding.rule)
             st.text("Fonte: " + finding.source_id)
             if finding.observed_at:
@@ -823,11 +827,11 @@ def _point_events(item, info, events, attention):
         st.markdown("**Indicatore I.G.O.R. · capacità tecnica ridotta rispetto a D-1**")
         st.caption(numero(info["capacity_change_gwh_d"],1)+" GWh/d · confronto di capacità pubblicate su giorni compatibili")
     if not matching:
-        st.caption("Nessun evento associato nella copia disponibile · copertura parziale, non certifica assenza di interruzioni.")
+        st.caption("Nessun avviso nei dati consultati. Copertura parziale: possibili interruzioni non rilevate.")
     if info.get("stale"):
-        st.caption("Qualità dati · cache da aggiornare. Non indica un’indisponibilità fisica.")
+        st.caption("Dati da aggiornare: non indicano un’interruzione fisica.")
     if info.get("binding") and not info.get("flow_available"):
-        st.caption("Qualità dati · flusso fisico non disponibile per il giorno e la direzione selezionati. Non equivale a flusso nullo.")
+        st.caption("Flusso non disponibile per giorno e direzione. N/D non equivale a zero.")
 
 
 NODE_CATALOG_KEY = "net_node_discovery_catalog"
