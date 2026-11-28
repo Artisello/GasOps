@@ -283,11 +283,17 @@ class CompatibleReasoner:
         return tuple(dict.fromkeys(codes[code] for code in selected))
 
     def interpret(self, question: str, results: Mapping[Agent, Result], *, context=None, executive=False, repair=False,
-                  source_requirements=(), as_of=None) -> tuple[str | None, list[Agent]]:
+                  source_requirements=(), as_of=None, source_grain=None) -> tuple[str | None, list[Agent]]:
         # Synthesis is standalone: executed evidence already contains the tool results.
         # Do not resend routing history, tool schemas, or duplicate tool messages.
         self.last_sections=[]
         allowed=_evidence(results,external=not self.config.local)
+        # Both tools operate on the run's selected historical series, not
+        # on the independently retrieved public context.
+        if source_grain in ("daily","monthly"):
+            for agent in (Agent.MARKET,Agent.FORECAST):
+                if agent.value in allowed:
+                    allowed[agent.value]["grain"]=source_grain
         if executive:
             # Do not let default illustrative shocks become daily market claims.
             # Their full results remain in the local, explicitly labelled section.
@@ -316,7 +322,8 @@ class CompatibleReasoner:
                 projection["summary"]=("Proiezione del modello per il giorno richiesto."
                                        if points else "Nessuna previsione per il giorno richiesto.")
             projection["projection"]={
-                "kind":"forecast","model":series.get("model"),"unit":"GWh",
+                "kind":"forecast","model":series.get("model"),"unit":
+                {"daily":"GWh/giorno gas","monthly":"GWh/mese"}.get(source_grain,"GWh"),
                 "points":[{key:p[key] for key in ("period","estimate","lower_80","upper_80") if key in p}
                           for p in points[:3]],
             }
@@ -343,7 +350,7 @@ class CompatibleReasoner:
                      " Sezioni pertinenti (preferisci questo ordine): "+", ".join(ids)+
                      f". Obiettivo {target} caratteri di testo; massimo {limit}. Titoli separati dal testo. "
                      "Ogni sezione cita almeno un codice esatto presente in reference_ids (A1, S1 ecc.). "
-                     "Copia i valori con la loro unità dalle fonti citate nella stessa sezione. "
+                     "Copia valori, unità e periodo dalla stessa evidenza citata; non trasformare GWh in GWh/giorno o GWh/mese senza granularità dichiarata. "
                      "Usa solo le sezioni necessarie; non ripetere dati in Evidenze se già nella Risposta. Ometti Verifiche successive salvo utilità concreta. Le fonti mancanti supportano i limiti. "
                      "Se il giorno richiesto è scoperto, dichiara la lacuna. Riporta valori di altri periodi soltanto con il loro periodo esplicito.")
         if narrow:
@@ -352,7 +359,7 @@ class CompatibleReasoner:
             instruction=(template+"\nRecupero formato: restituisci solo JSON valido con chiavi interpretation (testo italiano), "
                          "references (lista di codici da reference_ids). "
                          f"Obiettivo {target} caratteri; usa brevi paragrafi e solo verifiche pertinenti; "
-                         "copia quantità e unità dalle fonti citate.")
+                         "copia quantità, unità e periodo dalla stessa evidenza citata. Non aggiungere denominatori temporali non dichiarati e non trasformare scorte in flussi.")
             if narrow:
                 instruction+=" Domanda osservata, confronto e periodo; distingui le frequenze."
         if required:
@@ -456,7 +463,7 @@ class CompatibleReasoner:
         from .gas_calendar import ROME
         args={"as_of":run.started_at.astimezone(ROME).date(),"context":run.assumptions.get("public_operational_context"),
               "executive":bool(run.assumptions.get("full_briefing")),
-              "source_requirements":run.assumptions.get("assistant_source_requirements",[])}
+              "source_requirements":run.assumptions.get("assistant_source_requirements",[]),"source_grain":run.source.grain}
         try:
             answer=self.interpret(run.question,run.results,**args)
         except InvalidSynthesis:
