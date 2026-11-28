@@ -264,7 +264,7 @@ def assistant_page():
     if not local and model is None:
         ai_activation_panel(prefix="assistant")
         st.chat_input("Attiva l’AI per scrivere una domanda",key="assistant_question",max_chars=600,disabled=True)
-        st.caption("Report locali e Analista dati restano disponibili.")
+        st.caption("Disponibili anche senza AI: report ed esplorazione dati.")
         return
     selection=source_filters("ops",lookback=False)
     area,scope=market_scope(selection.name)
@@ -278,7 +278,7 @@ def assistant_page():
         info("Come funziona","Ogni domanda avvia un'analisi indipendente. Il programma seleziona le fonti pertinenti; il modello interpreta le evidenze e deve citarle. Se non riesce, vengono mostrati solo calcoli di riserva, non una risposta AI.",
              "Le scorciatoie utilizzano un tentativo AI di sintesi; le domande libere fino a tre chiamate. Lo storico rimane nella sessione.")
     disabled=selection.bundle is None
-    st.caption("Per interrogare documenti specifici: [Cerca nei PDF](/regulatory).")
+    # Document search is already available in the main navigation.
     controls=st.columns([1,1,1,1.4])
     shortcut=None
     for col,(label,question) in zip(controls[:3],STARTERS):
@@ -325,6 +325,6 @@ def assistant_page():
             render(report)
         elif not attempted:
             if not disabled:
-                st.caption("Scegli un report. Il risultato apparirà qui." if local else "Scrivi una domanda o scegli una scorciatoia. Il risultato apparirà qui.")
+                pass
             else:
                 st.info("Seleziona una fonte disponibile per iniziare.")
