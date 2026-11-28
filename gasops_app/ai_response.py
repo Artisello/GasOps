@@ -26,7 +26,7 @@ def compact_context(context):
     return {key:compact(value) for key,value in context.items() if isinstance(value,dict)}
 
 
-_UNIT=r"(?:€|EUR)\s*/\s*MWh|GWh(?:\s*/\s*(?:giorno(?: gas)?|[dg]))?|TWh|MWh|MW|°\s*C|%|€|EUR"
+_UNIT=r"(?:€|EUR)\s*/\s*MWh|GWh(?:\s*/\s*(?:giorno(?: gas)?|mese|[dg]))?|TWh|MWh|MW|bcm|Sm[3³]|°\s*C|%|€|EUR"
 _CLAIM=re.compile(
     r"(?<![\w.,])(?P<number>[+−-]?(?:\d{1,3}(?:[. \u00a0]\d{3})+(?:,\d+)?|\d+(?:[,.]\d+)?))"
     r"\s*(?P<unit>"+_UNIT+r")(?![\w/])",re.I)
@@ -44,7 +44,7 @@ def _unit(raw):
         match=re.match(_UNIT,raw.strip(),re.I)
         if match:
             unit=re.sub(r"\s+","",match[0].lower())
-            return "gwh" if unit.startswith("gwh/") else _EURO_UNITS.get(unit,unit)
+            return "gwh" if unit.startswith("gwh/") else "sm3" if unit=="sm³" else _EURO_UNITS.get(unit,unit)
     return None
 
 

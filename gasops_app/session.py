@@ -5,6 +5,7 @@ from .source_session_cache import recent_source, remember_source, forget_source
 from html import escape
 import logging
 import os
+import re
 from pathlib import Path
 import sqlite3
 
@@ -25,7 +26,7 @@ from .store import Store
 from .access import document_directory, private_access, require_private
 from .visuals import chip, info, kind_tag, local_time, steps
 from .workflow import DAILY_BRIEFING, run_workflow, plan
-from .assistant_sources import GIE, GME, MARKET, POWER, WEATHER, mentions_day, query_day, requested_sources
+from .assistant_sources import GIE, GME, MARKET, POWER, WEATHER, mentions_day, query_day, requested_sources, expand_command
 
 LOG = logging.getLogger(__name__)
 DEMO, PUBLIC, ARCHIVE = "Dati di esempio · giornalieri", "Eurostat + ARERA · mensili", "JRC · archivio giornaliero"
@@ -492,6 +493,13 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
     model = None if ai_policy == "off" else reasoner()
     if ai_policy == "required" and model is None:
         raise ModelUnavailable("AI non attiva. Nessuna domanda eseguita.")
+    expanded,issue=expand_command(question)
+    if issue:
+        report=lookup_report(question,{},utc_now(),issue=issue)
+        st.session_state["last_run"]=report
+        return report
+    question=expanded
+    full=full or question==DAILY_BRIEFING
     country=requested_country(question) if not full else None
     requested=() if full else requested_sources(question)
     day=None if full else query_day(question,today=utc_now().astimezone(ROME).date())
@@ -500,8 +508,12 @@ def launch(selection: Selection, question: str = DAILY_BRIEFING, *, full: bool =
         st.session_state["last_run"]=report
         return report
     targets={call.agent for call in plan(question,False)} if requested else set()
+    # Explicitly named monthly balance components should use the national
+    # source even when the selected base series is a daily SRG proxy.
+    specific_market=bool(set(requested)&set(MARKET)) and bool(re.search(
+        r"\beurostat\b|\bentsog\b|\bmensil\w*|import|esport|produzione nazionale",question,re.I))
     standalone=bool(requested) and not targets.intersection((Agent.REGULATORY,Agent.SETTLEMENT,Agent.SCENARIO)) and (
-        not set(requested).intersection(MARKET) or (day is not None or selection.bundle is None) and Agent.FORECAST not in targets)
+        not set(requested).intersection(MARKET) or (day is not None or selection.bundle is None or specific_market) and Agent.FORECAST not in targets)
     scoped_lookup=country=="EU" or country=="DE" and requested==("AGSI+",)
     if scoped_lookup or (country is None and standalone):
         with st.spinner("Lettura delle fonti pertinenti…"):

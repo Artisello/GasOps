@@ -132,15 +132,16 @@ def acer_context(result,now,*,day=None):
             "limitation":"Valutazioni di prezzo GNL e differenziale GNL–TTF, in €/MWh; non riserve, scorte, capacità o PSV. Date per singola serie; nessuna variazione storica implicita."}
 
 
-def power_context(result,now):
+def power_context(result,now,*,day=None):
     acquired=datetime.fromisoformat(result["acquired"])
     limit=latest_day(now).isoformat()
+    requested=day.isoformat() if day is not None else None
     by={}
     for row in result["rows"]:
         day=row["gas_day"]
         metric=row["metric"]
         if (metric not in ("Thermal","Wind","Photovoltaic","Hydro","Geothermal","load")
-            or day>limit or not _finite(row.get("gwh"))
+            or day>limit or (requested is not None and day!=requested) or not _finite(row.get("gwh"))
             or row.get("valid_slots")!=row.get("expected_slots") or not row.get("expected_slots")):
             continue
         by.setdefault(day,{}).setdefault(metric,set()).add(float(row["gwh"]))
@@ -153,7 +154,7 @@ def power_context(result,now):
     if not values:
         raise ValueError("Nessun giorno elettrico completo")
     period=max(v["period"] for v in values.values())
-    stale=not timedelta(0)<=now-acquired<=timedelta(hours=24) or (date.fromisoformat(limit)-date.fromisoformat(period)).days>2
+    stale=not timedelta(0)<=now-acquired<=timedelta(hours=24) or (requested is None and (date.fromisoformat(limit)-date.fromisoformat(period)).days>2)
     return {"source":"Terna · consuntivi","source_url":PORTAL,"scope":"Italia elettrica",
             "period":period,"acquired":acquired.isoformat(),"status":"stale" if stale else "available",
             "kind":"observed","unit":"GWh elettrici/giorno gas","values":values,
@@ -205,12 +206,18 @@ def collect_market_sources(store,selected,now,state,*,terna=(),clock=utc_now,onl
     out={}
     can_call=len(terna)==2 and all(terna)
     def terna_actual():
-        p=next((p for p in (live_power,prior.get("power")) if p and fresh(p)),None)
-        if p is None:
-            if not can_call:raise ValueError("Terna non configurata")
-            end=latest_day(now)
-            p=load_power(*terna,end-timedelta(days=2),end,now=now)
-        return power_context(p,clock()),p
+        end=day or latest_day(now)
+        if end>latest_day(now):
+            raise ValueError("Giorno elettrico non concluso")
+        for p in (live_power,prior.get("power")):
+            if p and fresh(p):
+                try:
+                    return power_context(p,clock(),day=day),p
+                except ValueError:
+                    pass
+        if not can_call:raise ValueError("Terna non configurata")
+        p=load_power(*terna,end if day else end-timedelta(days=2),end,now=now)
+        return power_context(p,clock(),day=day),p
     def terna_forecast():
         b=prior.get("forward")
         if not b or not fresh(b):
