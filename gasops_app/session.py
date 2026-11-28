@@ -294,13 +294,18 @@ def market_scope(name: str) -> tuple[str,str]:
     }[name]
 
 
-def available_source_choices(state):
-    """Offer examples only when no usable current public series is already held."""
+def public_series(state):
+    """Return acquired public market series, never historical archive or synthetic."""
     from .live_sources import BUNDLES
-    for bundle in (*state.get(BUNDLES,{}).values(),state.get("active_bundle")):
-        if bundle is not None and bundle.rows and not bundle.origin.archive and bundle.origin.kind in (Kind.LIVE,Kind.HISTORICAL):
-            return (PUBLIC,DAILY,ARCHIVE)
-    return SOURCE_CHOICES
+    candidates = (*state.get(BUNDLES,{}).values(),state.get("active_bundle"))
+    return {bundle.origin.grain:bundle for bundle in candidates
+            if bundle is not None and bundle.rows and not bundle.origin.archive
+            and bundle.origin.kind in (Kind.LIVE,Kind.HISTORICAL)}
+
+
+def available_source_choices(state):
+    """Offer examples only when no current public series is already held."""
+    return (PUBLIC,DAILY,ARCHIVE) if public_series(state) else SOURCE_CHOICES
 
 
 def source_filters(page: str, *, lookback: bool = True) -> Selection:
@@ -308,10 +313,11 @@ def source_filters(page: str, *, lookback: bool = True) -> Selection:
     choices = available_source_choices(st.session_state)
     stored = st.session_state.get("selected_source", PUBLIC)
     widget_key = f"{page}_dataset"
+    preferred = PUBLIC if "monthly" in public_series(st.session_state) else DAILY if "daily" in public_series(st.session_state) else PUBLIC
     if widget_key in st.session_state and st.session_state[widget_key] not in choices:
-        st.session_state[widget_key] = PUBLIC
+        st.session_state[widget_key] = preferred
     with ctrl[0]:
-        name = st.selectbox("Fonte dati", choices, index=choices.index(stored) if stored in choices else 0,
+        name = st.selectbox("Fonte dati", choices, index=choices.index(stored) if stored in choices else choices.index(preferred),
                             key=f"{page}_dataset", format_func=SOURCE_LABELS.__getitem__,
                             help="Scegli il perimetro: dati mensili nazionali, prelievi SRG giornalieri, archivio o simulazione.")
     st.session_state["selected_source"] = name
