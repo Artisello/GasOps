@@ -44,6 +44,7 @@ def electricity_price_question(question):
         r"\bpun(?:\s+index)?\b|prezz\w*\s+(?:medi\w*\s+|giornalier\w*\s+|mensil\w*\s+|orar\w*\s+|spot\s+|all'ingrosso\s+|dell[ao']\s*|di\s+|per\s+|energi[ae]\s+)*elettric\w*"
         r"|(?:cost\w*|quotazion\w*|tariff\w*)\s+(?:medi\w*\s+|giornalier\w*\s+|mensil\w*\s+|orar\w*\s+|dell[ao']\s*|di\s+|energi[ae]\s+)*elettric\w*"
         r"|\belettricit[àa]\b.{0,30}\b(?:prezz\w*|cost\w*|quotazion\w*)\b"
+        r"|(?:prezz\w*|cost\w*)\s+(?:della\s+|la\s+)?corrente\b"
         r"|\b(?:electricity|power)\s+price\b",text))
 
 
