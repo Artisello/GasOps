@@ -117,8 +117,37 @@ def model_context(context):
     return safe
 
 
+def verify_price_semantics(sections, public):
+    """Reject gas-price figures relabelled as electrical wholesale prices.
+
+    This is a conservative domain guard, not a general semantic proof.
+    No electricity-price adapter is currently integrated; Terna's energy
+    observations and gas prices cannot substantiate an electricity quote.
+    """
+    from .assistant_sources import electricity_price_question
+    for section in sections:
+        # Keep decimal points and CMEM,m intact; split only sentence boundaries.
+        sentences=re.split(r"(?<=[.!?;])\s+|\n+",section["text"])
+        for sentence in sentences:
+            for match in _CLAIM.finditer(sentence):
+                if _unit(match["unit"])!="€/mwh":
+                    continue
+                prefix=sentence[:match.start()]
+                if electricity_price_question(prefix):
+                    # An explicit denial is a limitation, not a price claim.
+                    if re.search(r"\b(?:non disponibile|non integrat\w*|non è|non rappresenta|non corrisponde)\b",prefix,re.I):
+                        continue
+                    raise InvalidSynthesis("Prezzo elettrico non verificabile: le fonti gas non sono quotazioni elettriche.")
+            # A recommendation to use PSV/TTF as an electricity spot
+            # price is erroneous even without a numerical claim.
+            if electricity_price_question(sentence) and re.search(r"\b(?:psv|ttf|cmem)\b",sentence,re.I):
+                if re.search(r"\b(?:esempio|es\.|consulta\w*|utilizz\w*|accedere|occorre|serve|usare)\b",sentence,re.I) and not re.search(r"\b(?:non|invece|distint\w*|gas naturale)\b",sentence,re.I):
+                    raise InvalidSynthesis("PSV, TTF e CMEM,m non sono fonti dei prezzi elettrici.")
+
+
 def verify_measurements(sections, tools, public):
     """Check unit-bearing figures against the sources cited in each section."""
+    verify_price_semantics(sections,public)
     numbers={"src:"+name:set(_values(item)) for name,item in public.items()}
     for agent,item in tools.items():
         if item.get("status") not in ("completed","review"):
