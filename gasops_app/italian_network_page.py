@@ -217,7 +217,7 @@ def _mode_selector(layout):
         with controls:
             st.radio("Lettura della mappa",READING_MODES,key=key,horizontal=True,label_visibility="collapsed",
                      format_func=MODE_LABELS.__getitem__,on_change=_reading_selection,args=(key,))
-        with help_col, st.popover("Guida",icon=":material/help:",width="stretch"):
+        with help_col, st.popover("Info",icon=":material/info:",width="stretch"):
             st.markdown("**Come leggere la mappa**")
             for mode in READING_MODES:
                 st.caption(MODE_LABELS[mode]+" · "+MODE_HINTS[mode])
