@@ -332,10 +332,10 @@ def _event_records(network, state, interruptions, day, now, policy):
         elif iip_result.get("failed") or iip_saved.get("error") or now-at>timedelta(hours=policy.event_ttl_hours):
             iip_state="stale"
         elif not in_window:iip_state="window_unverified"
-        elif not iip_result.get("pagination_verified") or iip_result.get("partial") or iip_result.get("reported_total")!=len(iip_result["messages"]):
+        elif not iip_result.get("pagination_verified") or iip_result.get("partial") is not False or iip_result.get("reported_total")!=len(iip_result["messages"]):
             iip_state="partial"
         else:iip_state="complete"
-        if iip_state in ("complete","partial"):
+        if iip_state=="complete" or iip_state=="partial" and iip_result["messages"]:
             iip_records=len(iip_result["messages"])
         unique={json.dumps(m,sort_keys=True,default=str):m for m in iip_result["messages"]}
         iip_result={**iip_result,"messages":list(unique.values())}
