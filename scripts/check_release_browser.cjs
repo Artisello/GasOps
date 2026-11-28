@@ -151,14 +151,11 @@ async function main(){
   await open(a,'operations','Assistente AI');
   assert(await a.getByRole('radio',{name:'Chiedi all’AI',exact:true}).isChecked());
   assert.equal(await a.getByRole('radio',{name:'Indicatori GME',exact:true}).count(),0);
+  assert.equal(await a.getByRole('button',{name:/Attiva AI/}).count(),0);
+  assert.equal(await a.getByRole('combobox',{name:'Fonte dati',exact:true}).count(),0);
   await chooseRadio(a,'Report');
-  await a.getByRole('combobox',{name:'Fonte dati',exact:true}).click();
-  await a.getByRole('option',{name:'Archivio 2015–2021 (JRC)',exact:true}).click();
-  await a.getByRole('button',{name:'Opzioni',exact:true}).click();
-  await a.getByRole('combobox',{name:'Modello previsionale',exact:true}).click();
-  await a.getByRole('option',{name:'Riferimento stagionale',exact:true}).click();
-  await a.keyboard.press('Escape');
-  await a.getByRole('button',{name:'Stress +10%',exact:true}).click();
+  assert.equal(await a.getByRole('combobox',{name:'Fonte dati',exact:true}).count(),0);
+  await a.getByRole('button',{name:'Consumi',exact:true}).click();
   await a.getByText(/^Storico della sessione ·/).first().click();
   await a.getByRole('button',{name:'Svuota storico dell’assistente',exact:true}).waitFor();
   await open(b,'operations','Assistente AI');
