@@ -173,6 +173,15 @@ def requested_sources(question):
     if electricity_price_question(question):
         # The existing Terna adapters cover energy/load, not electricity
         # price. Do not silently substitute ARERA gas or ACER LNG.
+        # A time grain ("giornaliero", "settimanale") alone does not
+        # identify a gas-flow metric. Preserve independently requested SRG
+        # evidence, including explicit gas demand in a mixed question.
+        gas_flow=bool(re.search(
+            r"\b(?:entsog|srg)\b|"
+            r"\b(?:preliev\w*|consum\w*|domanda|fluss\w*)\b.{0,30}\b(?:gas|metano)\b|"
+            r"\b(?:gas|metano)\b.{0,30}\b(?:preliev\w*|consum\w*|domanda|fluss\w*)\b",question))
+        if not gas_flow:
+            names=[name for name in names if name!=DAILY]
         explicit_gas=bool(re.search(r"\b(?:cmem|psv|ttf|igi|gnl|lng|acer)\b|prezz\w*.{0,16}\bgas\b|\bgas\b.{0,16}prezz",question))
         if not explicit_gas:
             names=[name for name in names if name not in (PRICE,ACER,GME)]
