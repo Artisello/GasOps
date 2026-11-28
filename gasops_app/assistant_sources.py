@@ -120,9 +120,9 @@ def requested_sources(question):
 # A small, discoverable command vocabulary. The natural-language expansion
 # enters the same source-aware read-only pipeline as a typed question.
 COMMANDS={
-    "/consumi":"Quali sono gli ultimi consumi nazionali e prelievi SRG disponibili?",
+    "/consumi":"Quali sono gli ultimi consumi nazionali Eurostat e prelievi SRG disponibili?",
     "/scorte":"Quali sono le scorte di gas in Italia (AGSI+)?",
-    "/gnl":"Quali sono le scorte e i flussi dei terminali GNL italiani (ALSI)?",
+    "/gnl":"Quali sono gli inventari e i flussi dei terminali GNL italiani (ALSI)?",
     "/prezzi":"Qual è il riferimento mensile ARERA CMEM,m?",
     "/produzione":"Qual è la produzione nazionale mensile di gas Eurostat?",
     "/mase":"Qual è la produzione di gas nell’archivio MASE UNMIG?",
