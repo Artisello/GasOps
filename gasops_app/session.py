@@ -521,7 +521,7 @@ def automatic_selection(question, *, full=False):
 def _precise_period_lookup(question,requested,days,*,monthly,scope,model):
     """Bounded point-in-time lookups. Never treat a monthly stock as a flow."""
     from .assistant_lookup import lookup_report
-    from .assistant_sources import MONTHLY, DAILY as SRG, PRICE, MASE, LABELS, period_comparison
+    from .assistant_sources import MONTHLY, DAILY as SRG, PRICE, MASE, LABELS, period_comparison, ELECTRIC_PRICE, complete_requirements
     from .gas_calendar import closed_gas_day
     now=utc_now()
     # These are observed point-in-time series, not period aggregates.
@@ -563,6 +563,8 @@ def _precise_period_lookup(question,requested,days,*,monthly,scope,model):
                 public=_collect_assistant_sources(None,None,usable,day=day,scope=scope,
                                                   question=question,automatic=True)
         for key in requested:
+            if key==ELECTRIC_PRICE and key not in public:
+                complete_requirements(public,(key,))
             if key not in public:
                 public[key]={"source":LABELS.get(key,key),"status":"unavailable","scope":scope,
                     "period":day.isoformat(),"reason":(
@@ -597,6 +599,8 @@ def launch(selection: Selection | None, question: str = DAILY_BRIEFING, *, full:
     model = None if ai_policy == "off" else assistant_reasoner() if ai_policy=="automatic" else reasoner()
     if ai_policy in ("required","automatic") and model is None:
         raise ModelUnavailable("AI non attiva. Nessuna domanda eseguita.")
+    from .assistant_sources import fast_lookup_command, ELECTRIC_PRICE, complete_requirements
+    fast_readout=automatic and not full and fast_lookup_command(question)
     expanded,issue=expand_command(question)
     if issue:
         report=lookup_report(question,{},utc_now(),issue=issue)
@@ -607,6 +611,21 @@ def launch(selection: Selection | None, question: str = DAILY_BRIEFING, *, full:
     country=requested_country(question) if not full else None
     requested=() if full else requested_sources(question)
     day=None if full else query_day(question,today=utc_now().astimezone(ROME).date())
+    if automatic and requested==(ELECTRIC_PRICE,):
+        # There is no integrated electricity-price dataset. No API or model
+        # call can turn gas evidence into an electricity observation.
+        public=complete_requirements({},requested)
+        report=lookup_report(question,public,utc_now(),day=day,scope=country or "IT",reasoner=None)
+        st.session_state["last_run"]=report
+        return report
+    if fast_readout:
+        with st.spinner("Lettura dei dati…"):
+            public=_collect_assistant_sources(None,None,requested,question=question,automatic=True)
+            report=lookup_report(question,public,utc_now(),reasoner=None)
+        report.assumptions["assistant_fast_lookup"]=True
+        report.assumptions["ai_mode_reason"]="Comando diretto · nessuna chiamata al modello"
+        st.session_state["last_run"]=report
+        return report
     if automatic and not full and requested:
         from .assistant_sources import (query_days, query_months, explicit_period_comparison,
                                        MONTHLY, MASE)

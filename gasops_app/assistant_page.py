@@ -95,7 +95,7 @@ def _source_evidence_panel(report):
     cited=sum(row["cited"] for row in selected)
     title=f"Fonti pertinenti · {len(selected)}"
     if report.mode=="LLM-assisted":
-        title+=f" · {cited} citate dall’AI"
+        title+=f" · {cited} citate"
     with st.expander(title,expanded=bool(report.assumptions.get("source_lookup")) and not report.interpretation):
         for row in selected:
             status=by_status.get(row["status"],row["status"])
@@ -182,7 +182,8 @@ def _report(report:Run,selection,*,fresh=False):
         _document_report(report,fresh=fresh)
         return
     inferred=report.mode=="LLM-assisted" and bool(report.interpretation)
-    mode=("AI · "+(report.model or "modello selezionato") if inferred else
+    mode=("Dati verificati · risposta diretta" if report.assumptions.get("assistant_fast_lookup") else
+          "AI · "+(report.model or "modello selezionato") if inferred else
           "Calcoli locali · AI non disponibile" if report.mode=="Deterministic fallback" else "Calcoli locali · senza risposta AI")
     st.caption(mode+" · "+local_time(report.finished_at))
     if report.assumptions.get("assistant_user_question"):
@@ -209,7 +210,7 @@ def _report(report:Run,selection,*,fresh=False):
     if report.source.refresh_failed:
         st.warning("La fonte non è stata aggiornata correttamente.")
     if inferred:
-        ai_readout(report)
+        ai_readout(report,compact=True)
     elif not lookup:
         if report.mode!="Deterministic" and not report.warnings:
             st.warning("Nessuna risposta AI generata; risultati locali.")

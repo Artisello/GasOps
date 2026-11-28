@@ -21,6 +21,7 @@ GME="GME"
 MASE="MASE · UNMIG"
 TTF_QUOTE="TTF · quotazione diretta"
 PSV_QUOTE="PSV · quotazione diretta"
+ELECTRIC_PRICE="Elettricità · prezzo all’ingrosso"
 MARKET=(MONTHLY,DAILY)
 LABELS={MONTHLY:"Eurostat",DAILY:"ENTSOG",PRICE:"ARERA",WEATHER:"Open-Meteo",
         "AGSI+":"GIE AGSI+","ALSI":"GIE ALSI","IIP":"GIE IIP",
@@ -36,13 +37,28 @@ TOPICS=(
 DATE_TEXT=r"(?<!\d)(?:\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{4})(?!\d)"
 
 
+def electricity_price_question(question):
+    """Distinguish electrical price intent from electrical generation/load."""
+    text=question.casefold().replace("’","'")
+    return bool(re.search(
+        r"\bpun(?:\s+index)?\b|prezz\w*\s+(?:medi\w*\s+|giornalier\w*\s+|settimanal\w*\s+|mensil\w*\s+|orar\w*\s+|spot\s+|all'ingrosso\s+|dell[ao']\s*|di\s+|per\s+|energi[ae]\s+)*elettric\w*"
+        r"|(?:cost\w*|quotazion\w*|tariff\w*)\s+(?:medi\w*\s+|giornalier\w*\s+|settimanal\w*\s+|mensil\w*\s+|orar\w*\s+|dell[ao']\s*|di\s+|energi[ae]\s+)*elettric\w*"
+        r"|\belettricit[àa]\b.{0,30}\b(?:prezz\w*|cost\w*|quotazion\w*)\b"
+        r"|(?:prezz\w*|cost\w*)\s+(?:della\s+|la\s+)?corrente\b"
+        r"|\b(?:electricity|power)\s+price\b",text))
+
+
 def gme_indicators(question):
     """Recognize the two price datasets shown in the local GME readout."""
     igi=bool(re.search(r"\bigi\b|\big\s*index\b", question, re.I))
     imbalance=bool(re.search(r"prezz.{0,35}sbilanciament|sbilanciament.{0,25}prezz|\bimbalance price\b",
                               question,re.I))
+    if imbalance and re.search(r"sbilanciament\w* elettric",question,re.I):
+        imbalance=False
     if igi or imbalance:
         return tuple(key for key, matched in (("igi",igi),("prices",imbalance)) if matched)
+    if electricity_price_question(question) or re.search(r"sbilanciament\w* elettric",question,re.I):
+        return ()
     return ("igi","prices") if re.search(r"\bgme\b",question,re.I) else ()
 
 
@@ -154,6 +170,26 @@ def requested_sources(question):
             names.append(NETWORK)
             if DAILY in names and not re.search(r"preliev|consum|domanda",question):
                 names.remove(DAILY)
+    if electricity_price_question(question):
+        # The existing Terna adapters cover energy/load, not electricity
+        # price. Do not silently substitute ARERA gas or ACER LNG.
+        # A time grain ("giornaliero", "settimanale") alone does not
+        # identify a gas-flow metric. Preserve independently requested SRG
+        # evidence, including explicit gas demand in a mixed question.
+        gas_flow=bool(re.search(
+            r"\b(?:entsog|srg)\b|"
+            r"\b(?:preliev\w*|consum\w*|domanda|fluss\w*)\b.{0,30}\b(?:gas|metano)\b|"
+            r"\b(?:gas|metano)\b.{0,30}\b(?:preliev\w*|consum\w*|domanda|fluss\w*)\b",question))
+        if not gas_flow:
+            names=[name for name in names if name!=DAILY]
+        explicit_gas=bool(re.search(r"\b(?:cmem|psv|ttf|igi|gnl|lng|acer)\b|prezz\w*.{0,16}\bgas\b|\bgas\b.{0,16}prezz",question))
+        if not explicit_gas:
+            names=[name for name in names if name not in (PRICE,ACER,GME)]
+        elif not re.search(r"\b(?:arera|cmem|psv)\b|prezz\w*.{0,16}\bgas\b|\bgas\b.{0,16}prezz",question):
+            names=[name for name in names if name!=PRICE]
+        if not re.search(r"\b(?:consum\w*|caric\w*|fabbisogn\w*|produzion\w*|generazion\w*|prevision\w*|eolic\w*|fotovoltaic\w*)\b",question):
+            names=[name for name in names if name not in POWER]
+        names.append(ELECTRIC_PRICE)
     return tuple(dict.fromkeys(names))
 
 
@@ -168,7 +204,18 @@ COMMANDS={
     "/mase":"Qual è la produzione di gas nell’archivio MASE UNMIG?",
     "/previsioni":"Qual è la prossima previsione della domanda di gas?",
     "/bollettino":"Bollettino sul mercato del gas",
+    "/avvisi":"Quali record UMM sono disponibili nella finestra IIP?",
+    "/igi":"Qual è l’ultimo indice IGI GME già acquisito?",
 }
+
+
+# Exact commands are requests for a readout, not interpretation. Restrict
+# the fast path to these commands (no arbitrary suffixes or hypotheses).
+FAST_COMMANDS=frozenset(("/consumi","/scorte","/gnl","/prezzi","/produzione","/mase","/avvisi","/igi"))
+
+
+def fast_lookup_command(question):
+    return question.strip().casefold() in FAST_COMMANDS
 
 
 def expand_command(question):
@@ -224,6 +271,7 @@ def complete_requirements(public,requested):
         if key not in public:
             reasons={
                 GME:"Indicatori GME consultabili nella vista locale.",
+                ELECTRIC_PRICE:"Prezzi elettrici all’ingrosso (PUN Index GME / mercato elettrico) non integrati. Terna misura energia, non prezzi; CMEM,m, PSV e ACER GNL riguardano il gas.",
                 TTF_QUOTE:"Quotazione TTF diretta non integrata. Il differenziale GNL–TTF ACER non è il prezzo TTF.",
                 PSV_QUOTE:"Quotazione PSV spot o derivata non integrata. CMEM,m ARERA è un riferimento mensile, non il prezzo spot.",
             }

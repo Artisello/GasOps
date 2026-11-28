@@ -470,3 +470,26 @@ def test_source_evidence_separates_missing_and_cited():
     assert rows[PRICE]["cited"] and "88,36" in rows[PRICE]["evidence"]
     assert not rows[WEATHER]["cited"] and "6,9" in rows[WEATHER]["evidence"]
     assert rows[POWER[0]]["status"]=="unavailable" and rows[POWER[0]]["required"]
+
+
+def test_source_router_uses_smaller_budget_and_measures_provider_time(monkeypatch):
+    from gasops_app.llm import CompatibleReasoner, LLMConfig
+    bodies=[]
+    class Response:
+        status_code=200
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def iter_content(self,chunk_size):
+            yield json.dumps({"choices":[{"message":{"content":'{"sources":["4"]}'}}],
+                              "usage":{"prompt_tokens":150,"completion_tokens":12,"total_tokens":162}}).encode()
+    def post(*args,**kwargs):
+        bodies.append(kwargs["json"])
+        return Response()
+    monkeypatch.setattr("gasops_app.llm.requests.post",post)
+    times=iter([10.,10.125])
+    monkeypatch.setattr("gasops_app.llm.perf_counter",lambda:next(times))
+    model=CompatibleReasoner(LLMConfig("openai/gpt-oss-120b","https://api.groq.com/openai/v1","fixture"))
+    assert model.select_public_sources("Quanto gas abbiamo a disposizione?")==("AGSI+",)
+    assert bodies[0]["max_completion_tokens"]==768
+    assert model.usage_summary()["provider_elapsed_ms"]==125
+    assert model.usage_summary()["total_tokens"]==162
