@@ -71,7 +71,7 @@ def test_bso_page_demo_and_imported_empty():
     assert not app.exception
     app.radio(key="bso_view").set_value("Registro operativo").run()
     assert not app.exception
-    assert app.selectbox(key="bso_register_section").options==["Agenda","Calendario Snam","KPI bilanciamento","KPI settlement"]
+    assert app.selectbox(key="bso_register_section").options==["Agenda","Calendario Snam","Indicatori bilanciamento","Indicatori bilanci"]
     assert app.selectbox(key="bso_register_section").value=="Scadenze"
     assert app.radio(key="bso_mode").value=="Dati importati"
     app.radio(key="bso_mode").set_value("Demo").run()
