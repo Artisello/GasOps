@@ -13,7 +13,7 @@ def watch(store, job, connections, *, on_done=None):
     @st.fragment(run_every=4)
     def progress():
         if job.done() and job.exception():
-            st.caption("Aggiornamento interrotto · dati disponibili dalla cache.")
+            st.caption("Aggiornamento interrotto · ultime copie valide, se disponibili.")
         elif job.done():
             if on_done:
                 on_done(job.result())
@@ -21,7 +21,7 @@ def watch(store, job, connections, *, on_done=None):
         elif journal(store).get("connections",{}) != connections:
             st.rerun()
         else:
-            st.caption("Aggiornamento delle fonti in corso.")
+            st.caption("Fonti in aggiornamento…")
 
     progress()
 
@@ -32,7 +32,7 @@ def connection_status(connections, *, gie):
         if source in ("agsi","alsi") and not gie:
             detail = "Chiave API assente"
         elif not status:
-            detail = "Acquisizione non ancora completata"
+            detail = "In attesa di verifica"
         else:
             good, expected = status["valid"], status["expected"]
             connection = ("Risposta verificata" if good==expected and not status.get("partial") else
