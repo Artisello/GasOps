@@ -44,11 +44,9 @@ def test_system_status_has_four_kpis_nine_components_and_keeps_demo_separate(off
     assert sum("Bilancio non riconciliabile" in c.value for c in app.caption)==1
     assert len(app.get("deck_gl_json_chart")) == 1
     assert not any(b.key == "net_refresh" for b in app.button)
-    if mode == "demo":
-        assert any("Prova con un esempio" == s.value for s in app.subheader)
-        assert any("separati dai dati pubblici" in c.value for c in app.caption)
-    else:
-        assert not any("Prova con un esempio" == s.value for s in app.subheader)
+    assert not any("Prova con un esempio" == s.value for s in app.subheader)
+    assert not any(b.key and b.key.startswith("demo_example_") for b in app.button)
+    assert not any('class="demo-card ' in body for body in bodies)
 
 
 def test_finding_opens_verified_point_with_same_day_and_preserves_evidence(offline, monkeypatch):
