@@ -11,7 +11,7 @@ from .assistant_sources import source_rows
 from .models import Agent, AGENT_LABELS, Kind, Run, utc_now
 from .reports import markdown
 from . import session
-from .session import analysis_label, launch, market_scope, reasoner, source_filters, ai_activation_panel
+from .session import launch, reasoner, source_filters, ai_activation_panel
 from .visuals import evidence, info, local_time, steps, ai_readout, header
 from .workflow import DAILY_BRIEFING
 
@@ -81,7 +81,7 @@ def _source_evidence_panel(report):
     title=f"Fonti pertinenti · {len(selected)}"
     if report.mode=="LLM-assisted":
         title+=f" · {cited} citate dall’AI"
-    with st.expander(title,expanded=bool(report.assumptions.get("source_lookup")) or len(selected)<=3):
+    with st.expander(title,expanded=bool(report.assumptions.get("source_lookup")) and not report.interpretation):
         for row in selected:
             status=by_status.get(row["status"],row["status"])
             detail=[str(row["source"]),row["scope"],row["period"],status,"Citata" if row["cited"] else None]
@@ -98,7 +98,7 @@ def _source_evidence_panel(report):
                 st.caption(row["limitation"])
 
 
-def _report(report:Run,selection):
+def _report(report:Run,selection,*,fresh=False):
     inferred=report.mode=="LLM-assisted" and bool(report.interpretation)
     mode=("AI · "+(report.model or "modello selezionato") if inferred else
           "Calcoli locali · AI non disponibile" if report.mode=="Deterministic fallback" else "Calcoli locali · senza risposta AI")
@@ -117,15 +117,14 @@ def _report(report:Run,selection):
         st.text(f"{report.source.name} · {TIPI[report.source.kind]} · periodo {period}")
         if report.assumptions.get("requested_country")=="DE":
             st.caption("Perimetro Germania · bilancio mensile Eurostat.")
-        if (not report.assumptions.get("requested_country") and (not selection.bundle or
-                report.input_sha256!=selection.bundle.fingerprint)) or report.assumptions.get("model")!=selection.model:
+        if selection is not None and ((not report.assumptions.get("requested_country") and (not selection.bundle or
+                report.input_sha256!=selection.bundle.fingerprint)) or report.assumptions.get("model")!=selection.model):
             st.warning("Questo risultato usa dati o un modello previsionale diversi dalla selezione corrente. Esegui una nuova analisi per aggiornarlo.")
     for warning in report.warnings:
         st.warning(warning)
     if report.source.refresh_failed:
         st.warning("La fonte non è stata aggiornata correttamente.")
     if inferred:
-        st.markdown("**Risposta AI**")
         ai_readout(report)
     elif not lookup:
         if report.mode!="Deterministic" and not report.warnings:
@@ -136,11 +135,7 @@ def _report(report:Run,selection):
     _source_evidence_panel(report)
     if gme:=report.assumptions.get("gme_request"):
         from .gme_market_page import assistant_prices
-        assistant_prices(gme,report.started_at)
-    elif not lookup and (report.source.grain=="daily" and not report.source.archive and
-                         report.source.kind in (Kind.LIVE,Kind.HISTORICAL) and report.assumptions.get("requested_country","IT")=="IT"):
-        from .gme_market_page import daily_context
-        daily_context(report.source.latest_period)
+        assistant_prices(gme,report.started_at,refresh=fresh)
     if Agent.REGULATORY in report.results:
         st.caption("Normativa: materiali di studio, non PDF caricati.")
         info("Fonti normative","I riscontri normativi del supervisore usano materiali predisposti. Interroga i PDF del tuo archivio in Norme e documenti.")
@@ -244,17 +239,12 @@ def ai_configured() -> bool:
 def assistant_page():
     from .workspace import picker
     header("Assistente AI","")
-    modes=["Assistente operativo","Analista dati","Report locali"]
-    from .gme_market import api_configured as gme_configured
-    if gme_configured():
-        modes.append("Indicatori GME")
-    default=0 if reasoner() or ai_configured() else 2
-    view=picker("Modalità assistente",modes,index=default,key="assistant_view",
-                labels={"Assistente operativo":"Chiedi all’AI","Analista dati":"Esplora i dati","Report locali":"Report senza AI"})
-    if view=="Indicatori GME":
-        from .gme_market_page import assistant
-        assistant()
-        return
+    modes=("Assistente operativo","Analista dati","Report locali")
+    # Migrate retired GME navigation without changing the execution-mode consent.
+    if st.session_state.get("assistant_view") not in (*modes,None):
+        st.session_state["assistant_view"]="Assistente operativo"
+    view=picker("Modalità assistente",modes,index=0,key="assistant_view",
+                labels={"Assistente operativo":"Chiedi all’AI","Analista dati":"Esplora dati","Report locali":"Report"})
     if view=="Analista dati":
         from .data_analyst_page import panel
         panel()
@@ -263,64 +253,102 @@ def assistant_page():
     model=None if local else reasoner()
     if not local and model is None:
         ai_activation_panel(prefix="assistant")
-        st.chat_input("Attiva l’AI per scrivere una domanda",key="assistant_question",max_chars=600,disabled=True)
-        st.caption("Disponibili anche senza AI: report ed esplorazione dati.")
+        st.chat_input("Fai una domanda sul mercato del gas",key="assistant_question",max_chars=600,disabled=True)
+        previous=_history()
+        if previous:
+            with st.chat_message("user"):
+                st.text(previous.question)
+            with st.chat_message("assistant"):
+                _report(previous,None)
         return
-    selection=source_filters("ops",lookback=False)
-    area,scope=market_scope(selection.name)
-    mode_label="Calcoli locali" if local else "AI · "+model.config.model
-    st.caption(area+" · "+scope+" · "+mode_label)
-    if model and not model.config.local:
-        st.caption("Provider esterno · solo dati pubblici.")
-    if local:
-        info("Come funziona","Report deterministici con parametri e controlli predefiniti. Nessuna chat o interpretazione AI.")
-    else:
-        info("Come funziona","Ogni domanda avvia un'analisi indipendente. Il programma seleziona le fonti pertinenti; il modello interpreta le evidenze e deve citarle. Se non riesce, vengono mostrati solo calcoli di riserva, non una risposta AI.",
-             "Le scorciatoie utilizzano un tentativo AI di sintesi; le domande libere fino a tre chiamate. Lo storico rimane nella sessione.")
+
+    # Show the selected evidence perimeter in one line; detailed controls stay
+    # available without competing with the conversation.
+    source_slot=st.container(key="assistant_source_status")
+    with st.expander("Fonti e impostazioni",expanded=local):
+        selection=source_filters("ops",lookback=False)
+        if local:
+            info("Info report","Calcoli e controlli predefiniti, senza interpretazione AI.")
+        else:
+            info("Info assistente","Ogni domanda è indipendente. L’assistente consulta le fonti pertinenti; le risposte AI sono distinte dai calcoli locali.",
+                 "Le domande possono richiedere fino a tre chiamate. Lo storico è conservato nella sessione.")
+    with source_slot:
+        if selection.bundle is not None:
+            origin=selection.bundle.origin
+            period=origin.latest_period
+            st.caption(" · ".join(filter(None,[origin.name,period,"Report locali" if local else "AI attiva"])))
+            if origin.archive:
+                st.caption("Archivio storico · non mercato attuale.")
+            elif origin.kind==Kind.SYNTHETIC:
+                st.warning("Dati di esempio · non mercato reale.")
+            if origin.refresh_failed:
+                st.warning("Ultima copia valida · aggiornamento non riuscito.")
+        else:
+            st.caption("Fonte di base non disponibile. Apri Fonti e impostazioni per aggiornarla.")
+        if model and not model.config.local:
+            st.caption("Provider esterno · solo dati pubblici.")
+
     disabled=selection.bundle is None
-    controls=st.columns([1,1,1,1.4])
+    history_slot=st.container()
+    answer_slot=st.container(key="assistant_answer")
+    controls=st.columns([1,1,1,1.3],gap="small")
     shortcut=None
     for col,(label,question) in zip(controls[:3],STARTERS):
         if col.button(label,key="assistant_starter_"+label,width="stretch",disabled=disabled,help=question):
             shortcut=question
-    full=controls[3].button("Genera bollettino locale" if local else "Genera bollettino AI",key="assistant_briefing",type="secondary",width="stretch",disabled=disabled)
-    question=None if local else st.chat_input("Chiedi un indicatore, una data o un confronto…",key="assistant_question",max_chars=600)
+    full=controls[3].button("Bollettino",key="assistant_briefing",width="stretch",disabled=disabled,
+                            help="Genera bollettino locale" if local else "Genera bollettino AI")
+    question=None if local else st.chat_input("Fai una domanda sul mercato del gas…",key="assistant_question",max_chars=600)
     requested=DAILY_BRIEFING if full else shortcut or (question.strip() if question else "")
-    history_slot=st.container()
-    answer_slot=st.container()
-    def render(report):
+
+    def render(report,*,fresh=False):
         if local:
-            if report.mode=="LLM-assisted" and report.interpretation:
-                st.info("Questa analisi precedente contiene una risposta AI. Consultala in Assistente operativo con AI attiva.")
-                return
             st.text(report.question)
-            _report(report,selection)
+            _report(report,selection,fresh=fresh)
         else:
             with st.chat_message("user"):
                 st.text(report.question)
             with st.chat_message("assistant"):
-                _report(report,selection)
+                _report(report,selection,fresh=fresh)
+
+    def generate():
+        try:
+            return launch(selection,requested,full=full,persist=False,
+                          planned_only=bool(local or full or shortcut),compact=True,
+                          ai_policy="off" if local else "required")
+        except Exception as error:
+            LOG.warning("Assistant workflow failed (%s)",type(error).__name__)
+            return None
+
     generated=None
     attempted=bool(requested)
-    if requested:
+    if attempted:
         with answer_slot:
-            try:
-                generated=launch(selection,requested,full=full,persist=False,planned_only=bool(local or full or shortcut),compact=True,
-                                 ai_policy="off" if local else "required")
-            except Exception as error:
-                LOG.warning("Assistant workflow failed (%s)",type(error).__name__)
-            if generated:
-                _remember(generated)
+            if local:
+                generated=generate()
+                if generated:
+                    _remember(generated)
+                    render(generated,fresh=True)
+                else:
+                    st.error("Report non disponibile. Verifica le fonti.")
             else:
-                st.error("Analisi non riuscita. Verifica le fonti o specifica un indicatore." if not local else "Report locale non disponibile. Verifica le fonti.")
+                with st.chat_message("user"):
+                    st.text(requested)
+                with st.chat_message("assistant"):
+                    generated=generate()
+                    if generated:
+                        _remember(generated)
+                        _report(generated,selection,fresh=True)
+                    else:
+                        st.error("Analisi non disponibile. Verifica le fonti o specifica la domanda.")
     with history_slot:
         previous=_history(local)
-    with answer_slot:
-        report=generated or previous
-        if report:
-            if not generated:
-                st.caption("Ultimo risultato conservato · la nuova analisi non è riuscita." if attempted else
-                           "Risultato precedente · modalità effettiva indicata nel report")
-            render(report)
-        elif not attempted and disabled:
+    if not generated and previous:
+        with answer_slot:
+            if attempted:
+                st.divider()
+                st.caption("Ultimo risultato conservato · non è la risposta alla nuova richiesta.")
+            render(previous)
+    elif not attempted and disabled and local:
+        with answer_slot:
             st.info("Seleziona una fonte disponibile per iniziare.")
