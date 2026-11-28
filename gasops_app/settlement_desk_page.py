@@ -70,9 +70,15 @@ def _select_queue_day(days):
 def panel(*, source_controls=None):
     if source_controls is None:
         st.subheader("Bilanci mensili")
-    mode=(source_controls or st).radio("Dati da utilizzare",["Dati importati","Esempio guidato"],horizontal=True,
-                  index=1 if st.session_state.get("daily_desk_demo") else 0,key="daily_desk_data_mode",
-                  help="Carica il tuo registro CSV o consulta un caso con dati di esempio.")
+    saved=st.session_state.get(STATE,{})
+    has_import=bool(saved.get("rows")) and saved.get("authorized") is True and saved.get("origin")=="user_upload"
+    if has_import:
+        st.session_state["daily_desk_data_mode"]="Dati importati"
+        mode="Dati importati"
+    else:
+        mode=(source_controls or st).radio("Dati da utilizzare",["Dati importati","Esempio guidato"],horizontal=True,
+                      index=1 if st.session_state.get("daily_desk_demo") else 0,key="daily_desk_data_mode",
+                      help="Carica il tuo registro CSV o consulta un caso con dati di esempio.")
     example=mode=="Esempio guidato"
     if not example:
         _import_balances()

@@ -9,7 +9,7 @@ from .italiano import numero
 from .models import Kind, utc_now
 from .risk import RiskSettings, forecast_uncertainty
 from .risk_view import PRESETS, Stress, compare_stress, gap_distribution, cost_distribution
-from .session import assumptions, fixture, save_assumptions
+from .session import assumptions, fixture, save_assumptions, public_series
 from .visuals import BLUE, ROSE, TEAL, info, kpi_grid, plot, header
 
 
@@ -122,7 +122,10 @@ def risk_page(*, auto_demo=False):
             return
     st.caption("Scenario ipotetico · non rischio ufficiale")
     state=assumptions()
-    data=st.session_state.get("active_bundle") or fixture()
+    data=st.session_state.get("active_bundle")
+    if data is None or data.origin.kind==Kind.SYNTHETIC:
+        public=public_series(st.session_state)
+        data=public.get("monthly") or public.get("daily") or data or fixture()
     origin=data.origin
     context=MarketContext(data,state.model,utc_now())
     facts=context.facts

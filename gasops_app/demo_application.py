@@ -7,20 +7,17 @@ def prepare(route):
     from . import session
     state=st.session_state
     if "selected_source" not in state:
-        state["selected_source"]=session.ARCHIVE
+        state["selected_source"]=session.PUBLIC
     if "execution_mode" not in state:
         state["execution_mode"]="Deterministic"
     if route=="balancing":
         state.setdefault("balancing_view","Cockpit")
-        register=state.get("settlement_desk_csv_v1",{})
-        imported=register.get("authorized") is True and register.get("origin")=="user_upload" and bool(register.get("rows"))
-        state.setdefault("daily_desk_data_mode","Dati importati" if imported else "Esempio guidato")
+        state.setdefault("daily_desk_data_mode","Dati importati")
     elif route=="security-of-supply" and "operational_platform" not in state:
         state["operational_platform"]="MAP"
     elif route=="kpi":
         state.setdefault("bso_view","Registro operativo")
-        tasks=state.get("bso_tasks_v1",{}).get("tasks")
-        state.setdefault("bso_mode","Dati importati" if tasks else "Demo")
+        state.setdefault("bso_mode","Dati importati")
     elif route=="operations":
         _prepare_assistant()
 

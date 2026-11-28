@@ -899,3 +899,23 @@ def test_assistant_retains_last_result_when_launch_fails(monkeypatch,tmp_path):
     assert app.session_state[assistant.HISTORY][0].id==prior.id
     assert any("Ultimo risultato conservato" in c.value for c in app.caption)
     assert any(e.value==prior.question for e in app.text)
+
+
+def test_public_source_choices_hide_only_redundant_synthetic_series():
+    from dataclasses import replace
+    from gasops_app import session
+    from gasops_app.data import synthetic, jrc_archive
+    from gasops_app.live_sources import BUNDLES
+    from gasops_app.models import Kind
+    example=synthetic()
+    archive=jrc_archive()
+    assert session.DEMO in session.available_source_choices({})
+    assert session.DEMO in session.available_source_choices({"active_bundle":example})
+    assert session.DEMO in session.available_source_choices({"active_bundle":archive})
+    # Synthetic test fixture representing the shape of an acquired public series.
+    acquired=replace(example,origin=example.origin.model_copy(update={"kind":Kind.LIVE,"archive":False}))
+    state={BUNDLES:{"daily":acquired},"active_bundle":example}
+    assert session.public_series(state)["daily"] is acquired
+    assert session.available_source_choices(state)==(session.PUBLIC,session.DAILY,session.ARCHIVE)
+    empty=replace(acquired,rows=acquired.rows.iloc[:0])
+    assert session.DEMO in session.available_source_choices({BUNDLES:{"daily":empty}})

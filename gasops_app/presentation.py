@@ -59,11 +59,8 @@ def _overview(pack, *, network=True):
         with st.container(key="network_home_title"):
             header("I.G.O.R. - Sistema Gas Italiano", "")
         panel(mode="overview")
-        st.divider()
-        st.subheader("Prova con un esempio")
-        st.caption("Casi simulati · separati dai dati pubblici")
-    else:
-        _heading("BSO, in sintesi", "Demo", "Casi simulati e dati pubblici storici")
+        return
+    _heading("BSO, in sintesi", "Demo", "Casi simulati e dati pubblici storici")
     b, r, o = pack["balancing"], pack["revision"], pack["operations"]
     with st.container(key="demo_cards"):
         columns = st.columns(3)
@@ -83,8 +80,6 @@ def _overview(pack, *, network=True):
                 action={"Balancing":"Esplora il bilanciamento","Settlement":"Esplora la rettifica","Operations":"Esplora le scadenze"}[view]
                 st.button(action,key="demo_example_"+view.lower(),on_click=_open_example,args=(view,),
                           icon=":material/arrow_forward:",width="stretch")
-    if network:
-        return
     left, right = st.columns([1.5, 1])
     with left, st.container(border=True):
         st.subheader("SAS · giornata simulata")
@@ -269,7 +264,7 @@ def _developments():
 def home():
     """Compact landing page inside the complete application's sidebar shell."""
     with st.container(key="demo_content"):
-        _overview(cases())
+        _overview(None)
 
 
 def page():

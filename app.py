@@ -22,10 +22,9 @@ def demo_home():
     # Keep this callback in the rerun entry point. A running Cloud process may
     # still hold the earlier presentation module without its newer home alias.
     from gasops_app.presentation import _overview
-    from gasops_app.demo_cases import cases
 
     with st.container(key="demo_content"):
-        _overview(cases())
+        _overview(None)
 
 
 def application(demo=True):
@@ -70,7 +69,7 @@ def application(demo=True):
             st.html('<div class="gas-nav-group gas-nav-settings">Analisi</div>')
             session.sidebar()
         else:
-            st.caption("Demo esplorabile · fonti pubbliche ed esempi dichiarati")
+            st.caption("Fonti pubbliche · esempi separati")
         st.html('<div class="gas-byline"><strong>Prototipo per Snam · creato da Igor</strong><small>Progetto indipendente, non ufficiale.</small></div>')
     if demo:
         demo_application.prepare(current.url_path)

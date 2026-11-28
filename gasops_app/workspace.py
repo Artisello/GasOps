@@ -90,8 +90,10 @@ def render(*, show_example=True):
 
 
 def getting_started():
-    st.button("Prova un bilancio di esempio", key="workspace_example",
-              icon=":material/play_arrow:", on_click=open_workspace, args=("settlement_example",))
+    saved=st.session_state.get("settlement_desk_csv_v1",{})
+    if not (saved.get("rows") and saved.get("authorized") is True and saved.get("origin")=="user_upload"):
+        st.button("Prova un bilancio di esempio", key="workspace_example",
+                  icon=":material/play_arrow:", on_click=open_workspace, args=("settlement_example",))
     with st.popover("Info · da dove iniziare",icon=":material/info:"):
         from .bso_reference import render_terms
         st.markdown("**Sistema gas** per le stime aggregate della rete. **Bilanci e rettifiche** per il saldo del partecipante. "

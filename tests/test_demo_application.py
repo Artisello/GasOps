@@ -68,6 +68,7 @@ def test_every_feature_route_is_reachable_offline_and_preserves_imports(monkeypa
     saved={"sha":"existing-evidence","rows":rows,"name":"session.csv"}
     app=AppTest.from_file(ROOT/"app.py",default_timeout=60)
     app.session_state["settlement_desk_csv_v1"]=saved
+    app.session_state["selected_source"]=session.ARCHIVE  # Explicit offline test source, not production default.
     app.run()
     assert not app.exception
     links={x.proto.page:x.proto.page_script_hash for x in app.get("page_link")}
@@ -87,7 +88,7 @@ def test_every_feature_route_is_reachable_offline_and_preserves_imports(monkeypa
         if path=="balancing":
             assert app.radio(key="balancing_view").value=="Cockpit"
             app.radio(key="balancing_view").set_value("Controllo giornaliero").run()
-            assert app.radio(key="daily_desk_data_mode").value=="Esempio guidato"
+            assert app.radio(key="daily_desk_data_mode").value=="Dati importati"
         if path=="operations":
             assert app.session_state["assistant_history_v1"]==[]
             assert app.radio(key="assistant_view").value=="Report locali"
@@ -119,3 +120,13 @@ def test_all_page_modules_have_a_dependency_path_from_the_application():
         reached.add(name)
         pending.extend(graph[name]-reached)
     assert {name for name in paths if name.endswith("_page")}<=reached
+
+
+def test_initial_source_and_private_registers_are_not_automatically_synthetic(monkeypatch):
+    state={}
+    monkeypatch.setattr(demo_application.st,"session_state",state)
+    demo_application.prepare("balancing")
+    demo_application.prepare("kpi")
+    assert state["selected_source"]==session.PUBLIC
+    assert state["daily_desk_data_mode"]=="Dati importati"
+    assert state["bso_mode"]=="Dati importati"
