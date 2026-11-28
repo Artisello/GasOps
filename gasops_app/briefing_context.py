@@ -14,6 +14,8 @@ from .public_data import SourceUnavailable
 
 def inventory_context(result, now, platform, *, day=None):
     requested = day
+    if result.get("no_observation"):
+        raise ValueError("Nessuna osservazione utilizzabile restituita dall’ultima richiesta GIE.")
     cols=("stock_twh","fill_pct","withdrawal_gwh_d","injection_gwh_d") if platform=="AGSI+" else (
           "inventory_1000m3_lng","inventory_gwh","sendout_gwh_d","sendout_reference_pct")
     frame=result["frame"]
