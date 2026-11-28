@@ -42,7 +42,7 @@ FIELDS = {
     "FlowDate": "Data di flusso", "SessionDate": "Data sessione", "GasDay": "Giorno gas",
     "Date": "Data sessione", "Market": "Mercato", "Product": "Prodotto",
     "StorageCompany": "Impresa di stoccaggio", "Type": "Tipo", "OfferPoint": "Punto di offerta",
-    "Reason": "Motivazione",
+    "Reason": "Motivazione", "Zone": "Zona", "Hour": "Ora di flusso",
 }
 PREFERRED = {"prices": "WeightedAveragePrice", "continuous": "AveragePrice", "pgr": "RemunerationPrice"}
 
@@ -158,7 +158,7 @@ def _automatic_sources(windows):
     window = _next_window(windows,_session_cache(),attempts,now,cutoff)
     if window and network_allowed():
         try:
-            job = _submit(window,cutoff)
+            job = _submit(window,g.pun_closed_day(now) if window[0]=="pun" else cutoff)
         except ValueError as exc:
             attempts[window] = (now,str(exc))
         else:
@@ -176,10 +176,13 @@ def _automatic_sources(windows):
 def _panel_period(kind, segment, prefix, cutoff, day):
     spec = g.DATASETS[kind]
     ending = min(day or cutoff,cutoff)
-    _,_,first,last = _window(kind,segment,ending,31 if kind in ("igi","prices") else 7)
+    _,_,first,last = _window(kind,segment,ending,31 if kind in ("igi","prices","pun") else 7)
+    if kind=="pun":
+        first=max(first,g.PUN_FIRST_DAY)
+        last=max(last,first)
     context = f"{prefix}_{kind}_{segment}" + (f"_{day.isoformat()}" if day else "")
     period = st.date_input("Periodo · "+FIELDS[spec.date_field].lower(),value=(first,last),
-        min_value=g.FIRST_DAY,max_value=cutoff,format="DD/MM/YYYY",key=context+"_period")
+        min_value=g.PUN_FIRST_DAY if kind=="pun" else g.FIRST_DAY,max_value=cutoff,format="DD/MM/YYYY",key=context+"_period")
     if len(period)!=2 or not 0 <= (period[1]-period[0]).days < 31:
         st.caption("Seleziona un intervallo fino a 31 giorni.")
         return None
@@ -188,11 +191,11 @@ def _panel_period(kind, segment, prefix, cutoff, day):
 
 def panel(kind=None, *, prefix="gme", day=None):
     if kind is None:
-        st.subheader("Mercato gas · GME")
-        kind = st.selectbox("Dataset", tuple(g.DATASETS),
+        st.subheader("Mercato GME · gas ed elettricità")
+        kind = st.selectbox("Dataset", tuple(k for k in g.DATASETS if k!="pun")+("pun",),
                             format_func=lambda k: g.DATASETS[k].label, key="gme_dataset")
     spec = g.DATASETS[kind]
-    cutoff = closed_gas_day(utc_now())
+    cutoff = g.pun_closed_day(utc_now()) if kind=="pun" else closed_gas_day(utc_now())
     segment = spec.segments[0]
     if len(spec.segments) > 1:
         segment = st.selectbox("Segmento", spec.segments, key=prefix+"_segment_"+kind)
@@ -239,6 +242,17 @@ def _results(item, *, prefix, day=None):
         rows = [row for row in rows if row[day_col] == day.isoformat()]
     if not rows:
         st.info("Nessuna osservazione GME nel periodo selezionato.")
+        return
+    if kind=="pun":
+        first,last=item["first"],item["last"]
+        value=g.pun_mean(item,first,last)
+        if value is not None:
+            kpi_grid([("PUN Index GME · media oraria",value,g.EUR_MWH,
+                       data_it(first)+" – "+data_it(last),2,"")])
+        else:
+            st.info("Media non disponibile: periodo orario incompleto.")
+        with st.expander("Prezzi orari"):
+            st.dataframe(pd.DataFrame(rows).rename(columns={"FlowDate":"Data","Hour":"Ora","Price":"€/MWh"}),hide_index=True,width="stretch")
         return
     if item["missing"]:
         st.caption(f"{item['missing']} misure assenti nell’estratto.")
@@ -397,7 +411,7 @@ def assistant_prices(request, as_of, *, report_id, refresh=False):
     elif result["cards"]:
         kpi_grid(result["cards"])
         st.caption("Fonte: "+g.SOURCE+" · dati della risposta originale")
-    else:
+    if result is not None and result.get("message"):
         st.caption(result["message"])
     st.markdown("[Mercato e previsioni](/market)")
 
@@ -406,9 +420,36 @@ def _assistant_price_readout(request, as_of):
     if not g.api_configured():
         return {"cards":[],"message":"API GME non configurata."}
     requested=request.get("day")
+    pun_cards=[]
+    pun_message=""
+    if "pun" in request.get("kinds",()):
+        item=snapshot("pun",api_only=True)
+        end=g.pun_closed_day(as_of)
+        first=last=None
+        if request.get("pun_unsupported"):
+            pun_message="PUN Index: indica un giorno o un mese concluso; confronto e altre granularità non supportati."
+        elif request.get("pun_month"):
+            from calendar import monthrange
+            first=date.fromisoformat(request["pun_month"])
+            last=first.replace(day=monthrange(first.year,first.month)[1])
+        elif requested:
+            first=last=date.fromisoformat(requested)
+        elif item:
+            candidates=sorted({date.fromisoformat(row["FlowDate"]) for row in item["rows"]},reverse=True)
+            first=last=next((d for d in candidates if d<=end and g.pun_mean(item,d,d) is not None),None)
+        if not pun_message:
+            value=g.pun_mean(item,first,last) if first and last and last<=end else None
+            if value is not None:
+                period=data_it(first) if first==last else data_it(first)+" – "+data_it(last)
+                pun_cards.append(("PUN Index GME · elettricità",value,g.EUR_MWH,
+                    period+" · media oraria · acquisito "+local_time(item["acquired"]),2,""))
+            else:
+                pun_message="PUN Index GME non disponibile per il periodo completo. Acquisisci il dataset PUN in Mercato e previsioni."
+        if not any(k in request.get("kinds",()) for k in ("igi","prices")):
+            return {"cards":pun_cards,"message":pun_message}
     ending=date.fromisoformat(requested) if requested else closed_gas_day(as_of)
     if not g.FIRST_DAY<=ending<=closed_gas_day(utc_now()):
-        return {"cards":[],"message":"La data richiesta non è un giorno gas concluso del periodo supportato."}
+        return {"cards":pun_cards,"message":" ".join(filter(None,(pun_message,"La data richiesta non è un giorno gas concluso del periodo supportato.")))}
     kinds=tuple(kind for kind in ("igi","prices") if kind in request.get("kinds",()))
     # Price acquisition belongs to the market workspace. Only use the existing
     # validated session cache for explicitly requested GME readouts.
@@ -423,7 +464,7 @@ def _assistant_price_readout(request, as_of):
             if latest:
                 day=date.fromisoformat(latest)
         cards.extend(_prices(day,include_extremes=True,kinds=(kind,)))
-    return {"cards":cards,"message":"Nessun dato GME già acquisito per il periodo richiesto. Aggiorna i prezzi in Mercato e previsioni."}
+    return {"cards":pun_cards+cards,"message":" ".join(filter(None,(pun_message,"Nessun dato gas GME già acquisito per il periodo richiesto. Aggiorna i prezzi in Mercato e previsioni." if not cards else "")))}
 
 
 def balancing(day):
