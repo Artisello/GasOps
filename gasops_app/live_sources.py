@@ -12,7 +12,7 @@ from .advanced_kpis import entry
 from .mensile import load_monthly
 from .entsog import load as load_daily
 from .operational_sources import load_agsi,load_alsi,load_iip,GIE_LINKS
-from .terna_power import load_power,latest_day,token_batch
+from .terna_power import load_power,latest_day,token_batch,TernaHTTPError
 from .terna_history import make_batch,merge,STATE as HISTORY
 from .acer_market import load_lng
 
@@ -64,6 +64,10 @@ def refresh(state,store,now,selected,*,gie=None,terna=None,clock=utc_now,progres
         try:
             note=fn()
             records[name]={"status":"Da verificare" if note else "Acquisito","at":clock().isoformat(),"note":note or ""}
+        except SourceUnavailable as error:
+            records[name]={"status":"Da aggiornare","at":clock().isoformat(),
+                           "note":str(error) if name.startswith("terna") else
+                           "Fonte temporaneamente non disponibile. Ultimo dato valido conservato, se presente."}
         except Exception:
             records[name]={"status":"Da aggiornare","at":clock().isoformat(),
                            "note":"Fonte temporaneamente non disponibile. Ultimo dato valido conservato, se presente."}
@@ -164,6 +168,8 @@ def refresh(state,store,now,selected,*,gie=None,terna=None,clock=utc_now,progres
         first=today if kind=="capacity" else (today.replace(day=1)-timedelta(days=1)).replace(day=1)
         last=today+timedelta(days=1) if kind=="capacity" else first
         try:b=acquire(*terna,kind,first,last,now)
+        except TernaHTTPError:
+            raise
         except (SourceUnavailable,ValueError):
             if kind!="industry":raise
             first=(first-timedelta(days=1)).replace(day=1)

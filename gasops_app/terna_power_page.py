@@ -100,6 +100,23 @@ def _daily():
             st.code('GASOPS_TERNA_CLIENT_ID = "..."\nGASOPS_TERNA_CLIENT_SECRET = "..."',language="toml")
             st.caption("Inserire soltanto nei Secrets Streamlit o in .env locale; mai in chat, GitHub o nei campi pubblici. Verifica condizioni e quote Terna.")
     now=utc_now()
+    with st.expander("Diagnostica accesso Terna"):
+        from .terna_diagnostics import SERVICES,probe
+        from datetime import datetime
+        service=st.selectbox("Servizio",SERVICES,key="terna_probe_service")
+        if st.button("Verifica accesso",key="terna_probe",disabled=not bool(client and secret)):
+            previous=st.session_state.get("terna_probe_result",{})
+            checked=previous.get("checked_at")
+            if checked and now-datetime.fromisoformat(checked)<timedelta(seconds=60):
+                st.caption("Attendi un minuto prima di ripetere la verifica.")
+            else:
+                with st.spinner("Verifica Terna…"):
+                    st.session_state["terna_probe_result"]=probe(client,secret,service,now=now)
+        if result:=st.session_state.get("terna_probe_result"):
+            st.write(result["service"]+" · OAuth: "+result["oauth"]+" · "+result["status"])
+            if result["detail"]:st.caption(result["detail"])
+            if result["business_id"]:st.code(result["business_id"],language=None)
+            st.caption("Ultimo controllo: "+result["checked_at"])
     last=latest_day(now)
     with st.form("terna_request"):
         a,b=st.columns(2)
