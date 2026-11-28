@@ -19,6 +19,8 @@ ACER="ACER · GNL"
 NETWORK="ENTSOG · rete italiana"
 GME="GME"
 MASE="MASE · UNMIG"
+TTF_QUOTE="TTF · quotazione diretta"
+PSV_QUOTE="PSV · quotazione diretta"
 MARKET=(MONTHLY,DAILY)
 LABELS={MONTHLY:"Eurostat",DAILY:"ENTSOG",PRICE:"ARERA",WEATHER:"Open-Meteo",
         "AGSI+":"GIE AGSI+","ALSI":"GIE ALSI","IIP":"GIE IIP",
@@ -107,11 +109,21 @@ def requested_sources(question):
         names.remove(DAILY)
     lng=bool(re.search(r"\b(?:gnl|lng)\b",question))
     price=bool(re.search(r"prezz|price|quotaz|differenziale",question))
-    acer=bool(re.search(r"\b(?:acer|ttf)\b",question)) or (lng and price)
-    if re.search(r"\b(?:arera|psv)\b|cmem",question) or (price and not (acer or gme)):
+    ttf=bool(re.search(r"\bttf\b",question))
+    psv=bool(re.search(r"\bpsv\b",question))
+    direct=bool(re.search(r"\b(?:spot|day.ahead|within.day|front.month|future[sh]?|forward|intraday)\b",question))
+    arera=bool(re.search(r"\barera\b|cmem",question))
+    acer=bool(re.search(r"\bacer\b",question)) or (lng and price) or (ttf and bool(re.search(r"differenziale|spread|benchmark",question)) and lng)
+    ttf_quote=ttf and not acer
+    psv_quote=psv and direct
+    if arera or (psv and not psv_quote) or (price and not (acer or gme or ttf_quote or psv_quote)):
         names.append(PRICE)
     if acer:
         names.append(ACER)
+    if ttf_quote:
+        names.append(TTF_QUOTE)
+    if psv_quote:
+        names.append(PSV_QUOTE)
     if re.search(r"alsi|rigass|send.out|terminal|inventari",question) or (lng and not price):
         names.append("ALSI")
     if gme:
@@ -206,9 +218,13 @@ def complete_requirements(public,requested):
     # Missing/disabled sources are explicit limitations, not invented evidence.
     for key in requested:
         if key not in public:
+            reasons={
+                GME:"Indicatori GME consultabili nella vista locale.",
+                TTF_QUOTE:"Quotazione TTF diretta non integrata. Il differenziale GNL–TTF ACER non è il prezzo TTF.",
+                PSV_QUOTE:"Quotazione PSV spot o derivata non integrata. CMEM,m ARERA è un riferimento mensile, non il prezzo spot.",
+            }
             public[key]={"source":LABELS.get(key,key),"status":"unavailable",
-                         "reason":("Indicatori GME consultabili nella vista locale." if key==GME else
-                                   "Fonte non disponibile per questa analisi o disattivata.")}
+                         "reason":reasons.get(key,"Fonte non disponibile per questa analisi o disattivata.")}
     return public
 
 
