@@ -67,7 +67,7 @@ def test_operational_controls_stay_in_flow_and_warnings_are_readable():
     css=(ROOT/"gasops_app/theme.css").read_text()
     for selector in ("net_view_focus_","net_view_reset_"):
         assert not re.search(r'\[class\*="st-key-'+selector+r'"\]\s*\{[^}]*position\s*:\s*absolute',css)
-    note=re.search(r'\.gas-balance-note\s*\{([^}]+)\}',css).group(1)
+    note=re.search(r'^\s*\.gas-balance-note\s*\{([^}]+)\}',css,re.MULTILINE).group(1)
     assert "line-clamp" not in note and "overflow:hidden" not in note
     assert "var(--gas-amber)" in note
     tokens=dict(re.findall(r"--gas-([a-z-]+):\s*(#[0-9a-fA-F]{6})",css))
