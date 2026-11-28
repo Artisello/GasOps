@@ -174,7 +174,52 @@ def _period_report(report):
                     st.caption(item["limitation"])
 
 
+def _query_report(report):
+    payload=report.assumptions.get("assistant_query_evidence")
+    if not payload:
+        st.info(report.summary)
+        return
+    plan=payload["plan"]
+    labels={"mean":"Media aritmetica","sum":"Totale","min":"Minimo","max":"Massimo",
+            "change":"Variazione primo–ultimo","std":"Deviazione standard campionaria",
+            "correlation":"Correlazione di Pearson"}
+    op=plan["operation"]
+    label=labels[op]
+    monthly=plan["grain"]=="month"
+    first,last=(plan[k][:7] if monthly else plan[k] for k in ("from","to"))
+    st.caption("Calcolo locale · "+label+" · "+first+" – "+last)
+    if op=="correlation":
+        for item in payload["correlations"]:
+            st.metric("Correlazione (r)",numero(item["pearson"],3))
+            st.caption(str(item["n"])+" coppie · associazione, non causalità")
+        if not payload["correlations"]:
+            st.info("Correlazione non calcolabile: servono almeno 14 coppie complete e due serie non costanti.")
+    for row in payload["rows"]:
+        if row["value"] is not None:
+            value=numero(row["value"],2)+" "+row["unit"]
+            st.metric(row["metric"],value)
+            if op=="change" and row.get("change_pct") is not None:
+                st.caption("Variazione relativa: "+numero(row["change_pct"],2)+"%")
+        elif row.get("reason"):
+            st.info(row["metric"]+" · "+row["reason"])
+        st.caption(row["source"]+" · "+row["scope"]+" · "+str(row["n"])+"/"+str(row["expected"])+" osservazioni")
+    with st.expander("Fonti e metodo"):
+        for row in payload["rows"]:
+            st.caption(row["metric"]+" · "+row["status"])
+            if row["url"]:
+                st.markdown("[Fonte ufficiale]("+row["url"]+")")
+            if op=="change" and row.get("first_value") is not None:
+                st.text("Primo: "+numero(row["first_value"],2)+" · ultimo: "+numero(row["last_value"],2))
+        st.caption("Nessuna imputazione; le medie sono aritmetiche, non ponderate. I prelievi SRG non sono il totale nazionale.")
+        st.json(payload,expanded=False)
+    st.download_button("Scarica analisi JSON",json.dumps(payload,ensure_ascii=False,indent=2),
+        "igor-query-"+report.id[:10]+".json","application/json",key="query_export_"+report.id)
+
+
 def _report(report:Run,selection,*,fresh=False):
+    if report.assumptions.get("assistant_data_query"):
+        _query_report(report)
+        return
     if report.assumptions.get("assistant_period_comparison"):
         _period_report(report)
         return
@@ -383,7 +428,7 @@ def assistant_page():
             st.caption("Non inserire dati riservati con un provider remoto. Gli estratti dei PDF rimangono locali senza consenso esplicito.")
             for command,example in COMMANDS.items():
                 st.markdown("**"+command+"** · "+example)
-            st.caption("Esempi: /scorte 20/11/2026 · /mase 2025 · E il giorno precedente?")
+            st.caption("Esempi: /scorte 20/11/2026 · /mase 2025 · Media dei prelievi SRG negli ultimi 30 giorni · Totale delle importazioni negli ultimi 12 mesi.")
     question=None if local else st.chat_input("Chiedi qualcosa sul gas…",key="assistant_question",max_chars=600)
     requested=DAILY_BRIEFING if full else shortcut or (question.strip() if question else "")
     previous_turn=_previous_turn()
