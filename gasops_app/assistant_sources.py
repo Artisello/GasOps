@@ -168,7 +168,18 @@ COMMANDS={
     "/mase":"Qual è la produzione di gas nell’archivio MASE UNMIG?",
     "/previsioni":"Qual è la prossima previsione della domanda di gas?",
     "/bollettino":"Bollettino sul mercato del gas",
+    "/avvisi":"Quali record UMM sono disponibili nella finestra IIP?",
+    "/igi":"Qual è l’ultimo indice IGI GME già acquisito?",
 }
+
+
+# Exact commands are requests for a readout, not interpretation. Restrict
+# the fast path to these commands (no arbitrary suffixes or hypotheses).
+FAST_COMMANDS=frozenset(("/consumi","/scorte","/gnl","/prezzi","/produzione","/mase","/avvisi","/igi"))
+
+
+def fast_lookup_command(question):
+    return question.strip().casefold() in FAST_COMMANDS
 
 
 def expand_command(question):
