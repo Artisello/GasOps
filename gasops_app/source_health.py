@@ -78,52 +78,73 @@ def row(label,scope,kind,values,expected,now,*,acquired=None,failed=False,review
 
 
 def observation_health(frame,first,last,now):
-    """The same diagnostic for the Explorer and the Source Health Monitor.
+    """Report one coherent latest observation and independent window coverage.
 
-    Calendar coverage applies only to daily series. Source intervals are counted
-    as records, without inventing daily observations or event-free days.
+    Historical rows and D-1 comparison copies may be older than the current
+    observation. Their acquisition age is diagnostic, not current-data TTL.
     """
     from .gas_data import LABELS, _stamp
     if frame.empty:return row("Dati gas","Selezione","Non disponibile",{},dates(last,(last-first).days+1),now)
-    valid=frame.loc[frame.usable]
     interval=frame.time_basis.iloc[0]=="source_interval"
-    values={r.gas_day:float(r.value) for _,r in valid.iterrows() if r.gas_day is not None}
-    periods=[r.period_from.astimezone(ROME).date() for _,r in valid.iterrows() if r.period_from is not None]
-    acquisitions=[_stamp(v) for v in frame.retrieved_at if _stamp(v)]
-    comparison_dates=[_stamp(v) for v in frame.d1_retrieved_at if _stamp(v)]
-    oldest=min((*acquisitions,*comparison_dates),default=None)
+    # Never attach a timestamp from a different row to the selected value.
+    # A missing or inconsistent publication timestamp does not invent a date.
+    valid=frame.loc[frame.usable.astype(bool)].copy()
+    candidates=[]
+    temporal_issues=0
+    for _,r in valid.iterrows():
+        at=_stamp(r.retrieved_at)
+        published=_stamp(r.observed_at)
+        if at is None or at>now:
+            temporal_issues+=1
+            continue
+        if published is not None and published>at:
+            temporal_issues+=1
+            published=None
+        period=_stamp(r.period_from)
+        day=period.astimezone(ROME).date() if interval and period else r.gas_day
+        if day is not None and not pd.isna(day):
+            candidates.append((day,at,published,r))
+    # Prefer the most recent usable period, not the most recently downloaded
+    # historical row. For intervals, prefer the latest actual start on ties.
+    anchor=max(candidates,key=lambda x:(x[0],x[1],_stamp(x[3].period_from) or x[1]),default=None)
+    at=anchor[1] if anchor else None
+    published=anchor[2] if anchor else None
+    latest=anchor[0] if anchor else None
+    values={r.gas_day:float(r.value) for _,_,_,r in candidates if r.gas_day is not None and not pd.isna(r.gas_day)}
+    acquisitions=[t for v in frame.retrieved_at if (t:=_stamp(v)) is not None and t<=now]
+    comparisons=[t for v in frame.d1_retrieved_at if (t:=_stamp(v)) is not None and t<=now]
+    oldest=min((*acquisitions,*comparisons),default=None)
     newest=max(acquisitions,default=None)
-    published=[_stamp(v) for v in frame.observed_at if _stamp(v)]
+    oldest_age=now-oldest if oldest is not None else None
     failed=bool(frame.failed.any())
     confirmed=frame.publication_status.map(lambda s:str(s).casefold() in ("confirmed","final","definitive","c","pubblicato"))
-    review=bool(frame.partial.any() or (~confirmed).any() or (~frame.usable.astype(bool)).any()
+    review=bool(temporal_issues or frame.partial.any() or (~confirmed).any() or (~frame.usable.astype(bool)).any()
         or frame.quality_status.isin(("review","conflict","invalid_unit","incompatible_interval")).any())
     expected=dates(last,(last-first).days+1)
     label=frame.provider.iloc[0]+" · "+frame.entity_label.iloc[0]+" · "+LABELS.get(frame.indicator.iloc[0],frame.indicator.iloc[0])
-    item=row(label,str(frame.scope.iloc[0] or frame.point_direction.iloc[0] or "Singolo impianto"),
-        "Intervalli fonte" if interval else "Osservato",values,expected,now,acquired=newest,failed=failed,review=review,
-        counts=(len(valid),len(frame)) if interval else None,latest_override=max(periods,default=None) if interval else None,
-        note="Copertura dei record, non dei giorni senza eventi" if interval else "Giorni gas distinti; nessuna interpolazione")
     ttl=timedelta(hours=12 if frame.provider.iloc[0]=="ENTSOG" else 24)
-    age=now-oldest if oldest else None
-    stale=failed or age is not None and age>ttl
-    historical=last<(closed_gas_day(now) if frame.provider.iloc[0]=="ENTSOG" else now.astimezone(ROME).date()-timedelta(days=1))
-    partial=review or item["valid"]<item["expected"] or frame.cached.isna().any()
-    state=("Stale" if stale else "Partial" if partial else "Historical" if historical else
-           "Cached" if all(v is True for v in frame.cached) else "Live")
-    if valid.empty and not stale and not partial:state="Unavailable"
-    status=("Aggiornamento fallito · ultimo dato" if failed else "Da aggiornare") if stale else item["status"]
-    temporal=temporal_evidence(now=now,gas_day=max(values,default=None),retrieved_at=oldest,
-        current_day=closed_gas_day(now) if frame.provider.iloc[0]=="ENTSOG" else now.astimezone(ROME).date()-timedelta(days=1),
-        observed_at=max(published) if published else None,published_at=max(published) if published else None,
-        period_from=min((t for t in frame.period_from if _stamp(t)),default=None),
-        period_to=max((t for t in frame.period_to if _stamp(t)),default=None),
-        valid=item["valid"],expected=item["expected"],cached=all(v is True for v in frame.cached),
+    item=row(label,str(frame.scope.iloc[0] or frame.point_direction.iloc[0] or "Singolo impianto"),
+        "Intervalli fonte" if interval else "Osservato",values,expected,now,acquired=at,failed=failed,review=review,
+        counts=(len(candidates),len(frame)) if interval else None,latest_override=latest if interval else None,
+        cache_ttl=ttl,
+        note="Copertura dei record, non dei giorni senza eventi" if interval else "Giorni gas distinti; nessuna interpolazione")
+    current=closed_gas_day(now) if frame.provider.iloc[0]=="ENTSOG" else now.astimezone(ROME).date()-timedelta(days=1)
+    partial=review or item["valid"]<item["expected"] or bool(frame.cached.isna().any())
+    temporal=temporal_evidence(now=now,gas_day=latest,retrieved_at=at,current_day=current,
+        observed_at=published,published_at=published,
+        period_from=min((t for v in frame.period_from if (t:=_stamp(v)) is not None),default=None),
+        period_to=max((t for v in frame.period_to if (t:=_stamp(v)) is not None),default=None),
+        valid=item["valid"],expected=item["expected"],cached=bool(anchor and not pd.isna(anchor[3].cached) and anchor[3].cached),
         failed=failed,partial=partial,ttl=ttl,publication_status="Confirmed" if confirmed.all() else "Non confermato",
-        historical=historical)
+        historical=last<current)
+    status=("Aggiornamento fallito · ultimo dato" if failed and at else "Aggiornamento fallito" if failed else
+            "Da aggiornare" if temporal["stale"] else item["status"])
     return {**item,**temporal,"status":status,"state":temporal["data_status"],
-        "failed":failed,"partial":bool(partial),"cache_age_hours":round(age.total_seconds()/3600,2) if age else 0 if oldest else None,
+        "failed":failed,"cache_age_hours":round(oldest_age.total_seconds()/3600,2) if oldest_age is not None else None,
         "oldest_acquired":oldest.isoformat() if oldest else None,
+        "newest_acquired":newest.isoformat() if newest else None,
+        "timestamp_basis":"Ultima osservazione utilizzabile; acquisizione e pubblicazione della stessa riga",
+        "timestamp_issues":temporal_issues,
         "coverage_basis":"record" if interval else "giorni gas",
         "refresh_error":"Aggiornamento non riuscito; ultima copia valida" if failed else None,
         "revision_rows":int((frame.revision_count>1).sum()),"source_url":frame.source_url.iloc[0]}
