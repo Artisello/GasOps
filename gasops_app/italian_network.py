@@ -448,6 +448,10 @@ def validated_observations(network, observations, now, *, nonnegative=False):
     unverified or incorrectly dated physical observation into measured evidence.
     """
     identities = {(b.infrastructure_id,b.point_direction) for b in verified_bindings(network)}
+    return _validate_observations(identities,observations,now,nonnegative=nonnegative)
+
+
+def _validate_observations(identities, observations, now, *, nonnegative=False):
     eligible = []
     for o in observations:
         try:
@@ -468,6 +472,34 @@ def point_intelligence(network, identifier, observations, day, now, *, direction
     """One point/direction/day. No fallback to another day or derived headroom."""
     bindings = verified_bindings(network,identifier)
     records = validated_observations(network,(o for o in observations if o.infrastructure_id == identifier),now)
+    return _point_intelligence(bindings,records,day,now,direction=direction,snapshots=snapshots,
+                               failures=failures,ttl_hours=ttl_hours)
+
+
+class PointIntelligenceIndex:
+    """One-render index. No cross-session or cross-timestamp operational cache."""
+    def __init__(self, network, observations, snapshots, now):
+        self.now = now
+        self.bindings = {}
+        confirmed = verified_bindings(network)
+        identities = {(b.infrastructure_id,b.point_direction) for b in confirmed}
+        for binding in confirmed:
+            self.bindings.setdefault(binding.infrastructure_id,[]).append(binding)
+        self.records = {}
+        for record in _validate_observations(identities,observations,now):
+            self.records.setdefault(record.infrastructure_id,[]).append(record)
+        self.snapshots = {}
+        for snapshot in snapshots:
+            self.snapshots.setdefault(snapshot.point_direction,[]).append(snapshot)
+
+    def point(self, identifier, day, *, direction=None, failures=(), ttl_hours=12):
+        bindings = self.bindings.get(identifier,())
+        snapshots = tuple(s for b in bindings for s in self.snapshots.get(b.point_direction,()))
+        return _point_intelligence(bindings,self.records.get(identifier,()),day,self.now,
+                                   direction=direction,snapshots=snapshots,failures=failures,ttl_hours=ttl_hours)
+
+
+def _point_intelligence(bindings, records, day, now, *, direction=None, snapshots=(), failures=(), ttl_hours=12):
     if direction is None:
         binding = next((b for b in bindings if b.direction == "entry" and applicable(records,b.point_direction,day,"Physical Flow") is not None),None)
         binding = binding or next((b for b in bindings if applicable(records,b.point_direction,day,"Physical Flow") is not None),None)
