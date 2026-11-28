@@ -308,3 +308,91 @@ def source_rows(run):
              "limitation":item.get("limitation"),"cited":key in cited,
              "required":key in required,"evidence":source_evidence(key,item)}
             for key,item in public.items()]
+
+
+# Conversational date changes are intentionally narrow. Never use model prose,
+# inferred dates or a different source as an instruction for the next analysis.
+_FOLLOWUP_DATE = re.compile(
+    r"^(?:e\s+)?(?:(?:in\s+data|per\s+il|per|del|il|al|a)\s+)?("
+    + DATE_TEXT.replace("(?<!\\d)","").replace("(?!\\d)","")
+    + "|" + _MONTH_DATE.replace("(?<!\\d)","").replace("(?!\\d)","")
+    + r"|ieri|oggi|domani)\s*[?.!]*$", re.I)
+_FOLLOWUP_PREVIOUS = re.compile(
+    r"^(?:e\s+)?(?:rispetto\s+)?(?:(?:al|a|il)\s+)?"
+    r"(giorno precedente|giorno prima|sette giorni prima|7 giorni prima)\s*[?.!]*$", re.I)
+_FOLLOWUP_REFERENCE = re.compile(
+    r"^(?:e\s+(?:in|nel|nella|per|il|al|a|rispetto|quanto|come|quali|la|le|lo|i|gli)\b"
+    r"|(?:e\s+)?rispetto\b|(?:e\s+)?(?:fammi|mostrami|crea|disegna|genera)\s+(?:un\s+)?grafico\b"
+    r"|(?:e\s+)?(?:perché|perche|spiegami perché|spiegami perche)\b"
+    r"|(?:e\s+)?(?:la|il)\s+(?:settimana|mese|anno)\s+(?:precedente|scors[oa])\b"
+    r"|e\s+(?:in\s+)?(?:germania|italia|europa|francia|spagna)\b)", re.I)
+_DAILY_FOLLOWUP_SOURCES = {DAILY,"AGSI+","ALSI",POWER[0],NETWORK,GME}
+_DATE_MARKER = re.compile(DATE_TEXT+"|"+_MONTH_DATE+r"|\b(?:ieri|oggi|domani)\b",re.I)
+
+
+def resolve_followup(question, previous, *, today):
+    """Return a standalone question or an explicit clarification.
+
+    The caller supplies only the latest successful chat turn, not the selected
+    history entry. Re-run the normal evidence policy on the rewritten question.
+    """
+    text=question.strip()
+    if not text or text.startswith("/"):
+        return text,None
+    exact=_FOLLOWUP_DATE.fullmatch(text)
+    relative=_FOLLOWUP_PREVIOUS.fullmatch(text)
+    if not exact and not relative:
+        # A complete new question is not a continuation merely because it
+        # begins with 'e'. Only short, unresolved references are intercepted.
+        if _FOLLOWUP_REFERENCE.search(text):
+            if re.search(r"\bgrafico\b|perch[eé]|\brispetto\b|settimana precedente|mese precedente|anno precedente",text,re.I) or not requested_sources(text):
+                return None,"Specifica il dato e il periodo da confrontare o rappresentare."
+        return text,None
+
+    if previous is None:
+        return None,"A quale dato ti riferisci? Indica l’indicatore e la data."
+    assumptions=previous.assumptions
+    if not assumptions.get("source_lookup") or assumptions.get("scope_unavailable"):
+        return None,"Indica l’indicatore da consultare e la data: l’analisi precedente non è una consultazione puntuale."
+    base=previous.question
+    sources=set(requested_sources(base))
+    if not sources or not sources <= _DAILY_FOLLOWUP_SOURCES:
+        return None,"Per cambiare periodo, specifica anche l’indicatore; non tutte le fonti pubblicano dati giornalieri."
+    if re.search(r"\b(?:simula|scenario|stress|prevision\w*|confront\w*|settimanal\w*|mensil\w*)\b",base,re.I):
+        return None,"Specifica il dato da consultare e la data, senza riutilizzare le ipotesi precedenti."
+
+    # Remove the old date, including its preposition, but never silently remove
+    # a different year/month qualifier, point identifier or geographic scope.
+    if mentions_day(base) and query_day(base,today=today) is None:
+        return None,"L’analisi precedente non identifica un solo giorno."
+    stripped=re.sub(r"\b(?:in\s+data|del|di|il|al|per\s+il|per)\s+(?="+_DATE_MARKER.pattern+r")","",base,flags=re.I)
+    stripped=_DATE_MARKER.sub("",stripped).strip(" ?.,;")
+    if re.search(r"(?<!\d)(?:19|20)\d{2}(?!\d)",stripped):
+        return None,"Indica una domanda completa per il nuovo periodo."
+    if exact:
+        day=query_day(text,today=today)
+        if day is None:
+            return None,"Indica un giorno valido, ad esempio 20/11/2026."
+    else:
+        raw=assumptions.get("requested_day")
+        if not raw:
+            # Infer an anchor only from a single verified daily observation,
+            # never from an acquisition timestamp or mixed-grain snapshots.
+            public=assumptions.get("public_operational_context") or {}
+            items=[public.get(key,{}) for key in sources]
+            periods={item.get("gas_day") or item.get("period") for item in items
+                     if useful_source(item) and item.get("grain")!="mese"}
+            if len(periods)!=1 or not all(useful_source(item) and item.get("grain")!="mese" for item in items):
+                return None,"Indica la data di partenza: non c’è un giorno osservato univoco."
+            raw=next(iter(periods))
+        try:
+            anchor=date.fromisoformat(raw)
+        except (TypeError,ValueError):
+            return None,"Indica la data di partenza."
+        day=anchor-timedelta(days=7 if relative.group(1).lower() in ("sette giorni prima","7 giorni prima") else 1)
+    resolved=stripped+" del "+day.isoformat()
+    if len(resolved)>600:
+        return None,"Formula una domanda più breve."
+    if set(requested_sources(resolved))!=sources:
+        return None,"Specifica il dato e la data in una nuova domanda."
+    return resolved,None
