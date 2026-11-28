@@ -124,6 +124,7 @@ class OverviewStatus:
     hours: int
     reconcilable: bool = False
     balance_message: str = "Bilancio non riconciliabile con i dati disponibili"
+    event_monitoring: dict = field(default_factory=dict)
 
 
 def _stamp(value):
@@ -292,22 +293,82 @@ def _forecast(state, day, now, policy):
         "Prelievi SRG · stima I.G.O.R.", ("Stima da un bollettino già calcolato; perimetro SRG",), (run.id,))
 
 
-def _event_records(network, state, interruptions, day, now):
+def _event_records(network, state, interruptions, day, now, policy):
+    from .data import ROME
     saved = state.get("italian_network_data_v1", {})
-    copies = {s["point_direction"]: s for s in interruptions}
-    copies.update(saved.get("interruptions", {}))
-    iip_result = state.get("gie_iip", {}).get("result")
+    expected = {b.point_direction for b in verified_bindings(network)}
+    copies = {}
+    for item in (*interruptions,*saved.get("interruptions",{}).values()):
+        at=_stamp(item.get("acquired"))
+        point=item.get("point_direction")
+        if point not in expected or not at or at>now or not item["first"]<=day<=item["last"]:
+            continue
+        prior=copies.get(point)
+        if prior is None or at>=prior["acquired"]:
+            copies[point]=item
+    complete=set()
+    stale=set()
+    missing_values=0
+    start,stop=gas_day_bounds(day)
+    for point,item in copies.items():
+        expired=now-item["acquired"]>timedelta(hours=policy.network_ttl_hours) or bool(item.get("failed"))
+        if expired:stale.add(point)
+        unknown=sum(r.get("value") is None for r in item["records"]
+                    if r["period_from"]<stop and r["period_to"]>start)
+        missing_values+=unknown
+        if not expired and item.get("partial") is False and not unknown:
+            complete.add(point)
+    iip_saved=state.get("gie_iip",{})
+    iip_result=iip_saved.get("result")
+    iip_state="unavailable"
+    iip_records=None
     if iip_result:
-        unique = {json.dumps(m, sort_keys=True, default=str):m for m in iip_result["messages"]}
-        iip_result = {**iip_result, "messages":list(unique.values())}
-    iip, unresolved = iip_events(network, iip_result, day, day)
-    events, withheld = verified_events(network,(*iip, *(r for s in copies.values() for r in s["records"])),day,day,now)
-    unresolved += withheld
-    queried = {s["point_direction"] for s in copies.values() if s["first"] <= day <= s["last"]
-               and _stamp(s.get("acquired")) and s["acquired"] <= now}
-    expected = {b.point_direction for b in network.bindings if b.provider == "ENTSOG"}
-    return tuple(events), Coverage(len(queried & expected), len(expected)), unresolved
+        at=_stamp(iip_result.get("acquired"))
+        a,z=_day(iip_result.get("request_from")),_day(iip_result.get("request_to"))
+        # The active-message query uses civil dates; both ends of a gas day
+        # must fall within the requested civil-date window.
+        in_window=bool(a and z and a<=start.astimezone(ROME).date() and stop.astimezone(ROME).date()<=z)
+        if not at or at>now:iip_state="unavailable"
+        elif iip_result.get("failed") or iip_saved.get("error") or now-at>timedelta(hours=policy.event_ttl_hours):
+            iip_state="stale"
+        elif not in_window:iip_state="window_unverified"
+        elif not iip_result.get("pagination_verified") or iip_result.get("partial") is not False or iip_result.get("reported_total")!=len(iip_result["messages"]):
+            iip_state="partial"
+        else:iip_state="complete"
+        if iip_state=="complete" or iip_state=="partial" and iip_result["messages"]:
+            iip_records=len(iip_result["messages"])
+        unique={json.dumps(m,sort_keys=True,default=str):m for m in iip_result["messages"]}
+        iip_result={**iip_result,"messages":list(unique.values())}
+    iip,unresolved=iip_events(network,iip_result,day,day)
+    events,withheld=verified_events(network,(*iip,*(r for item in copies.values() for r in item["records"])),day,day,now)
+    unresolved+=withheld+missing_values
+    # Positive notices are retained as documented evidence, not proof of
+    # continuing live status. No national zero is inferred from this sample.
+    events=tuple({**e,"monitoring_status":
+        iip_state if e["source"]=="GIE IIP" else
+        "stale" if e["point_direction"] in stale else
+        "complete" if e["point_direction"] in complete else "partial"} for e in events)
+    if not copies and iip_state in ("unavailable","stale","window_unverified"):
+        status="unavailable"
+    elif complete==expected and expected and iip_state=="complete" and not unresolved:
+        status="complete_mapped_scope"
+    else:status="partial"
+    monitoring={"status":status,"documented_count":len(events),
+                "active_event_count":None,
+                "entsog_queried":len(copies),"entsog_complete":len(complete),"entsog_expected":len(expected),
+                "entsog_stale":len(stale),"iip_status":iip_state,"iip_received_records":iip_records,
+                "unresolved":unresolved,
+                "limitation":"Eventi documentati nelle copie consultate; nessuna conclusione sul totale degli eventi attivi o sull’assenza di indisponibilità nazionali."}
+    return events,Coverage(len(complete),len(expected)),unresolved,monitoring
 
+
+def event_monitoring_label(status):
+    data=status.event_monitoring
+    if not data or data.get("status")=="unavailable":
+        return "Monitoraggio eventi non disponibile"
+    if data["status"]=="complete_mapped_scope":
+        return "Copertura verificata nel perimetro mappato"
+    return "Monitoraggio eventi parziale"
 
 def _best_day(days, observations, demand_frame, state, now, closed, policy):
     """Latest day with at least 80% of the best observed same-day coverage."""
@@ -385,7 +446,7 @@ def build_status(network, snapshots, state, now, *, gas_day=None, interruptions=
     imports, lng, exports = (measures[k] for k in ("imports", "lng", "exports"))
     components = tuple(BalanceComponent(key, label, side, measures[key]) for key, label, side in BALANCE)
     coverage = Coverage(sum(c.measure.value is not None for c in components), len(BALANCE))
-    events, event_coverage, unresolved = _event_records(network, state, interruptions, day, now)
+    events, event_coverage, unresolved, monitoring = _event_records(network, state, interruptions, day, now, policy)
     findings, flags = [], []
     def finding(category, description, rule, source_id, *, value=None, threshold=None, unit="", observed=None,
                 retrieved=None, infrastructure=None, direction=None, evidence=(), identity="", baseline=None, baseline_n=0):
@@ -448,7 +509,9 @@ def build_status(network, snapshots, state, now, *, gas_day=None, interruptions=
             event["source"], value=event.get("value"), unit=event.get("unit") or "",
             observed=_stamp(event.get("observed_at")), retrieved=event["retrieved_at"], infrastructure=event["infrastructure_id"],
             direction=binding.direction if binding else None, evidence=(event["source_id"],), identity=event["source_id"])
-    if event_coverage.valid < event_coverage.expected:
+    if monitoring["status"]=="unavailable":
+        flags.append("events:unavailable")
+    if monitoring["status"]!="complete_mapped_scope":
         flags.append("events:partial")
     if unresolved:
         flags.append("events:unresolved")
@@ -470,4 +533,4 @@ def build_status(network, snapshots, state, now, *, gas_day=None, interruptions=
         "partial" if coverage.valid < coverage.expected else "observed", coverage, imports, storage, lng, demand, forecast,
         events, tuple(sorted(set(flags))), components, tuple(sorted(findings, key=lambda f: (f.category == "quality", f.id))),
         tuple(session_health(state,now,inspections=inspections,network=network,snapshots=snapshots,interruptions=interruptions)),
-        event_coverage,int((stop-start).total_seconds()/3600))
+        event_coverage,int((stop-start).total_seconds()/3600),event_monitoring=monitoring)

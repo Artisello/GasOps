@@ -136,7 +136,8 @@ def balance(status, *, compact=False):
             st.caption("Verifiche delle fonti")
             st.dataframe([{"Fonte":r["source"], "Stato":r["status"], "Ultimo periodo":r["latest"],
                 "Copertura":f"{r['valid']}/{r['expected']}"} for r in status.source_health], hide_index=True, width="stretch")
-            st.caption(f"Avvisi ENTSOG consultati su {status.event_coverage.valid}/{status.event_coverage.expected} punti/direzioni. Copertura non nazionale; nessuna conclusione sull’assenza di indisponibilità.")
+            st.caption(f"Copertura ENTSOG verificata: {status.event_coverage.valid}/{status.event_coverage.expected} punti/direzioni. Copertura non nazionale.")
+            st.caption("IIP: "+status.event_monitoring.get("iip_status","unavailable")+" · eventi documentati, non totale nazionale.")
             st.download_button("Esporta stato e provenienza", json.dumps(asdict(status), ensure_ascii=False, indent=2,
                 default=lambda v:v.isoformat() if hasattr(v,"isoformat") else str(v)),
                 "igor-system-status.json", "application/json", key="system_status_export")
@@ -146,7 +147,9 @@ def balance(status, *, compact=False):
 def attention(status, network, open_point, *, compact=False):
     with st.container(key="system_operational_attention"):
         st.subheader("Attenzione operativa")
+        from .system_status import event_monitoring_label
         st.caption("Indicatori di attenzione calcolati da I.G.O.R.")
+        st.caption(event_monitoring_label(status)+f" · {status.event_coverage.valid}/{status.event_coverage.expected} punti ENTSOG verificati")
         names = {i.id:i.name.replace("_", " – ") for i in network.infrastructure}
         categories = {"quality":"Qualità dati", "capacity":"Capacità", "deviation":"Scostamento", "event":"Evento pubblicato"}
         if status.attention:

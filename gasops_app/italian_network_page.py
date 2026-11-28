@@ -790,6 +790,8 @@ def _point_events(item, info, events, attention):
         elif event.get("impact_label"):
             st.caption(event["impact_label"])
         st.caption(event["source"]+" · "+event["status"]+" · "+event["source_id"])
+        if event.get("monitoring_status") in ("stale","partial","window_unverified","unavailable"):
+            st.caption("Avviso nella copia disponibile · stato attuale non verificato.")
         st.caption("Pubblicato "+local_time(event.get("observed_at"))+" · acquisito "+local_time(event["retrieved_at"]))
         st.link_button("Fonte avviso",event["source_url"])
     findings = [f for f in attention if f.infrastructure_id == item.id and f.category != "event"]

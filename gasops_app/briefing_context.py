@@ -60,14 +60,16 @@ def iip_context(result,now):
     if result["failed"] and result.get("refresh_error"):
         reason="Aggiornamento IIP non riuscito ("+result["refresh_error"]+"); ultimo dato valido conservato."
     stale=reason is not None
+    verified=coverage(result)=="Completa" and result.get("reported_total")==len(result["messages"])
+    empty_unverified=not result["messages"] and not verified
     return {**attribution("IIP"),"request_from":result.get("request_from"),
             "request_to":result.get("request_to"),"acquired":result["acquired"].isoformat(),
-            "status":"stale" if stale else "available",
-            **({"reason":reason} if reason else {}),
-            "received_records":None if stale else len(result["messages"]),
+            "status":"stale" if stale else "unavailable" if empty_unverified else "available",
+            **({"reason":reason} if reason else {"reason":"Risposta vuota senza copertura verificata."} if empty_unverified else {}),
+            "received_records":None if stale or empty_unverified else len(result["messages"]),
             "declared_total":None if stale else result.get("reported_total"),
             "coverage":coverage(result),
-            "limitation":"Conteggio dei record UMM attivi nella finestra richiesta, non eventi distinti, capacità persa o conteggio specifico dell’Italia. Finestre diverse non sono direttamente confrontabili."}
+            "limitation":"Conteggio dei record UMM restituiti nella finestra richiesta, non eventi distinti, capacità persa o conteggio specifico dell’Italia. Anche zero record non prova assenza di eventi o indisponibilità. Finestre diverse non sono direttamente confrontabili."}
 
 
 def weather_context(result,now):

@@ -493,3 +493,26 @@ def test_source_router_uses_smaller_budget_and_measures_provider_time(monkeypatc
     assert bodies[0]["max_completion_tokens"]==768
     assert model.usage_summary()["provider_elapsed_ms"]==125
     assert model.usage_summary()["total_tokens"]==162
+
+
+def test_iip_empty_unverified_is_not_evidence_of_zero():
+    item={"acquired":NOW,"failed":False,"messages":[],"reported_total":None,
+          "partial":True,"pagination_verified":False}
+    assert iip_context(item,NOW)["received_records"] is None
+    assert iip_context(item,NOW)["status"]=="unavailable"
+    verified={**item,"reported_total":0,"partial":False,"pagination_verified":True}
+    result=iip_context(verified,NOW)
+    assert result["received_records"]==0 and result["status"]=="available"
+    assert "non prova assenza" in result["limitation"]
+
+
+def test_ai_event_semantics_rejects_categorical_absence():
+    import pytest
+    from gasops_app.ai_response import verify_event_semantics,InvalidSynthesis
+    public={"IIP":{"status":"available","received_records":0,"coverage":"Completa"}}
+    for text in ("Zero eventi attivi.", "Nessuna indisponibilità.", "Non ci sono interruzioni."):
+        with pytest.raises(InvalidSynthesis,match="copertura degli avvisi"):
+            verify_event_semantics([{"text":text}],public)
+    for text in ("Zero record UMM restituiti.", "Nessun evento documentato nella copia.",
+                 "Zero record non dimostra l'assenza di eventi attivi."):
+        verify_event_semantics([{"text":text}],public)
