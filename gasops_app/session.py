@@ -163,7 +163,7 @@ def ai_controls(*, prefix="sidebar") -> None:
                 st.warning("Contatore AI non disponibile. I calcoli locali restano utilizzabili.")
     with st.expander("Connessione e limiti AI", expanded=False):
         if config and st.session_state.get("execution_mode")=="Deterministic":
-            st.caption("Modello disponibile: attivalo dalla modalità di analisi o dall’assistente.")
+            st.caption("L’assistente usa automaticamente il modello. Selezionalo qui solo per gli altri strumenti.")
         if not config:
             st.write("Per Groq Cloud, imposta GROQ_API_KEY nei Secrets di Streamlit; "
                      "oppure i tre campi GASOPS_LLM_URL, GASOPS_LLM_MODEL, GASOPS_LLM_API_KEY.")
@@ -547,7 +547,7 @@ def launch(selection: Selection | None, question: str = DAILY_BRIEFING, *, full:
     base=selection.bundle if selection is not None else None
     if automatic and not full and not country:
         from .assistant_lookup import document_lookup_report
-        doc_question=bool(re.search(r"\b(?:pdf|document[oi]|archivio documentale|articolo|clausola|contratto|disciplinare|normativ\w*|regolament\w*|codice)\b",question,re.I)) or (not requested and Agent.REGULATORY in targets)
+        doc_question=bool(re.search(r"\b(?:pdf|document[oi]|archivio documentale|articolo|clausola|contratto|disciplinare|normativ\w*|regolament\w*|codice|riservat\w*|confidenzial\w*)\b",question,re.I)) or (not requested and Agent.REGULATORY in targets)
         # Unknown questions search the actual document archive instead of
         # silently running the default market agent on an unrelated dataset.
         # A bounded, read-only model router is a fallback for natural language
