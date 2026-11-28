@@ -221,8 +221,8 @@ def _mode_selector(layout):
             st.markdown("**Come leggere la mappa**")
             for mode in READING_MODES:
                 st.caption(MODE_LABELS[mode]+" · "+MODE_HINTS[mode])
-            st.caption("Seleziona un punto sulla mappa o cercalo per nome. La freccia indica se il gas entra o esce dalla rete italiana.")
-            st.caption("Giorno gas: dalle 06:00 alle 06:00 successive (ora italiana). GWh/d: energia al giorno. N/D: dato non disponibile, non zero.")
+            st.caption("Seleziona un punto sulla mappa o cercalo per nome. Le frecce indicano le direzioni censite o la direzione del valore mostrato, non necessariamente un flusso in corso.")
+            st.caption("Giorno gas: dalle 06:00 alle 06:00 successive (ora italiana). GWh/d: gigawattora di energia al giorno. N/D: dato non disponibile, non zero.")
             st.caption("D−1: giorno precedente. GNL: gas naturale liquefatto. I gasdotti mostrano collegamenti storici schematici, non flussi misurati.")
     return current
 
