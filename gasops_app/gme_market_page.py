@@ -209,8 +209,8 @@ def panel(kind=None, *, prefix="gme", day=None):
             if period:
                 rows = tuple(row for row in item["rows"] if
                              period[0].isoformat() <= row[spec.date_field] <= period[1].isoformat())
-                _results({**item,"rows":rows,"first":max(period[0],item["first"]),
-                          "last":min(period[1],item["last"])},prefix=prefix,day=day)
+                _results({**item,"rows":rows,"first":period[0] if kind=="pun" else max(period[0],item["first"]),
+                          "last":period[1] if kind=="pun" else min(period[1],item["last"])},prefix=prefix,day=day)
         if kind == "pgr":
             st.caption("PGR indicato come inattivo nel manuale API.")
     else:
