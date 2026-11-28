@@ -31,7 +31,7 @@ def operational_context():
     from .workspace import picker
     title=st.container()
     key=configured_key()
-    selected=picker("Sezione",["MAP","AGSI+","ALSI","MASE","ENTSOG","IIP","Jarvis","EXPLORER"],key="operational_platform",
+    selected=picker("Sezione",["MAP","AGSI+","ALSI","MASE","ENTSOG","IIP","Jarvis","EXPLORER"],key="operational_platform",index=1,
                     labels={"AGSI+":"Scorte","ALSI":"Terminali GNL","IIP":"Avvisi","Jarvis":"Dati Snam","MASE":"Produzione","ENTSOG":"Scambi di frontiera","MAP":"Mappa della rete","EXPLORER":"Esplora dati"})
     with title:
         header({"EXPLORER":"Esplora dati","MAP":"Rete gas italiana","AGSI+":"Scorte di gas","ALSI":"Terminali GNL","MASE":"Produzione nazionale","ENTSOG":"Scambi di frontiera","IIP":"Avvisi di mercato","Jarvis":"Dati della rete Snam"}[selected], "")
