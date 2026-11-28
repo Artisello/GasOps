@@ -52,7 +52,8 @@ def mentions_day(question):
     return bool(re.search(DATE_TEXT+"|"+_MONTH_DATE+r"|\b(?:ieri|oggi|domani)\b",question,re.I))
 
 
-def query_day(question, *, today=None):
+def query_days(question, *, today=None):
+    """Distinct explicit days; None denotes an invalid date, not absence."""
     days=set()
     try:
         for raw in re.findall(DATE_TEXT,question):
@@ -63,12 +64,35 @@ def query_day(question, *, today=None):
                 days.add(date.fromisoformat(raw))
         for day,month,year in re.findall(_MONTH_DATE,question,re.I):
             days.add(date(int(year),MESI.index(month.casefold())+1,int(day)))
-    except ValueError:
+        if today is not None:
+            days.update(today+timedelta(days=_RELATIVE_DAY[word])
+                        for word in re.findall(r"\b(?:ieri|oggi|domani)\b",question.casefold()))
+    except (ValueError,OverflowError):
         return None
-    if today is not None:
-        days.update(today+timedelta(days=_RELATIVE_DAY[word])
-                    for word in re.findall(r"\b(?:ieri|oggi|domani)\b",question.casefold()))
-    return next(iter(days)) if len(days)==1 else None
+    return tuple(sorted(days))
+
+
+def query_day(question, *, today=None):
+    days=query_days(question,today=today)
+    return days[0] if days and len(days)==1 else None
+
+
+# Month labels are distinct from daily observations. Strip full dates first
+# so "20 novembre 2026" cannot also be read as a whole-month request.
+_MONTH_ONLY=re.compile(r"\b("+"|".join(MESI)+r")\s+((?:19|20)\d{2})\b",re.I)
+_ISO_MONTH=re.compile(r"(?<!\d)((?:19|20)\d{2})-(0[1-9]|1[0-2])(?![\d-])")
+
+
+def query_months(question):
+    text=re.sub(DATE_TEXT+"|"+_MONTH_DATE,"",question,flags=re.I)
+    months={date(int(year),MESI.index(month.casefold())+1,1) for month,year in _MONTH_ONLY.findall(text)}
+    months.update(date(int(year),int(month),1) for year,month in _ISO_MONTH.findall(text))
+    return tuple(sorted(months))
+
+
+def explicit_period_comparison(question):
+    return bool(re.search(r"\b(?:confront\w*|compar\w*|rispetto|differenz\w*|variazion\w*|aument\w*|diminuit\w*|calat\w*)\b",question,re.I))
+
 
 
 def requested_sources(question):
