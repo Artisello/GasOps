@@ -19,7 +19,7 @@ INTENTS = {
     Agent.SETTLEMENT: r"settlement|regolazione|exposure|esposizione|cash.flow|flusso di cassa|fattura|buy.*sell",
     Agent.REGULATORY: r"regolament|regulatory|network code|codice|piombino|panigaglia|discarica|coefficient"
                       r"|cancellation|inconsisten|incongruenz|density|densità|denominat|normativ",
-    Agent.SCENARIO: r"what if|what happens|scenario|stress|monte carlo|cvar|\\bvar\\b|expected shortfall|probabilità di deficit|simula|se la domanda|aumento|aumenta|increases by|decreases by|\d ?%",
+    Agent.SCENARIO: r"what if|what happens|scenario|stress|monte carlo|cvar|\bvar\b|expected shortfall|probabilità di deficit|simula|\bse\b.{0,55}\b(?:domanda|consum\w*|offerta|stoccaggio|prezz\w*)\b",
 }
 
 
