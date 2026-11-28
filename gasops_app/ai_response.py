@@ -132,11 +132,9 @@ def verify_price_semantics(sections, public):
             for match in _CLAIM.finditer(sentence):
                 if _unit(match["unit"])!="€/mwh":
                     continue
-                prefix=sentence[:match.start()]
-                # A preceding semicolon separates a missing-price statement
-                # from a separately labelled gas figure. Do not waive this
-                # check just because another clause contains a negation.
-                if electricity_price_question(prefix):
+                # A gas quote and a missing electrical quote must be
+                # stated separately, regardless of which comes first.
+                if electricity_price_question(sentence):
                     raise InvalidSynthesis("Prezzo elettrico non verificabile: le fonti gas non sono quotazioni elettriche.")
             # A recommendation to use PSV/TTF as an electricity spot
             # price is erroneous even without a numerical claim.
