@@ -13,7 +13,7 @@ from .models import Kind, utc_now
 from .quality import inspect
 from .market import market_facts
 from .mensile import ARERA_URL, load_arera, load_monthly
-from .entsog import load as load_daily, SOURCE as ENTSOG
+from .entsog import load as load_daily, load_range as load_daily_range, combine as combine_daily, SOURCE as ENTSOG
 from .acer_market import load_lng, TERMINAL
 from .terna_power import load_power, latest_day, PORTAL
 from .terna_forward import acquire as load_forward, outlook as power_outlook, STATE as FORWARD
@@ -88,6 +88,7 @@ def market_context(bundle,now,*,day=None):
             price_stale=provider.refresh_failed or provider.retrieved_at>now or pday>today or (day is None and (today-pday).days>93)
             out["price"]={"source":provider.name,"source_url":provider.url,"period":pday.isoformat(),
                           "acquired":provider.retrieved_at.isoformat(),"status":"stale" if price_stale else "available",
+                          "scope":"Italia · riferimento mensile all’ingrosso","grain":"mese",
                           "value":price,"change_pct":_num(facts.get("price_eur_mwh_change_pct")) if pday.isoformat()==facts["period"] else None,
                           "unit":"€/MWh","limitation":"ARERA CMEM,m medio mensile; non prezzo spot."}
     return out
@@ -186,7 +187,16 @@ def collect_market_sources(store,selected,now,state,*,terna=(),clock=utc_now,onl
         except (TypeError,ValueError,KeyError):return False
     options={"day":day} if day is not None else {}
     def demand(grain):
-        if selected is not None and selected.origin.grain==grain:
+        if grain=="daily" and day is not None:
+            from .gas_calendar import closed_gas_day
+            if day>closed_gas_day(now):
+                raise ValueError("Giorno gas non concluso")
+            # Fourteen days support the existing paired weekly trend
+            # without a full recent-month download for a historical query.
+            first=day-timedelta(days=13)
+            window=load_daily_range(store,first,day,now=now)
+            bundle=combine_daily([window],first,day)
+        elif selected is not None and selected.origin.grain==grain:
             bundle=selected
         else:
             bundle=(load_monthly(store) if grain=="monthly" else load_daily(store,now=now,months=2))[0]
