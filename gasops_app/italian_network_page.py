@@ -36,7 +36,7 @@ from .gas_data import source_context
 from .operational_progress import connection_status, watch
 from .system_status_page import ARCHIVE_KEY
 from .session import database
-from .visuals import chip, local_time, plot, kpi_grid
+from .visuals import chip, local_time, plot, kpi_grid, chart_style
 
 LABELS = NAMES
 FILTER_KEYS = ("net_layers", "net_operators", "net_regions", "net_statuses", "net_period",
@@ -662,13 +662,12 @@ def _history(observations, point, first, last, *, mode="full", counterpart=None,
             marker={"size":5},hovertemplate=name+" · %{x|%d/%m/%Y}<br>%{y:.2f} GWh/d<extra></extra>"))
     figure.update_layout(template="plotly_dark",height=280, margin={"l":42,"r":14,"t":32 if len(series)>1 else 12,"b":56},
                          paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",
-                         font={"color":"#b0bed0","family":"Arial, sans-serif","size":11},
                          yaxis={"title":"GWh/d","automargin":True},
                          xaxis={"tickformat":"%d/%m","nticks":4,"tickangle":0,"automargin":True},
                          showlegend=len(series)>1,legend={"orientation":"h","y":1.02,"x":0})
     # The entire requested window remains visible, including leading missing days.
     figure.update_xaxes(range=[first-timedelta(days=1),last+timedelta(days=1)])
-    plot(figure, key="net_entsog_history" if mode == "full" else "net_overview_entsog_history")
+    plot(chart_style(figure), key="net_entsog_history" if mode == "full" else "net_overview_entsog_history")
     if len(series)>1:
         st.caption(" · ".join(f"{arrow_text(d)}: {sum(v is not None for v in vs)}/{len(days)} giorni gas" for d,vs in series))
         st.caption("Linea continua: direzione consultata · tratteggiata: direzione opposta")
