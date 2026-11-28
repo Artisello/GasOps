@@ -354,7 +354,7 @@ def source_filters(page: str, *, lookback: bool = True) -> Selection:
                                  help="Automatico usa il modello con l’errore medio più basso sugli stessi periodi storici.")
             save_assumptions(previous.model_copy(update={"model": model}))
             st.write({
-                PUBLIC:"Bilancio nazionale mensile e prezzo medio PSV. La disponibilità è contabile, non fisica.",
+                PUBLIC:"Bilancio nazionale mensile e riferimento gas CMEM,m (ARERA). La disponibilità è contabile, non fisica.",
                 DAILY:"Somma dei prelievi SRG di distribuzione, industria e termoelettrico. Non è il totale nazionale; non include offerta o prezzi.",
                 ARCHIVE:"Serie pubblica storica 2015–2021. Le proiezioni non descrivono il mercato di oggi.",
                 DEMO:"Dati sintetici, utilizzabili solo per provare i calcoli."
