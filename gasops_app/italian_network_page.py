@@ -50,9 +50,9 @@ DETAIL_TABS = ("Dati", "Storico", "Eventi", "Fonti")
 def _detail_tab_key(mode):
     return "net_detail_tab_" + mode
 MODE_LABELS = {"SYSTEM":"Sistema","FLOW":"Flussi","ATTENTION":"Attenzione"}
-MODE_HINTS = {"SYSTEM":"Categorie e disponibilità dei dati.",
-    "FLOW":"Flussi dei punti verificati · gasdotti solo come contesto geografico.",
-    "ATTENTION":"Eventi pubblicati, indicatori calcolati e qualità dei dati."}
+MODE_HINTS = {"SYSTEM":"Infrastrutture e copertura dati.",
+    "FLOW":"Misure dei punti verificati.",
+    "ATTENTION":"Avvisi, indicatori e qualità dati."}
 _viewport_width = declare_component("network_viewport_width",path=str(Path(__file__).with_name("map_viewport")))
 
 
@@ -179,7 +179,7 @@ def _reconcile_map(network, perimeter, observations, snapshots, day, now, saved,
 
 
 def _empty_selection(reading):
-    st.info("Nessun punto pertinente per questa vista e il giorno selezionato." if reading in ("FLOW","ATTENTION")
+    st.info("Nessun punto disponibile per questo giorno e questa vista." if reading in ("FLOW","ATTENTION")
             else "Nessuna infrastruttura nei filtri selezionati.")
 
 
@@ -193,7 +193,7 @@ def _nearby_selector(network, item, visible, mode):
     if not ids:
         return
     lookup = {i.id:i for i in visible}
-    st.caption(f"Infrastrutture sovrapposte o vicine (entro {NEARBY_METRES} m) · scegli quale consultare.")
+    st.caption(f"Altri punti entro {NEARBY_METRES} m")
     with st.container(key="network_nearby_"+mode):
         for other in sorted((lookup[i] for i in ids), key=lambda i:(i.category,i.name,i.id)):
             st.button(_infrastructure_label(other), key=f"net_nearby_{mode}_{other.id}",
@@ -202,7 +202,7 @@ def _nearby_selector(network, item, visible, mode):
 
 def _attention_context(identifier, displayed, reading):
     if reading == "ATTENTION" and identifier not in {i.id for i in displayed}:
-        st.info("Selezione fuori dalla vista Attenzione: nessun segnale associato nel perimetro disponibile. Scegli un punto evidenziato sulla mappa.")
+        st.info("Nessun segnale associato al punto. Seleziona un marker evidenziato.")
 
 
 
@@ -277,8 +277,8 @@ def _flow_coverage(displayed,intelligence,lens):
         return
     available=sum(flow_metric(info,lens) is not None for info in points)
     stale=sum(bool(info.get("stale")) and flow_metric(info,lens) is not None for info in points)
-    st.caption(f"{available}/{len(points)} punti mostrati con indicatore disponibile"+
-               (f" · {stale} copie da aggiornare" if stale else ""))
+    st.caption(f"{available}/{len(points)} punti con dati"+
+               (f" · {stale} da aggiornare" if stale else ""))
 
 
 def render_map(network, boundary, visible, identifier, *, mode, observations, day, direction="entry", events=(), show_labels=True,
@@ -324,7 +324,7 @@ def render_legend(categories, reading_mode="SYSTEM", *, event_overlay=False, flo
                           for icon,label in (("entry-in","Solo ingresso"),("entry-out","Solo uscita"),("entry-both","Bidirezionale")))
     st.html('<div class="gas-map-legend" aria-label="Legenda della mappa">'+labels+'</div>')
     if reading_mode=="SYSTEM":
-        st.caption("Pieno: dati ENTSOG · contorno: dato assente o sola geografia.")
+        st.caption("Pieno: dati ENTSOG · contorno: dati assenti o geografia.")
     elif reading_mode=="FLOW":
         if flow_lens=="volume":
             scale = "".join(f'<span><i style="width:{size}px;height:{size}px" aria-hidden="true"></i>{label}</span>'
@@ -338,7 +338,7 @@ def render_legend(categories, reading_mode="SYSTEM", *, event_overlay=False, flo
             st.html('<div class="igor-flow-scale" aria-label="Scala indicatore"><strong>'+
                 ("GWh/d vs D−1" if flow_lens=="delta" else "Capacità tecnica firm")+'</strong>'+scale+'</div>')
         st.html('<div class="igor-flow-scale"><span><i style="width:12px;height:12px;background:transparent;border:1px solid rgb(147,163,181)" aria-hidden="true"></i>N/D · dato non disponibile</span></div>')
-        st.caption("Una direzione per punto; nei bidirezionali la freccia accanto al valore la identifica. Gasdotti solo geografici.")
+        st.caption("Freccia: direzione del valore · gasdotti schematici, senza misure.")
     elif reading_mode == "ATTENTION":
         marks = "".join(f'<span><img src="{legend_symbol(c)}" alt="" aria-hidden="true">{label}</span>'
                         for c,label in (("ring","Evento pubblicato"),("finding","Indicatore I.G.O.R."),("quality","Dato assente / cache da aggiornare")))
@@ -415,7 +415,7 @@ def _operational_summary(network, item, info, *, compact=False, paired=None):
         row = publications["Physical Flow"][0]
         st.caption(_period_label(row))
     elif not values:
-        st.caption("Nessun dato operativo confrontabile sul giorno selezionato.")
+        st.caption("Nessun dato operativo confrontabile per il giorno.")
     if info["utilization_pct"] is not None and not compact and paired is None:
         st.caption(f"Utilizzo capacità: {numero(info['utilization_pct'],1)}% · intervalli confrontabili")
     for heading,names in (("DATI COMMERCIALI",("Nomination","Renomination","Allocation","Firm Technical","Firm Booked","Firm Available")),):
@@ -550,7 +550,7 @@ def overview_panel():
         job = acquisition.schedule(store,network,now,api_key=api_key,force=refresh,**requested)
     watch(store,job,connections)
     if archive:
-        st.caption("Snapshot storico incluso · acquisizioni statiche.")
+        st.caption("Snapshot storico incluso · dati statici.")
     context = _window_context(network,bundled,st.session_state,now,store,anchor-timedelta(days=34),anchor,archive)
     data = {} if archive else dict(st.session_state,operational_acquisition=info)
     snapshots = context["snapshots"]
@@ -643,7 +643,7 @@ def _history(observations, point, first, last, *, mode="full", counterpart=None,
     points = (point,counterpart) if counterpart and counterpart!=point else (point,)
     available = [name for name in INDICATORS if any(o.point_direction in points and o.indicator == name for o in observations)]
     if not available:
-        st.caption("Nessuna serie storica disponibile per questa direzione nel periodo.")
+        st.caption("Nessuna serie storica nel periodo.")
         return
     key = "net_indicator" if mode == "full" else "net_overview_indicator"
     if st.session_state.get(key) not in available:
@@ -656,7 +656,7 @@ def _history(observations, point, first, last, *, mode="full", counterpart=None,
         _, other = _daily(observations,counterpart,first,last,indicator)
         series.append(("exit" if direction=="entry" else "entry",other))
     if not any(v is not None for _,vs in series for v in vs):
-        st.caption("Nessun valore confrontabile sull’intero giorno gas nel periodo.")
+        st.caption("Nessun valore confrontabile sul giorno gas nel periodo.")
         return
     figure = go.Figure()
     for index,(d,vs) in enumerate(series):
@@ -899,14 +899,13 @@ def _node_catalog_audit(network,saved,store,archive):
 
 
 def _detail(network, item, observations, snapshots, direction, events, first, last, saved, *, mode="full", info=None, attention=(), displayed=None, reading="SYSTEM"):
-    if mode!="overview":st.caption("IDENTITÀ")
     st.subheader(display_name(item.name))
     st.caption(" · ".join(filter(None,[CATEGORIES[item.category],item.operator,*item.regions])))
     from .italian_network_map import direction_label
     structural = direction_label(verified_bindings(network,item.id))
     if structural:
         st.html(direction_header(structural,direction))
-        st.caption("Direzioni censite ENTSOG rispetto alla rete italiana")
+        st.caption("ENTSOG · direzioni rispetto alla rete italiana")
     if displayed is not None:
         _attention_context(item.id,displayed,reading)
         _nearby_selector(network,item,displayed,mode)
@@ -952,7 +951,7 @@ def _detail(network, item, observations, snapshots, direction, events, first, la
                 st.button("Stress Test su questo ingresso",icon=":material/monitoring:",key="net_stress_"+mode,
                     on_click=_open_stress,args=(item.id,last),width="stretch")
     with history_tab:
-        st.caption("TREND · D-30")
+        st.caption("Ultimi 30 giorni")
         if binding:
             other = next((b for b in verified_bindings(network,item.id) if b.direction!=binding.direction),None)
             history_records = info["records"]
@@ -961,7 +960,7 @@ def _detail(network, item, observations, snapshots, direction, events, first, la
                     (o for o in observations if o.infrastructure_id==item.id and o.point_direction==other.point_direction),utc_now()))
             _history(history_records,binding.point_direction,last-timedelta(days=29),last,mode=mode,
                      counterpart=other.point_direction if other else None,direction=binding.direction)
-            st.caption("Solo osservazioni già disponibili · giorni mancanti conservati, nessuna stima.")
+            st.caption("Solo osservazioni · nessuna interpolazione o stima.")
         else:
             st.caption("Serie ENTSOG non associata. Eventuali dati GIE del singolo impianto sono nella scheda Dati.")
     with events_tab:

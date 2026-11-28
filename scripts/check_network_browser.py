@@ -126,9 +126,9 @@ def main():
         click_at(geometry["INET_BP_89"]["coordinates"],"Tarvisio")
         assert rendered_map(page)["colors"] == original_colors,"Selecting a point dimmed the network"
         report["reading_modes"] = []
-        hints = {"SYSTEM":"Categorie e disponibilità dei dati.",
-            "FLOW":"Flussi dei punti verificati · gasdotti solo come contesto geografico.",
-            "ATTENTION":"Eventi pubblicati, indicatori calcolati e qualità dei dati."}
+        hints = {"SYSTEM":"Infrastrutture e copertura dati.",
+            "FLOW":"Misure dei punti verificati.",
+            "ATTENTION":"Avvisi, indicatori e qualità dati."}
         labels = {"SYSTEM":"Sistema","FLOW":"Flussi","ATTENTION":"Attenzione"}
         for reading in ("FLOW","ATTENTION","SYSTEM"):
             page.locator(".st-key-net_reading_overview").get_by_text(labels[reading],exact=True).click()
