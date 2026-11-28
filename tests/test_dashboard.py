@@ -505,7 +505,6 @@ def test_assistant_session_history_isolated_and_shortcut_works(monkeypatch,tmp_p
     monkeypatch.setenv("GASOPS_PDF_DIR",str(tmp_path))
     monkeypatch.setattr(session,"reasoner",lambda:None)
     monkeypatch.setattr(assistant_page,"reasoner",lambda:None)
-    monkeypatch.setattr(assistant_page,"analysis_label",lambda:"Genera bollettino di mercato")
     monkeypatch.setattr(assistant_page,"ai_configured",lambda:False)
     db=session.database()
     from gasops_app.store import Store
@@ -517,11 +516,12 @@ def test_assistant_session_history_isolated_and_shortcut_works(monkeypatch,tmp_p
     app.session_state["selected_source"]=DEMO
     app.run()
     assert not app.exception
-    assert app.radio(key="assistant_view").value=="Report locali"
-    assert not app.chat_input
+    assert app.radio(key="assistant_view").value=="Assistente operativo"
+    assert app.chat_input(key="assistant_question").disabled
+    app.radio(key="assistant_view").set_value("Report locali").run()
+    assert not app.exception and not app.chat_input
     assert app.button(key="assistant_starter_Consumi")
     assert not any(foreign.question in e.value for e in app.text)
-    assert any("Il risultato apparirà qui" in e.value for e in app.caption)
     app.button(key="assistant_starter_Consumi").click().run()
     assert not app.exception
     history=app.session_state[assistant_page.HISTORY]
@@ -891,6 +891,7 @@ def test_assistant_retains_last_result_when_launch_fails(monkeypatch,tmp_path):
     monkeypatch.setattr(assistant,"ai_configured",lambda:False)
     app=AppTest.from_string("from gasops_app.assistant_page import assistant_page\nassistant_page()",default_timeout=30)
     app.session_state["selected_source"]=DEMO
+    app.session_state["assistant_view"]="Report locali"
     app.run()
     app.button(key="assistant_starter_Consumi").click().run()
     assert not app.exception

@@ -382,19 +382,36 @@ def daily_context(period):
             st.caption("Nessun prezzo GME disponibile per "+data_it(day)+".")
 
 
-def assistant_prices(request, as_of):
-    """Resolve GME questions entirely in the browser session."""
-    st.markdown("**Prezzi GME · consultazione locale**")
+def assistant_prices(request, as_of, *, report_id, refresh=False):
+    """Question-specific local readout; never reacquire when reading history."""
+    key="assistant_gme_readouts_v1"
+    saved=st.session_state.get(key,{})
+    result=saved.get(report_id)
+    if refresh and result is None:
+        result=_assistant_price_readout(request,as_of)
+        saved={**saved,report_id:result}
+        st.session_state[key]=dict(list(saved.items())[-12:])
+    st.markdown("**Prezzi GME richiesti · dati locali**")
+    if result is None:
+        st.caption("Nessuna copia dei prezzi conservata per questa analisi.")
+    elif result["cards"]:
+        kpi_grid(result["cards"])
+        st.caption("Fonte: "+g.SOURCE+" · dati della risposta originale")
+    else:
+        st.caption(result["message"])
+    st.markdown("[Mercato e previsioni](/market)")
+
+
+def _assistant_price_readout(request, as_of):
     if not g.api_configured():
-        st.caption("API GME non configurata.")
-        return
+        return {"cards":[],"message":"API GME non configurata."}
     requested=request.get("day")
     ending=date.fromisoformat(requested) if requested else closed_gas_day(as_of)
     if not g.FIRST_DAY<=ending<=closed_gas_day(utc_now()):
-        st.caption("La data richiesta non è un giorno gas concluso del periodo supportato.")
-        return
+        return {"cards":[],"message":"La data richiesta non è un giorno gas concluso del periodo supportato."}
     kinds=tuple(kind for kind in ("igi","prices") if kind in request.get("kinds",()))
-    _automatic_sources(_headline_windows(ending,kinds))
+    # Price acquisition belongs to the market workspace. Only use the existing
+    # validated session cache for explicitly requested GME readouts.
     cards=[]
     for kind in kinds:
         day=ending
@@ -406,11 +423,7 @@ def assistant_prices(request, as_of):
             if latest:
                 day=date.fromisoformat(latest)
         cards.extend(_prices(day,include_extremes=True,kinds=(kind,)))
-    if cards:
-        kpi_grid(cards)
-        st.caption("Fonte: "+g.SOURCE)
-    else:
-        st.caption("Nessuna osservazione GME validata per il periodo richiesto.")
+    return {"cards":cards,"message":"Nessun dato GME già acquisito per il periodo richiesto. Aggiorna i prezzi in Mercato e previsioni."}
 
 
 def balancing(day):
@@ -487,17 +500,3 @@ def risk():
     st.caption("Verifica retrospettiva sulla copia acquisita. La fonte non espone le versioni storiche disponibili a ogni data.")
 
 
-def assistant():
-    st.subheader("Indicatori GME · consultazione locale")
-    _automatic_sources(_headline_windows(closed_gas_day(utc_now())))
-    cache = _session_cache()
-    available = [key for key, item in (cache or {}).items() if item["origin"] == "api" and item["rows"]]
-    if not available:
-        st.caption("Indicatori disponibili dopo l’acquisizione automatica.")
-        return
-    kind, segment = st.selectbox("Indicatore", available,
-                                 format_func=lambda key: g.DATASETS[key[0]].label + " · " + key[1],
-                                 key="gme_assistant_indicator")
-    item = snapshot(kind, segment, api_only=True)
-    _credit(item)
-    _results(item, prefix="gme_assistant")

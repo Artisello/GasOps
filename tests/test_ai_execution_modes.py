@@ -77,3 +77,73 @@ def test_assistant_import_compatible_with_previous_session_module(monkeypatch):
         raise ValueError("Invalid configuration")
     monkeypatch.setattr(session,"_configuration",invalid_config)
     assert not module.ai_configured()
+
+
+@pytest.mark.parametrize("old_view",[None,"Indicatori GME"])
+def test_assistant_starts_in_chat_even_without_ai_configuration(monkeypatch,old_view):
+    monkeypatch.setattr(session,"_configuration",lambda:None)
+    monkeypatch.setattr(assistant_page,"reasoner",lambda:None)
+    monkeypatch.setattr(assistant_page,"source_filters",lambda *a,**k:pytest.fail("No source acquisition on inactive chat"))
+    monkeypatch.setattr(assistant_page,"launch",lambda *a,**k:pytest.fail("No automatic analysis"))
+    app=AppTest.from_string("from gasops_app.assistant_page import assistant_page\nassistant_page()")
+    if old_view is not None:
+        app.session_state["assistant_view"]=old_view
+    app.run()
+    assert not app.exception
+    assert app.radio(key="assistant_view").value=="Assistente operativo"
+    assert app.radio(key="assistant_view").options==["Chiedi all’AI","Esplora dati","Report"]
+    assert app.chat_input(key="assistant_question").disabled
+
+
+def test_free_question_can_use_independent_sources_without_market_bundle(monkeypatch):
+    model=SimpleNamespace(config=LLMConfig("fixture-local","http://localhost:11434/v1"))
+    monkeypatch.setattr(assistant_page,"reasoner",lambda:model)
+    monkeypatch.setattr(assistant_page,"source_filters",lambda *a,**k:session.Selection(session.PUBLIC,"Automatico",24,None))
+    calls=[]
+    def fake(selection,question,**kwargs):
+        calls.append((question,kwargs))
+        return Run(question=question,source=synthetic().origin,input_sha256="fixture",
+                   assumptions={"source_lookup":True},summary="Dato non disponibile.")
+    monkeypatch.setattr(assistant_page,"launch",fake)
+    app=AppTest.from_string("from gasops_app.assistant_page import assistant_page\nassistant_page()")
+    app.run()
+    assert not app.exception and not calls
+    assert app.button(key="assistant_starter_Consumi").disabled
+    assert not app.chat_input(key="assistant_question").disabled
+    app.chat_input(key="assistant_question").set_value("Quanto gas c’è negli stoccaggi?").run()
+    assert not app.exception and len(calls)==1
+    assert calls[0][1]["ai_policy"]=="required"
+    app.run()
+    assert not app.exception and len(calls)==1
+
+
+def test_gme_readouts_do_not_reacquire_when_reading_history(monkeypatch):
+    from gasops_app import gme_market_page as gme
+    state={}
+    monkeypatch.setattr(gme.st,"session_state",state)
+    calls=[]
+    result={"cards":[],"message":"Prezzo non disponibile"}
+    monkeypatch.setattr(gme,"_assistant_price_readout",lambda *a:(calls.append(1) or result))
+    monkeypatch.setattr(gme.st,"markdown",lambda *a,**k:None)
+    monkeypatch.setattr(gme.st,"caption",lambda *a,**k:None)
+    request={"kinds":["igi"],"day":"2026-11-20"}
+    gme.assistant_prices(request,None,report_id="one")
+    assert not calls
+    gme.assistant_prices(request,None,report_id="one",refresh=True)
+    gme.assistant_prices(request,None,report_id="one")
+    gme.assistant_prices(request,None,report_id="one",refresh=True)
+    assert len(calls)==1
+    assert state["assistant_gme_readouts_v1"]["one"]==result
+
+
+def test_gme_question_without_cached_prices_does_not_start_market_acquisition(monkeypatch):
+    from gasops_app import gme_market_page as gme
+    from datetime import datetime, timezone
+    now=datetime(2026,11,28,12,tzinfo=timezone.utc)
+    monkeypatch.setattr(gme,"utc_now",lambda:now)
+    monkeypatch.setattr(gme.g,"api_configured",lambda:True)
+    monkeypatch.setattr(gme,"_automatic_sources",lambda *a,**k:pytest.fail("GME acquisition belongs to market"))
+    monkeypatch.setattr(gme,"snapshot",lambda *a,**k:None)
+    result=gme._assistant_price_readout({"kinds":["igi"],"day":"2026-11-20"},now)
+    assert result["cards"]==[]
+    assert "Mercato e previsioni" in result["message"]
