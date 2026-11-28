@@ -147,8 +147,10 @@ async function main(){
   report.checks.push({check:'two_browser_document_sessions',status:'PASS'});
   await a.screenshot({path:path.join(output,'documents-session-a.png'),fullPage:true});
   await b.screenshot({path:path.join(output,'documents-session-b.png'),fullPage:true});
-  // Native report actions, with the unchanged fast seasonal reference model.
+  // Native report actions against the explicit offline public archive.
   await open(a,'operations','Assistente AI');
+  await a.getByRole('combobox',{name:'Fonte dati',exact:true}).click();
+  await a.getByRole('option',{name:'Archivio 2015–2021 (JRC)',exact:true}).click();
   await a.getByRole('button',{name:'Opzioni',exact:true}).click();
   await a.getByRole('combobox',{name:'Modello previsionale',exact:true}).click();
   await a.getByRole('option',{name:'Riferimento stagionale',exact:true}).click();
@@ -160,6 +162,8 @@ async function main(){
   assert.equal(await b.getByRole('button',{name:'Svuota storico dell’assistente',exact:true}).count(),0);
   report.checks.push({check:'two_browser_reports_and_chat_sessions',status:'PASS'});
   await open(a,'market','Mercato e previsioni');
+  await a.getByRole('combobox',{name:'Fonte dati',exact:true}).click();
+  await a.getByRole('option',{name:'Archivio 2015–2021 (JRC)',exact:true}).click();
   await a.getByRole('button',{name:'Opzioni',exact:true}).click();
   await a.getByRole('combobox',{name:'Modello previsionale',exact:true}).click();
   await a.getByRole('option',{name:'Riferimento stagionale',exact:true}).click();
@@ -172,10 +176,11 @@ async function main(){
   await a.screenshot({path:path.join(output,'market-desktop.png'),fullPage:true});
   report.checks.push({check:'explicit_market_forecast',status:'PASS'});
   await open(a,'','I.G.O.R. - Sistema Gas Italiano');
-  await a.getByRole('button',{name:'Esplora la rettifica',exact:true}).click();
-  await a.waitForURL('**/demo');
+  assert.equal(await a.getByRole('button',{name:'Esplora la rettifica',exact:true}).count(),0);
+  await open(a,'demo','BSO, in sintesi');
+  await chooseRadio(a,'Rettifiche');
   assert(await a.getByRole('radio',{name:'Rettifiche',exact:true}).isChecked());
-  report.checks.push({check:'example_card_opens_exact_case',status:'PASS'});
+  report.checks.push({check:'public_home_has_no_example_cards_and_case_remains_explicit',status:'PASS'});
   const mobile=await newPage(390,844);
   await open(mobile,'','I.G.O.R. - Sistema Gas Italiano');
   await mobile.locator('[data-testid="stDeckGlJsonChart"] canvas').waitFor();
