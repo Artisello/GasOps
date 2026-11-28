@@ -244,10 +244,22 @@ def _inventory(state,now,platform,field,name):
         if r["scope"]!="IT":raise ValueError("Perimetro inatteso.")
         vals=_values(f.set_index("gas_day"),field)
         if "review" in f:review=bool(f.loc[f.gas_day.isin(expected),"review"].any())
-    return row(name,"Italia","Osservato",vals,expected,now,acquired=r["acquired"] if r else None,
+    diagnostic=r.get("refresh_diagnostic",{}) if r else {}
+    if diagnostic.get("at") and (not attempt or diagnostic["at"]>=attempt["at"]):
+        attempt={"at":diagnostic["at"],"status":"Da aggiornare" if diagnostic.get("failed") else
+                 "Da verificare" if diagnostic.get("partial") else "Acquisito"}
+    latest=max(vals,default=None)
+    acquired=r.get("acquired_by_day",{}).get(latest,r["acquired"]) if r else None
+    result=row(name,"Italia","Osservato",vals,expected,now,acquired=acquired,
                cache_ttl=timedelta(hours=24),
                failed=bool(saved.get("error") or (r and r["failed"])),review=review,
                age_limit=timedelta(days=3),attempt=attempt,period_limit=end,note="14 date pubblicabili; perimetro IT")
+    missing=latest is None or latest<end
+    if diagnostic.get("outcome") in ("no_observation","partial") and missing and not result["refresh_failed"]:
+        result["publication_status"]="Ultimo giorno non restituito"
+    result["refresh_outcome"]=diagnostic.get("outcome")
+    result["refresh_reason_code"]=diagnostic.get("reason_code")
+    return result
 
 
 def _terna(state,now,metric):
