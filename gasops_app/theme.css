@@ -142,7 +142,7 @@ div[data-testid="stVerticalBlockBorderWrapper"] {border-color:var(--gas-border);
 .gas-map-legend span {display:inline-flex;align-items:center;gap:.3rem;white-space:nowrap;}
 .gas-map-legend b {font-size:1rem;font-weight:600;line-height:1;}
 .gas-map-legend img {display:inline-block;width:14px;height:14px;object-fit:contain;flex-shrink:0;}
-.stApp [class*="st-key-net_mode_"] {padding:.3rem .4rem;border:1px solid var(--gas-border);border-radius:10px;background:#111c29;gap:.25rem;}
+.stApp [class*="st-key-net_mode_"] {padding:.1rem 0 .35rem;border-bottom:1px solid var(--gas-border);gap:.25rem;}
 .stApp [class*="st-key-net_mode_"] [data-testid="stElementContainer"]:has(>[data-testid="stRadio"]) {width:100%!important;}
 .stApp [class*="st-key-net_mode_"] [data-testid="stRadio"] {width:100%;}
 .stApp [class*="st-key-net_mode_"] [role="radiogroup"] {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.25rem;width:100%;}
@@ -325,8 +325,8 @@ div[data-testid="stVerticalBlockBorderWrapper"] {border-color:var(--gas-border);
 /* One quiet navigation surface across workspaces. Native radios keep their
    semantics, labels, hit areas and keyboard behavior in both Streamlit UIs. */
 .stApp [class*="st-key-workspace_nav_"] {
-  background:#111c29;border:1px solid var(--gas-border);border-radius:12px;
-  padding:.35rem;margin-block:.15rem .35rem;
+  background:transparent;border:0;border-bottom:1px solid var(--gas-border);border-radius:0;
+  padding:.1rem 0 .35rem;margin-block:0 .25rem;
 }
 .stApp [class*="st-key-workspace_nav_"] [data-testid="stElementContainer"]:has(>[data-testid="stRadio"]),
 .stApp [class*="st-key-workspace_nav_"] [data-testid="stRadio"] {width:100%!important;}
@@ -341,7 +341,7 @@ div[data-testid="stVerticalBlockBorderWrapper"] {border-color:var(--gas-border);
 .stApp [class*="st-key-workspace_nav_"] label:has(input:checked) {background:var(--gas-selected);border-color:#39645e;}
 .stApp [class*="st-key-workspace_nav_"] label:has(input:checked) p {color:var(--gas-teal);font-weight:650;}
 .stApp [class*="st-key-workspace_nav_"] label:has(input:focus-visible) {outline:2px solid var(--gas-blue);outline-offset:1px;}
-.stApp .st-key-market_forecast_action {border:1px solid var(--gas-border);border-radius:12px;padding:.6rem .8rem;}
+.stApp .st-key-market_forecast_action {border-top:1px solid var(--gas-border);padding:.6rem 0;}
 .stApp .st-key-market_forecast_action [data-testid="stCaptionContainer"] p {margin-bottom:0;}
 .stApp :is(.gas-number,.demo-number,[data-testid="stMetricValue"]) {font-variant-numeric:tabular-nums;}
 @media(max-width:640px) {
