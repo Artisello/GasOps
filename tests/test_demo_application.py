@@ -120,3 +120,13 @@ def test_all_page_modules_have_a_dependency_path_from_the_application():
         reached.add(name)
         pending.extend(graph[name]-reached)
     assert {name for name in paths if name.endswith("_page")}<=reached
+
+
+def test_initial_source_and_private_registers_are_not_automatically_synthetic(monkeypatch):
+    state={}
+    monkeypatch.setattr(demo_application.st,"session_state",state)
+    demo_application.prepare("balancing")
+    demo_application.prepare("kpi")
+    assert state["selected_source"]==session.PUBLIC
+    assert state["daily_desk_data_mode"]=="Dati importati"
+    assert state["bso_mode"]=="Dati importati"
