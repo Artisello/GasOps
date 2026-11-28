@@ -79,7 +79,7 @@ def hybrid(library,query,stop,*,document=None,limit=6):
     queries=(direct,expanded) if expanded else (direct,)
     candidates={}
     for variant in queries:
-        for rank,hit in enumerate(library.search(variant,limit=CANDIDATES,document=document,expand_aliases=False)):
+        for rank,hit in enumerate(library.search(variant,limit=CANDIDATES,document=document,expand_aliases=False,unique_pages=False)):
             if not hit.is_pdf or hit.citation.document not in library.documents:continue
             cite=hit.citation
             relevance=score(query,cite,stop)
