@@ -339,3 +339,12 @@ Laboratorio previsionale: regressione bayesiana con covariate storiche. Forecast
 ### Sessioni di aggiustamento
 
 Bilanciamento → Controllo giornaliero: archivio economico separato per sessioni annuali e pluriennali, otto componenti, controlli delle differenze. [Metodo e limiti](docs/ADJUSTMENT_ENGINE.md).
+
+
+## Valutazione automatica dell'assistente
+
+`python -m scripts.evaluate_assistant` esegue un benchmark riproducibile con osservazioni artificiali e risposte del provider simulate. Verifica routing, fonti, valori, fallback, confronti, assenza di chiamate superflue e budget del payload. Nessuna chiamata API, nessuna credenziale, nessun dato di esercizio. Il comando produce `assistant-evaluation.json` e termina con codice 1 in caso di regressione; GitHub Actions conserva il report anche se fallisce.
+
+Per misurare anche il modello effettivo, eseguire esplicitamente `python -m scripts.evaluate_assistant --live --output assistant-live-evaluation.json` con un modello configurato tramite variabili d'ambiente (vedi configurazione LLM). Questa modalità usa soltanto due quesiti con dati artificiali, fino a quattro richieste complessive; possono applicarsi costi del provider. Non viene eseguita in CI, non usa documenti o registri privati e non interroga le API di mercato.
+
+Il report distingue token dichiarati dal provider, chiamate, byte del payload e latenza. Token mancanti restano null; quando la telemetria è parziale, `tokens_complete` è false. La latenza offline misura l'overhead del test, non il provider reale. Il pass rate riguarda i soli casi verificati, non una stima della correttezza universale dell'assistente.
