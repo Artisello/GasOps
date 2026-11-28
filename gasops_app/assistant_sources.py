@@ -317,7 +317,7 @@ _FOLLOWUP_DATE = re.compile(
     + DATE_TEXT + "|" + _MONTH_DATE
     + r"|ieri|oggi|domani)\s*[?.!]*$", re.I)
 _FOLLOWUP_PREVIOUS = re.compile(
-    r"^(?:e\s+)?(?:rispetto\s+)?(?:(?:al|a|il)\s+)?"
+    r"^(?:e\s+)?(?:rispetto\s+)?(?:(?:al|allo|a|il)\s+)?"
     r"(giorno precedente|giorno prima|sette giorni prima|7 giorni prima|lo stesso giorno della settimana precedente|stesso giorno della settimana precedente)\s*[?.!]*$", re.I)
 _FOLLOWUP_REFERENCE = re.compile(
     r"^(?:e\s+(?:in|nel|nella|per|il|al|a|rispetto|quanto|come|quali|la|le|lo|i|gli)\b"
@@ -344,6 +344,8 @@ def resolve_followup(question, previous, *, today):
         # A complete new question is not a continuation merely because it
         # begins with 'e'. Only short, unresolved references are intercepted.
         if _FOLLOWUP_REFERENCE.search(text):
+            if re.search(r"\b(?:settimana|mese|anno)\s+(?:precedente|scors[oa])\b",text,re.I):
+                return None,"Vuoi confrontare lo stesso giorno oppure la media o il totale del periodo? Specifica indicatore e intervallo."
             if re.search(r"\bgrafico\b|perch[eé]|\brispetto\b|settimana precedente|mese precedente|anno precedente",text,re.I) or not (requested_sources(text) and mentions_day(text)):
                 return None,"Specifica il dato e il periodo da confrontare o rappresentare."
         return text,None
