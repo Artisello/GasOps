@@ -88,7 +88,7 @@ def refresh(state,store,now,selected,*,gie=None,terna=None,clock=utc_now,progres
                 raise ValueError("Perimetro o copertura")
             state[key]={"attempted":now,"result":result}
             validated(evidence.get("records",0)+len(result["frame"]),cached=bool(result.get("cached")),failed=result["failed"])
-            return "Cache non aggiornata." if result["failed"] else ""
+            return "Cache non aggiornata." if result["failed"] else "Nessuna osservazione utilizzabile restituita." if result.get("no_observation") else ""
         except Exception:
             saved=state.get(key,{})
             state[key]={**saved,"attempted":now,"error":"Aggiornamento non disponibile"}
