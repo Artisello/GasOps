@@ -246,7 +246,7 @@ def balancing() -> None:
         _jarvis_panel(prefix="balancing")
     else:
         source,tool=st.columns([2,1],vertical_alignment="bottom")
-        labels={"Settlement e rettifiche":"Bilanci e rettifiche","Riconciliazione infrastrutture":"Allocazioni del giorno successivo",
+        labels={"Settlement e rettifiche":"Bilanci e rettifiche","Riconciliazione infrastrutture":"Allocazioni (G+1)",
                 "Aggiustamenti":"Aggiustamenti","Quadratura rete":"Quadratura rete"}
         mode=tool.selectbox("Tipo di controllo",tuple(labels),key="balancing_daily_mode",format_func=labels.__getitem__)
         if mode=="Riconciliazione infrastrutture":
