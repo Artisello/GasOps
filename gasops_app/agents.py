@@ -122,12 +122,16 @@ def _market(context: MarketContext, args: MarketArguments) -> Result:
         return Result(agent=Agent.MARKET, status="unavailable", summary="Consumi utilizzabili assenti.",
                       evidence=_sources(context))
     monthly = context.bundle.origin.grain == "monthly"
-    summary = f"{facts['label']} · consumi pari a {numero(facts['demand_gwh'])} GWh."
+    origin=context.bundle.origin
+    srg=not monthly and not origin.archive and origin.kind!=Kind.SYNTHETIC and "distribution_gwh" in origin.fields
+    subject="prelievi SRG (tre aggregati)" if srg else "consumi nazionali" if monthly or origin.archive else "domanda simulata"
+    unit="GWh/mese" if monthly else "GWh/giorno gas"
+    summary = f"{facts['label']} · {subject} pari a {numero(facts['demand_gwh'])} {unit}."
     delta = facts["demand_gwh_change_pct"]
     if args.comparison == "weekly" and monthly:
         summary += " Per il confronto settimanale serve una serie giornaliera, disponibile in ENTSOG o nell’archivio JRC."
     elif delta is not None:
-        summary += f" Variazione dei consumi {numero(delta, signed=True)}% {facts['comparison']}."
+        summary += f" Variazione {'dei prelievi SRG' if srg else 'dei consumi'} {numero(delta, signed=True)}% {facts['comparison']}."
     elif not monthly:
         summary += " Le due settimane hanno pochi giorni confrontabili."
     if facts["supply_gwh"] is not None:
@@ -136,15 +140,15 @@ def _market(context: MarketContext, args: MarketArguments) -> Result:
     if facts["net_imports_gwh"] is not None:
         summary += f" Importazioni nette pari a {numero(facts['net_imports_gwh'])} GWh."
     if facts["industry_gwh"] is not None:
-        summary += f" L’industria ha consumato {numero(facts['industry_gwh'])} GWh."
+        summary += f" {'Prelievi industria SRG' if srg else 'Consumi industriali'}: {numero(facts['industry_gwh'])} {unit}."
     price = facts["price_eur_mwh"]
     if price is not None:
-        label = "Prezzo di esempio" if context.bundle.origin.kind == Kind.SYNTHETIC else "PSV medio mensile (ARERA CMEM,m)"
+        label = "Prezzo di esempio" if context.bundle.origin.kind == Kind.SYNTHETIC else "CMEM,m (ARERA, riferimento mensile gas)"
         summary += f" {label} pari a {numero(price, 2)} €/MWh"
         price_delta = facts["price_eur_mwh_change_pct"]
         summary += f" ({numero(price_delta, signed=True)}% {facts['comparison']})." if price_delta is not None else "."
     if "weekend_vs_weekday_pct" in facts:
-        summary += f" Nei fine settimana il consumo medio è stato {numero(facts['weekend_vs_weekday_pct'], signed=True)}% sui feriali negli ultimi 84 giorni della serie."
+        summary += f" Nei fine settimana {'il prelievo medio SRG' if srg else 'il consumo medio'} è stato {numero(facts['weekend_vs_weekday_pct'], signed=True)}% sui feriali negli ultimi 84 giorni della serie."
     if "peak_month" in facts:
         summary += f" Le medie per mese dell’anno raggiungono il picco a {facts['peak_month']}."
     return Result(agent=Agent.MARKET, summary=summary, values=facts, evidence=_sources(context, price=price is not None))
