@@ -192,5 +192,4 @@ def page():
             "- [Scorte, GNL, avvisi, HS1 e interconnessioni](/security-of-supply)\n"
             "- [Rischi e stress test](/risk)\n"
             "- [Assistente AI e analista dati](/operations)\n"
-            "- [PDF, ricerca, verifiche e dossier](/regulatory)\n"
-            "- [Esempi BSO e sviluppi del pilot](/demo)")
+            "- [PDF, ricerca, verifiche e dossier](/regulatory)")

@@ -19,16 +19,15 @@ st.html(ROOT / "gasops_app" / "theme.css")
 
 
 def demo_home():
-    # Keep this callback in the rerun entry point. A running Cloud process may
-    # still hold the earlier presentation module without its newer home alias.
-    from gasops_app.presentation import _overview
-
-    with st.container(key="demo_content"):
-        _overview(None)
+    from gasops_app.italian_network_page import panel
+    from gasops_app.visuals import header
+    with st.container(key="network_home_title"):
+        header("I.G.O.R. - Sistema Gas Italiano", "")
+    panel(mode="overview")
 
 
 def application(demo=True):
-    """One reachable application tree, with ready examples in the default view."""
+    """One operational application tree; examples remain inside their tools."""
     from gasops_app.access import guard_application
     guard_application()
     from gasops_app.navigation import sidebar_navigation
@@ -53,7 +52,6 @@ def application(demo=True):
     if demo:
         pages.extend([
             st.Page(demo_application.connections, title="Fonti e API", icon=":material/cable:", url_path="connections"),
-            st.Page(demo_application.examples, title="Esempi BSO", icon=":material/auto_awesome:", url_path="demo"),
         ])
     current = st.navigation(pages, position="hidden")
     with st.sidebar:
@@ -69,7 +67,7 @@ def application(demo=True):
             st.html('<div class="gas-nav-group gas-nav-settings">Analisi</div>')
             session.sidebar()
         else:
-            st.caption("Fonti pubbliche · esempi separati")
+            st.caption("Fonti pubbliche")
         st.html('<div class="gas-byline"><strong>Prototipo per Snam · creato da Igor</strong><small>Progetto indipendente, non ufficiale.</small></div>')
     if demo:
         demo_application.prepare(current.url_path)

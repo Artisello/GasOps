@@ -74,14 +74,3 @@ def test_manual_model_skips_unused_models_but_keeps_existing_fallback(monkeypatc
     assert len(calls)==len(MODELS) and actual.model!="Seasonal naive"
 
 
-def test_examples_open_the_existing_view_and_preserve_imports(monkeypatch):
-    from types import SimpleNamespace
-    from gasops_app import presentation
-    state={"settlement_desk_csv_v1":{"sha":"existing-import"}}
-    opened=[]
-    monkeypatch.setattr(presentation.st,"session_state",state)
-    monkeypatch.setattr(presentation.st,"Page",lambda *a,**kw:SimpleNamespace(url_path=kw["url_path"]))
-    monkeypatch.setattr(presentation.st,"switch_page",lambda page:opened.append(page.url_path))
-    presentation._open_example("Settlement")
-    assert state[presentation.NAV]=="Settlement" and opened==["demo"]
-    assert state["settlement_desk_csv_v1"]=={"sha":"existing-import"}

@@ -45,13 +45,13 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-L’avvio apre una **panoramica essenziale con la sidebar visibile su desktop**. Le undici aree comprendono tutte le viste originali, Fonti e API ed Esempi BSO. La barra laterale resta disponibile in ogni pagina; su mobile si apre con il controllo nativo di Streamlit. Non ci sono pagine funzionali accessibili solo mediante una configurazione nascosta.
+L’avvio apre una **panoramica essenziale con la sidebar visibile su desktop**. Le dieci aree comprendono le viste operative e Fonti e API. Gli esempi sono disponibili nei singoli strumenti. La barra laterale resta disponibile in ogni pagina; su mobile si apre con il controllo nativo di Streamlit. Non ci sono pagine funzionali accessibili solo mediante una configurazione nascosta.
 
 **Per esplorare gli esempi non servono file o chiavi personali.** Bilanciamento e KPI partono da casi dichiarati, i rischi mostrano già un calcolo, la ricerca PDF propone un risultato e l’assistente prepara un’analisi JRC. Se il modello AI è configurato e attivo, l’esempio usa il modello con le sole evidenze pubbliche JRC e i limiti di chiamata esistenti; altrimenti è un report locale esplicito. I registri importati restano distinti dai casi dimostrativi.
 
 **Fonti e API** mostra disponibilità, ultimo controllo e collegamenti alle analisi. Un’unica azione aggiorna tutti i connettori pubblici disponibili e verifica modello AI e archivio remoto, se configurati. Eurostat, ARERA, ENTSOG, ACER e meteo non richiedono credenziali del visitatore; GIE e Terna usano soltanto le credenziali del server. Configurazione e verifica riuscita sono distinte. Le fonti non raggiungibili restano segnalate; non vengono sostituite con dati simulati. Jarvis e GME mantengono import e consultazione autorizzati, senza dichiarare endpoint automatici inesistenti. [Guida alla demo](DEMO.md).
 
-Il confronto storico è precalcolato dal motore effettivo per una visualizzazione immediata. La demo controlla le impronte del file JRC e del codice del modello; il test di regressione ripete il backtest e confronta i risultati. Dopo modifiche ai motori o alla fonte, rigeneralo con `python -m gasops_app.demo_forecast`. Esegui i controlli con `python -m pytest -q` e `python -m gasops_app.readiness`.
+Le previsioni e i confronti storici sono disponibili in Mercato e previsioni. Esegui i controlli con `python -m pytest -q` e `python -m gasops_app.readiness`.
 
 ### Workbench di sviluppo
 

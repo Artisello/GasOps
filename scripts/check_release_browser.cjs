@@ -132,7 +132,7 @@ async function main(){
    report.checks.push({check:'missing_gie_credentials',status:'PASS'});
   }
   const routes=[['market','Mercato e previsioni'],['balancing','Bilanciamento'],['ledger','Fatture e garanzie'],
-    ['risk','Simulazione rischi'],['operations','Assistente AI'],['kpi','Operazioni gas'],['connections','Fonti e API'],['demo','BSO, in sintesi']];
+    ['risk','Simulazione rischi'],['operations','Assistente AI'],['kpi','Operazioni gas'],['connections','Fonti e API']];
   for(const [route,title] of routes)await open(a,route,title);
   await open(a,'regulatory','Norme e documenti');
   await a.locator('input[type=file]').setInputFiles({name:'SESSION_A_CANARY.pdf',mimeType:'application/pdf',buffer:fixturePdf()});
@@ -177,10 +177,7 @@ async function main(){
   report.checks.push({check:'explicit_market_forecast',status:'PASS'});
   await open(a,'','I.G.O.R. - Sistema Gas Italiano');
   assert.equal(await a.getByRole('button',{name:'Esplora la rettifica',exact:true}).count(),0);
-  await open(a,'demo','BSO, in sintesi');
-  await chooseRadio(a,'Rettifiche');
-  assert(await a.getByRole('radio',{name:'Rettifiche',exact:true}).isChecked());
-  report.checks.push({check:'public_home_has_no_example_cards_and_case_remains_explicit',status:'PASS'});
+  report.checks.push({check:'public_home_has_no_example_cards',status:'PASS'});
   const mobile=await newPage(390,844);
   await open(mobile,'','I.G.O.R. - Sistema Gas Italiano');
   await mobile.locator('[data-testid="stDeckGlJsonChart"] canvas').waitFor();
