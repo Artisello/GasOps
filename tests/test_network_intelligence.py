@@ -256,7 +256,7 @@ def test_overview_has_real_d30_gaps_and_same_sections_as_full_card(offline):
     assert not app.exception
     assert [t.label for t in app.tabs] == ["Dati","Storico","Eventi","Fonti"]
     captions = {c.value for c in app.caption}
-    assert {"TREND · D-30","EVENTI","DATI E PROVENIENZA"} <= captions
+    assert {"Ultimi 30 giorni","EVENTI","DATI E PROVENIENZA"} <= captions
     assert any(e.label=="Capacità e dati commerciali" for e in app.expander)
     commercial=next(d.value for d in app.dataframe if "Periodo e validità" in d.value.columns)
     assert "Nomina" in set(commercial.Indicatore) and "Capacità tecnica firm" in set(commercial.Indicatore)
