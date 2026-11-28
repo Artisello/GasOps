@@ -12,7 +12,7 @@ from .operational_sources import (AGSI_SOURCE,GME_SOURCE,GME_TERMS,JARVIS_SOURCE
                                   gie_key,attributed_csv,attributed_iip_json,GIE_CREDIT,GIE_LINKS,GIE_TERMS)
 from .public_data import SourceUnavailable
 from .session import database
-from .visuals import BLUE, TEAL, info, local_time, mini_chart, plot, kpi_grid
+from .visuals import BLUE, TEAL, info, local_time, mini_chart, plot, kpi_grid, header
 from .supply_view import scope_label, finite, inventory_snapshot, chart_window
 from .iip_view import MISSING, coverage, display_row, export_rows, filter_messages, options, project_messages, visible_columns
 
@@ -29,11 +29,12 @@ def configured_key():
 def operational_context():
     """Standalone view; only the selected platform is loaded."""
     from .workspace import picker
-    title=st.empty()
+    title=st.container()
     key=configured_key()
     selected=picker("Sezione",["AGSI+","ALSI","IIP","Jarvis","MASE","ENTSOG","MAP","EXPLORER"],key="operational_platform",
                     labels={"AGSI+":"Scorte","ALSI":"Gas liquefatto","IIP":"Avvisi di mercato","Jarvis":"Rete Snam","MASE":"Produzione","ENTSOG":"Interconnessioni","MAP":"Mappa della rete","EXPLORER":"Esplora dati"})
-    title.title("Gas Data Explorer" if selected=="EXPLORER" else "Rete gas italiana" if selected=="MAP" else "Stoccaggi e forniture")
+    with title:
+        header("Gas Data Explorer" if selected=="EXPLORER" else "Rete gas italiana" if selected=="MAP" else "Stoccaggi e forniture", "")
     if selected=="EXPLORER":
         from .gas_data_page import panel
         panel()

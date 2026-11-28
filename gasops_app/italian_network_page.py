@@ -660,11 +660,11 @@ def _history(observations, point, first, last, *, mode="full", counterpart=None,
             name=name,mode="lines+markers",connectgaps=False,
             line={"color":color,"width":2.5 if index==0 else 1.8,"dash":"solid" if index==0 else "dot"},
             marker={"size":5},hovertemplate=name+" · %{x|%d/%m/%Y}<br>%{y:.2f} GWh/d<extra></extra>"))
-    figure.update_layout(template="plotly_dark",height=265, margin={"l":42,"r":14,"t":12,"b":48},
+    figure.update_layout(template="plotly_dark",height=280, margin={"l":42,"r":14,"t":32 if len(series)>1 else 12,"b":56},
                          paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",
                          font={"color":"#b0bed0","family":"Arial, sans-serif","size":11},
                          yaxis={"title":"GWh/d","automargin":True},
-                         xaxis={"tickformat":"%d/%m","nticks":5,"tickangle":0,"automargin":True},
+                         xaxis={"tickformat":"%d/%m","nticks":4,"tickangle":0,"automargin":True},
                          showlegend=len(series)>1,legend={"orientation":"h","y":1.02,"x":0})
     # The entire requested window remains visible, including leading missing days.
     figure.update_xaxes(range=[first-timedelta(days=1),last+timedelta(days=1)])

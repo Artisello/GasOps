@@ -83,3 +83,8 @@ Manual review of the upstream [skill](https://github.com/nextlevelbuilder/ui-ux-
 - Responsive layout: local table overflow, readable direction/status labels, single-column narrow KPI/pair layout at 375px; no automatic motion. Secondary and primary actions retain distinct contrast and disabled semantics.
 - Data integrity: no changes to calculations, date requests, bindings, or source disclosure. Existing status message has an atomic status role, not multiple competing regions.
 - Verification: expanded static contrast checks and browser checks for mobile control geometry, target dimensions and non-overlap. These checks are not a full WCAG audit, and must be run against the actual deployment before making compliance claims.
+
+
+## Page hierarchy — consolidated header
+
+All default routes share the native title component in `visuals.header`. Keep one primary title per route, concise source/date/status context immediately beside its relevant result, and H2/H3 for individual analyses. The overview keeps its map-first layout and exact title "I.G.O.R. - Sistema Gas Italiano". Avoid decorative separators before workspace navigation and duplicate branding in guided examples; the sidebar already identifies the product. Preserve all navigation keys, controls, source warnings, non-official attribution and consent requirements. The operational sources title follows the selected existing workspace. Review desktop and mobile rendering and verify one native title per default route before release.

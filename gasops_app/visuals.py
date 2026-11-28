@@ -37,6 +37,7 @@ def local_time(value: datetime | None) -> str:
 
 
 def header(title: str, meta: str, action: str | None = None, disabled: bool = False) -> bool:
+    """One native page title; optional context/action without decorative dividers."""
     with st.container(key="page_header"):
         if action:
             left, right = st.columns([4, 1.85], vertical_alignment="center")
@@ -51,7 +52,6 @@ def header(title: str, meta: str, action: str | None = None, disabled: bool = Fa
             with right:
                 clicked = st.button(action, icon=":material/play_arrow:", type="primary",
                                     width="stretch", disabled=disabled, key="analysis_launch")
-        st.html('<div class="gas-topline"></div>')
     return clicked
 
 

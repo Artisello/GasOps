@@ -67,7 +67,7 @@ def test_operational_controls_stay_in_flow_and_warnings_are_readable():
     css=(ROOT/"gasops_app/theme.css").read_text()
     for selector in ("net_view_focus_","net_view_reset_"):
         assert not re.search(r'\[class\*="st-key-'+selector+r'"\]\s*\{[^}]*position\s*:\s*absolute',css)
-    note=re.search(r'\.gas-balance-note\s*\{([^}]+)\}',css).group(1)
+    note=re.search(r'^\s*\.gas-balance-note\s*\{([^}]+)\}',css,re.MULTILINE).group(1)
     assert "line-clamp" not in note and "overflow:hidden" not in note
     assert "var(--gas-amber)" in note
     tokens=dict(re.findall(r"--gas-([a-z-]+):\s*(#[0-9a-fA-F]{6})",css))
@@ -77,3 +77,13 @@ def test_operational_controls_stay_in_flow_and_warnings_are_readable():
     assert "st-key-system_day_nav" in css
     assert "st-key-network_camera_" in css
     assert 'role="switch"' in css
+
+
+def test_shared_page_header_avoids_decorative_dividers_and_duplicate_brand():
+    visuals=(ROOT/"gasops_app/visuals.py").read_text()
+    css=(ROOT/"gasops_app/theme.css").read_text()
+    demo=(ROOT/"gasops_app/presentation.py").read_text()
+    assert 'st.title(title)' in visuals
+    assert 'gas-topline' not in visuals and 'gas-topline' not in css
+    assert 'demo-masthead' not in demo and 'demo-masthead' not in css
+    assert '.st-key-page_header h1' in css

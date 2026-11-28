@@ -10,7 +10,7 @@ from .models import Kind, utc_now
 from .risk import RiskSettings, forecast_uncertainty
 from .risk_view import PRESETS, Stress, compare_stress, gap_distribution, cost_distribution
 from .session import assumptions, fixture, save_assumptions
-from .visuals import BLUE, ROSE, TEAL, info, kpi_grid, plot
+from .visuals import BLUE, ROSE, TEAL, info, kpi_grid, plot, header
 
 
 def _graph(title,unit):
@@ -111,7 +111,7 @@ def _results(result,base,r,unit):
 
 
 def risk_page(*, auto_demo=False):
-    st.title("Simulazione rischi")
+    header("Simulazione rischi", "")
     from .gme_market import api_configured as gme_configured
     if gme_configured():
         from .workspace import picker
