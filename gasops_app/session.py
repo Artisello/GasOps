@@ -294,11 +294,24 @@ def market_scope(name: str) -> tuple[str,str]:
     }[name]
 
 
+def available_source_choices(state):
+    """Offer examples only when no usable current public series is already held."""
+    from .live_sources import BUNDLES
+    for bundle in (*state.get(BUNDLES,{}).values(),state.get("active_bundle")):
+        if bundle is not None and bundle.rows and not bundle.origin.archive and bundle.origin.kind in (Kind.LIVE,Kind.HISTORICAL):
+            return (PUBLIC,DAILY,ARCHIVE)
+    return SOURCE_CHOICES
+
+
 def source_filters(page: str, *, lookback: bool = True) -> Selection:
     ctrl = st.columns([3, 1.35, 1.3, 1.15] if lookback else [3, 1.3, 1.15], vertical_alignment="bottom")
+    choices = available_source_choices(st.session_state)
     stored = st.session_state.get("selected_source", PUBLIC)
+    widget_key = f"{page}_dataset"
+    if widget_key in st.session_state and st.session_state[widget_key] not in choices:
+        st.session_state[widget_key] = PUBLIC
     with ctrl[0]:
-        name = st.selectbox("Fonte dati", SOURCE_CHOICES, index=SOURCE_CHOICES.index(stored) if stored in SOURCE_CHOICES else 0,
+        name = st.selectbox("Fonte dati", choices, index=choices.index(stored) if stored in choices else 0,
                             key=f"{page}_dataset", format_func=SOURCE_LABELS.__getitem__,
                             help="Scegli il perimetro: dati mensili nazionali, prelievi SRG giornalieri, archivio o simulazione.")
     st.session_state["selected_source"] = name
