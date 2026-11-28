@@ -113,15 +113,17 @@ def _source_evidence_panel(report):
                 st.caption(row["limitation"])
 
 
-def _document_report(report):
+def _document_report(report,*,fresh=False):
     result=report.results[Agent.REGULATORY]
     claims=report.assumptions.get("document_claims",[])
     if claims:
+        st.caption("AI locale · riscontri nei PDF")
         for claim in claims:
             st.text(claim["text"])
             cite=claim["citation"]
             st.caption(cite["document"]+" · PDF p. "+str(cite["page"]))
     else:
+        st.caption("Ricerca nei PDF · estratti locali")
         st.text(result.summary)
     for warning in report.warnings:
         st.caption(warning)
@@ -129,12 +131,15 @@ def _document_report(report):
         with st.expander("Estratti dei PDF",expanded=not claims):
             evidence(result.evidence)
     _source_evidence_panel(report)
+    if gme:=report.assumptions.get("gme_request"):
+        from .gme_market_page import assistant_prices
+        assistant_prices(gme,report.started_at,report_id=report.id,refresh=fresh)
     st.caption(str(report.assumptions.get("document_count",0))+" PDF consultabili · edizione e applicabilità da verificare")
 
 
 def _report(report:Run,selection,*,fresh=False):
     if report.assumptions.get("assistant_document_lookup"):
-        _document_report(report)
+        _document_report(report,fresh=fresh)
         return
     inferred=report.mode=="LLM-assisted" and bool(report.interpretation)
     mode=("AI · "+(report.model or "modello selezionato") if inferred else
@@ -322,15 +327,14 @@ def assistant_page():
     else:
         st.caption("AI attiva · fonti automatiche")
 
-    disabled=False
     history_slot=st.container()
     answer_slot=st.container(key="assistant_answer")
     controls=st.columns([1,1,1,1.3],gap="small")
     shortcut=None
     for col,(label,question) in zip(controls[:3],STARTERS):
-        if col.button(label,key="assistant_starter_"+label,width="stretch",disabled=disabled,help=question):
+        if col.button(label,key="assistant_starter_"+label,width="stretch",help=question):
             shortcut=question
-    full=controls[3].button("Bollettino",key="assistant_briefing",width="stretch",disabled=disabled,
+    full=controls[3].button("Bollettino",key="assistant_briefing",width="stretch",
                             help="Genera bollettino locale" if local else "Genera bollettino AI")
     if not local:
         with st.popover("Info · comandi",icon=":material/info:"):
