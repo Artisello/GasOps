@@ -66,6 +66,9 @@ def refresh(state,store,now,selected,*,gie=None,terna=None,clock=utc_now,progres
         try:
             note=fn()
             records[name]={"status":"Da verificare" if note else "Acquisito","at":clock().isoformat(),"note":note or ""}
+        except SourceNoObservation as error:
+            evidence.update(outcome="no_observation",reason_code="no_observation")
+            records[name]={"status":"Da verificare","at":clock().isoformat(),"note":"Nessuna osservazione utilizzabile restituita."}
         except SourceUnavailable as error:
             evidence.update(outcome="no_observation" if isinstance(error,SourceNoObservation) else "failed",
                             reason_code=evidence.get("reason_code") or acquisition_error_code(error))
@@ -99,6 +102,10 @@ def refresh(state,store,now,selected,*,gie=None,terna=None,clock=utc_now,progres
             if result["failed"]:evidence["reason_code"]=acquisition_error_code(result.get("refresh_error",""))
             if result.get("no_observation"):evidence.update(outcome="no_observation",reason_code="no_observation")
             return "Cache non aggiornata." if result["failed"] else "Nessuna osservazione utilizzabile restituita." if result.get("no_observation") else ""
+        except SourceNoObservation:
+            saved=state.get(key,{})
+            state[key]={**saved,"attempted":now,"outcome":"no_observation"}
+            raise
         except Exception:
             saved=state.get(key,{})
             state[key]={**saved,"attempted":now,"error":"Aggiornamento non disponibile"}
@@ -116,6 +123,8 @@ def refresh(state,store,now,selected,*,gie=None,terna=None,clock=utc_now,progres
                 evidence["reason_code"]=acquisition_error_code(error)
                 notes.append(scope+": aggiornamento non disponibile; eventuale copia precedente conservata.")
         if not acquired:
+            if evidence.get("reason_code")=="no_observation":
+                raise SourceNoObservation("Nessuna osservazione utilizzabile restituita.")
             raise SourceUnavailable("Nessun perimetro disponibile")
         return " · ".join(notes)
     def network():
