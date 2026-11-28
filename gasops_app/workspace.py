@@ -18,9 +18,9 @@ INTENTS = {
                             "bso_register_section": "Scadenze", "bso_task_filter": "Priorità"}),
 }
 TASKS = (
-    ("balancing", "Bilanciamento", "Flussi, nomine e pubblicazioni del giorno gas.", ":material/balance:"),
-    ("settlement", "Settlement", "Bilanci mensili, rettifiche e importi da verificare.", ":material/receipt_long:"),
-    ("operations", "Operazioni gas", "Attività aperte e scadenze dei prossimi giorni.", ":material/event_available:"),
+    ("balancing", "Bilanciamento", "Flussi e nomine.", ":material/balance:"),
+    ("settlement", "Settlement", "Bilanci e rettifiche.", ":material/receipt_long:"),
+    ("operations", "Operazioni gas", "Agenda e scadenze.", ":material/event_available:"),
 )
 
 
@@ -99,7 +99,6 @@ def getting_started():
         st.caption("Le stime del sistema e i bilanci individuali hanno perimetri diversi: non sono intercambiabili.")
         st.markdown("**SAS**: sbilanciamento atteso del sistema. **DS**: sbilanciamento del partecipante. "
                     "**MWh e GWh** misurano energia: 1 GWh = 1.000 MWh.")
-        st.markdown("Dal menu trovi anche previsioni, stoccaggi, scenari di rischio, ricerca nei documenti e assistente.")
         render_terms("home", "bso_home_term")
         st.caption("Esporta i file della sessione per conservarli.")
 
