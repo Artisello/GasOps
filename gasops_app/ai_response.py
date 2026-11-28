@@ -255,9 +255,26 @@ def verify_metric_bindings(sections, public):
                 raise InvalidSynthesis("Valore non associabile all’indicatore esplicitamente citato.")
 
 
+def verify_event_semantics(sections, public):
+    """Reject explicit claims of zero actual events based on notice copies."""
+    if not any(key in public for key in ("IIP","ENTSOG · rete italiana")):
+        return
+    for section in sections:
+        # Keep this narrow: "nessun evento documentato" and explicit limits
+        # are valid, unlike a categorical count of actual active outages.
+        for sentence in re.split(r"(?<=[.!?;])\s+|\n+",section["text"]):
+            if re.search(r"\b(?:non\s+(?:è|sono|si\s+può|possiamo)|non\s+dimostra|non\s+significa|non\s+implica|non\s+prova|non\s+equivale)\b",sentence,re.I):
+                # Do not exempt the specific categorical phrase "non ci sono".
+                if not re.search(r"\bnon\s+ci\s+sono\b",sentence,re.I):
+                    continue
+            if re.search(r"\b(?:zero|0|nessun[oa]?|assenza\s+di|non\s+ci\s+sono)\s+(?:eventi?\s+attiv[io]|indisponibilit[aà]|interruzion[ei]|manutenzion[ei])\b",sentence,re.I):
+                raise InvalidSynthesis("La copertura degli avvisi non dimostra l’assenza di eventi o indisponibilità.")
+
+
 def verify_measurements(sections, tools, public):
     """Check unit-bearing figures against the sources cited in each section."""
     verify_price_semantics(sections,public)
+    verify_event_semantics(sections,public)
     verify_metric_bindings(sections,public)
     measurements={"src:"+name:_source_measurements(name,item) for name,item in public.items()}
     for agent,item in tools.items():
