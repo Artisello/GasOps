@@ -152,9 +152,10 @@ def _resolve_selection(displayed, reading, previous, events=(), findings=()):
 
 
 def _reconcile_map(network, perimeter, observations, snapshots, day, now, saved, previous,
-                   direction, policy, reading, events, findings, mode):
+                   direction, policy, reading, events, findings, mode, *, index=None):
     # Eligibility uses a verified direction with data, not a stale direction from another item.
-    index = PointIntelligenceIndex(network,observations,snapshots,now)
+    if index is None:
+        index = PointIntelligenceIndex(network,observations,snapshots,now)
     intelligence = _map_intelligence(network,perimeter,observations,snapshots,day,now,saved,None,None,policy,index=index)
     # Membership in Flow depends on any verified observed direction, not the
     # direction the user happens to inspect (which may legitimately be N/D).
@@ -562,7 +563,8 @@ def overview_panel():
         status = build_status(network,snapshots,state,now,gas_day=status.gas_day,
                               interruptions=context["interruptions"],policy=policy)
     saved = state.get(STATE,{})
-    observations = validated_observations(network,merge_observations(snapshots),now)
+    index = PointIntelligenceIndex(network,merge_observations(snapshots),snapshots,now)
+    observations = index.observations
     day = status.gas_day
     first = day-timedelta(days=6)
     identifier = st.session_state.get(SELECTED,st.session_state.get("net_infrastructure","INET_BP_65"))
@@ -576,7 +578,7 @@ def overview_panel():
         event_ids = {e["infrastructure_id"] for e in status.active_events}
         finding_ids = {f.infrastructure_id for f in status.attention if f.category not in ("quality","event") and f.infrastructure_id}
         visible,identifier,directions,direction,intelligence = _reconcile_map(network,perimeter,observations,
-            snapshots,day,now,saved,identifier,direction,policy,reading,event_ids,finding_ids,"overview")
+            snapshots,day,now,saved,identifier,direction,policy,reading,event_ids,finding_ids,"overview",index=index)
         st.session_state["net_overview_direction"] = direction
         choices = _selectable_items(visible,reading)
         search_labels = _infrastructure_labels(network,choices)
@@ -1055,7 +1057,8 @@ def panel(mode="full"):
     policy = status_policy()
     context = _window_context(network,bundled,st.session_state,now,store,min(first,last-timedelta(days=policy.baseline_days)),last,archive)
     snapshots = context["snapshots"]
-    observations = validated_observations(network,merge_observations(snapshots),now)
+    index = PointIntelligenceIndex(network,merge_observations(snapshots),snapshots,now)
+    observations = index.observations
     data = {} if archive else dict(st.session_state,operational_acquisition=info)
     state = _status_state(context,data,now,last)
     saved = state.get(STATE,{})
@@ -1077,7 +1080,7 @@ def panel(mode="full"):
     active_event_ids = {e["infrastructure_id"] for e in operational.active_events}
     finding_ids = {f.infrastructure_id for f in operational.attention if f.category not in ("quality","event") and f.infrastructure_id}
     displayed,identifier,directions,direction,intelligence = _reconcile_map(network,visible,observations,
-        snapshots,last,now,saved,pending,st.session_state.get("net_direction"),policy,reading,active_event_ids,finding_ids,"full")
+        snapshots,last,now,saved,pending,st.session_state.get("net_direction"),policy,reading,active_event_ids,finding_ids,"full",index=index)
     choices = _selectable_items(displayed,reading)
     search_labels = _infrastructure_labels(network,choices)
     options = [i.id for i in sorted(choices,key=lambda i:(i.category!="entry",i.name))]
