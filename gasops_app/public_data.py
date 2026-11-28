@@ -27,6 +27,14 @@ class SourceUnavailable(RuntimeError):
     """La fonte non ha restituito dati validi e la cache non è utilizzabile."""
 
 
+class NoObservation(SourceSchemaError):
+    """Structurally valid response without a usable observation."""
+
+
+class SourceNoObservation(SourceUnavailable):
+    """The provider responded, but no usable observation was returned."""
+
+
 def network_allowed():
     return _NETWORK_ALLOWED.get()
 
@@ -93,6 +101,19 @@ def retrieve(
                         raise SourceSchemaError("Risposta superiore al limite di dimensione")
             text = body.decode("utf-8-sig")
             result = parse(text, now)
+        except NoObservation:
+            # A validated empty publication is not a transport failure, and
+            # must never overwrite a previously usable raw response.
+            if existing:
+                try:
+                    at=datetime.fromisoformat(existing[0])
+                    if at.utcoffset() is not None and at<=now:
+                        result=parse(existing[1],at,cached=True)
+                        if diagnostics and isinstance(result,dict):
+                            return {**result,"no_observation":True,"attempted_at":now.isoformat()}
+                except VALIDATION_ERRORS:
+                    pass
+            raise SourceNoObservation(name+": nessuna osservazione utilizzabile restituita.") from None
         except (requests.RequestException, *VALIDATION_ERRORS) as error:
             # Do not expose URLs, response bodies, credentials, or raw exceptions.
             if isinstance(error, requests.Timeout):
