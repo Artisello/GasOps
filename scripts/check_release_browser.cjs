@@ -147,8 +147,11 @@ async function main(){
   report.checks.push({check:'two_browser_document_sessions',status:'PASS'});
   await a.screenshot({path:path.join(output,'documents-session-a.png'),fullPage:true});
   await b.screenshot({path:path.join(output,'documents-session-b.png'),fullPage:true});
-  // Native report actions against the explicit offline public archive.
+  // AI is the initial screen; choose offline reports explicitly for this check.
   await open(a,'operations','Assistente AI');
+  assert(await a.getByRole('radio',{name:'Chiedi all’AI',exact:true}).isChecked());
+  assert.equal(await a.getByRole('radio',{name:'Indicatori GME',exact:true}).count(),0);
+  await chooseRadio(a,'Report');
   await a.getByRole('combobox',{name:'Fonte dati',exact:true}).click();
   await a.getByRole('option',{name:'Archivio 2015–2021 (JRC)',exact:true}).click();
   await a.getByRole('button',{name:'Opzioni',exact:true}).click();
