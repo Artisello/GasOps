@@ -74,7 +74,7 @@ def mase_context(question, day=None):
             "limitation":row["edition"]+" · trascrizione di report pubblico, non API live. bcm = miliardi di metri cubi; Sm3 = metri cubi standard."}
 
 
-def collect_context(
+def _collect_context_uncached(
     store, selected, context, now, state, *, requested=(), full=False, key="", terna=(),
     include_gie=False, include_weather=False, weather_snapshots=None, day=None, scope="IT", question="", clock,
 ):
@@ -103,6 +103,23 @@ def collect_context(
     if day is not None:
         public={key:item if key==MASE else _requested_period(item,day) for key,item in public.items()}
     return public
+
+
+def collect_context(
+    store, selected, context, now, state, *, requested=(), full=False, key="", terna=(),
+    include_gie=False, include_weather=False, weather_snapshots=None, day=None, scope="IT", question="", clock,
+):
+    def collect(sources):
+        return _collect_context_uncached(
+            store,selected,context,now,state,requested=sources,full=full,key=key,terna=terna,
+            include_gie=include_gie,include_weather=include_weather,weather_snapshots=weather_snapshots,
+            day=day,scope=scope,question=question,clock=clock)
+    # The validated public point-lookup projection is independent of the
+    # question wording. Full briefings and selected/derived series are not.
+    if full or selected is not None or context is not None or scope!="IT":
+        return collect(requested)
+    from .assistant_evidence_cache import collect_cached
+    return collect_cached(store,state,now,requested,day,collect,clock)
 
 
 def gme_request(question, day):
