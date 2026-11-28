@@ -31,10 +31,10 @@ def operational_context():
     from .workspace import picker
     title=st.container()
     key=configured_key()
-    selected=picker("Sezione",["AGSI+","ALSI","IIP","Jarvis","MASE","ENTSOG","MAP","EXPLORER"],key="operational_platform",
-                    labels={"AGSI+":"Scorte","ALSI":"Gas liquefatto","IIP":"Avvisi di mercato","Jarvis":"Rete Snam","MASE":"Produzione","ENTSOG":"Interconnessioni","MAP":"Mappa della rete","EXPLORER":"Esplora dati"})
+    selected=picker("Sezione",["MAP","AGSI+","ALSI","MASE","ENTSOG","IIP","Jarvis","EXPLORER"],key="operational_platform",
+                    labels={"AGSI+":"Scorte","ALSI":"Terminali GNL","IIP":"Avvisi","Jarvis":"Dati Snam","MASE":"Produzione","ENTSOG":"Scambi di frontiera","MAP":"Mappa della rete","EXPLORER":"Esplora dati"})
     with title:
-        header("Gas Data Explorer" if selected=="EXPLORER" else "Rete gas italiana" if selected=="MAP" else "Stoccaggi e forniture", "")
+        header({"EXPLORER":"Esplora dati","MAP":"Rete gas italiana","AGSI+":"Scorte di gas","ALSI":"Terminali GNL","MASE":"Produzione nazionale","ENTSOG":"Scambi di frontiera","IIP":"Avvisi di mercato","Jarvis":"Dati della rete Snam"}[selected], "")
     if selected=="EXPLORER":
         from .gas_data_page import panel
         panel()
@@ -45,15 +45,16 @@ def operational_context():
         return
     if not key and selected in ("ALSI","IIP"):
         st.info("Accesso GIE non configurato. I controlli HS1 e la sezione Rete Snam restano disponibili.")
-    with st.popover("Fonti",icon=":material/info:"):
-        st.write("AGSI+: gas negli stoccaggi. ALSI: terminali di gas naturale liquefatto (GNL). IIP: avvisi pubblicati dagli operatori. Jarvis: dati della rete Snam importati manualmente.")
+    with st.popover("Info fonti",icon=":material/info:"):
+        st.write("AGSI+: scorte negli stoccaggi. ALSI: gas naturale liquefatto (GNL) nei terminali. IIP: avvisi degli operatori. ENTSOG: scambi ai punti della rete. MASE: produzione nazionale. Jarvis: pubblicazioni Snam importate manualmente.")
         st.caption("Chiave GIE configurata; verifica al caricamento." if key else "Imposta GASOPS_GIE_API_KEY nei Secrets di Streamlit e riavvia l’app.")
     if selected=="AGSI+":
         from .gme_market import api_configured as gme_configured
         views = ["Giacenze pubbliche","Bilanciamento HS1"]
         if gme_configured():
             views.append("Scambi MGS")
-        mode=st.radio("Vista scorte",views,horizontal=True,key="storage_view",label_visibility="collapsed")
+        mode=st.radio("Vista scorte",views,horizontal=True,key="storage_view",label_visibility="collapsed",
+            format_func=lambda v:{"Giacenze pubbliche":"Scorte pubbliche","Bilanciamento HS1":"Bilancio stoccaggio","Scambi MGS":"Mercato stoccaggio"}.get(v,v))
         if mode=="Scambi MGS":
             from .gme_market_page import panel
             panel("mgs", prefix="gme_storage")
@@ -76,7 +77,7 @@ def operational_context():
         panel()
     else:
         from .jarvis_archive_page import panel as archive_panel
-        mode=st.radio("Vista rete Snam",["Stime infragiornaliere","Archivio pubblicazioni","Importazione nativa"],horizontal=True,key="jarvis_view")
+        mode=st.radio("Vista rete Snam",["Stime infragiornaliere","Archivio pubblicazioni","Importazione nativa"],horizontal=True,key="jarvis_view",format_func=lambda v:{"Stime infragiornaliere":"Stime del giorno","Archivio pubblicazioni":"Storico","Importazione nativa":"Importa file"}.get(v,v))
         if mode=="Stime infragiornaliere":
             _jarvis_panel()
         elif mode=="Importazione nativa":
