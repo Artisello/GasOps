@@ -19,7 +19,7 @@ INTENTS = {
     Agent.SETTLEMENT: r"settlement|regolazione|exposure|esposizione|cash.flow|flusso di cassa|fattura|buy.*sell",
     Agent.REGULATORY: r"regolament|regulatory|network code|codice|piombino|panigaglia|discarica|coefficient"
                       r"|cancellation|inconsisten|incongruenz|density|densità|denominat|normativ",
-    Agent.SCENARIO: r"what if|what happens|scenario|stress|monte carlo|cvar|\bvar\b|expected shortfall|probabilità di deficit|simula|\bse\b.{0,55}\b(?:domanda|consum\w*|offerta|stoccaggio|prezz\w*)\b",
+    Agent.SCENARIO: r"what if|what happens|scenario|stress|monte carlo|cvar|\bvar\b|expected shortfall|probabilità di deficit|simula|(?:^|cosa succede |cosa accade |che succede |che cosa accade )se\b.{0,55}\b(?:domanda|consum\w*|offerta|stoccaggio|prezz\w*)\b",
 }
 
 
@@ -33,6 +33,11 @@ def _scenario_args(question: str) -> ScenarioArguments:
             amount = Decimal(match[2].replace(",", "."))
             reduced = re.search(r"decreas|reduc|fall|drop|declin|ridu[cz]|diminui|cal[oa]", match[1], re.I)
             changes[key] = -amount if reduced and amount > 0 else amount
+    price=re.search(r"\b(?:prezzo|prezzi|price)\b([^\d+−-]{0,40})([+−-]?\d+(?:[.,]\d+)?)\s*(?:€|EUR)\s*/\s*MWh\b",question,re.I)
+    if price and re.search(r"aument|cal[oa]|diminui|ridu[cz]|variaz|shock|increase|decrease|[+−-]",price[1]+price[2],re.I):
+        amount=Decimal(price[2].replace("−","-").replace(",","."))
+        reduced=re.search(r"cal[oa]|diminui|ridu[cz]|decrease",price[1],re.I)
+        changes["price_delta_eur_mwh"]=-amount if reduced and amount>0 else amount
     return ScenarioArguments(**changes)
 
 
